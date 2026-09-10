@@ -159,7 +159,7 @@ class ConfigRequest(BaseModel):
     eviction_target_ratio: float | None = None
 
 
-class BonsaiIngestRequest(BaseModel):
+class NLIngestRequest(BaseModel):
     text: str
     msg_id: str | None = None
     session_id: str = "default"
@@ -322,30 +322,63 @@ def _get_bonsai():
 
 
 @app.post("/api/ingest")
-def ingest(req: BonsaiIngestRequest):
-    """Natural-language -> DSL via Ternary-Bonsai (CPU). dry_run=True returns the
-    synthesized DSL without writing to the store."""
+def ingest(req: NLIngestRequest):
+    """Natural-language -> DSL, routed by ``config.ingest.nl_backend``.
+
+    ``"cloud"`` runs the litellm multi-provider CloudIngestor (PR #198/#201);
+    anything else falls back to the local Ternary-Bonsai GGUF. The backend is
+    env-driven - ``GRAPHSTORE_INGEST_NL_BACKEND=cloud`` - so the same image
+    serves both without a code change.
+
+    Pre-fix this endpoint called Bonsai unconditionally, which meant the
+    [cloud-cpu] image (no GGUF by design) could only reach NL ingestion
+    in-process or via MCP. HTTP is the only surface a deployed graphstore
+    exposes, so on Railway that left NL ingest unreachable entirely.
+
+    ``dry_run=True`` returns the synthesized DSL without writing.
+    """
     import logging
     import uuid
+    store = _get_store()
+    backend = store._config.ingest.nl_backend
     try:
-        bonsai = _get_bonsai()
-        result = bonsai.ingest(
-            req.text,
-            msg_id=req.msg_id or f"msg_{uuid.uuid4().hex[:16]}",
-            session_id=req.session_id,
-            role=req.role,
-            dry_run=req.dry_run,
-        )
+        msg_id = req.msg_id or f"msg_{uuid.uuid4().hex[:16]}"
+        if backend == "cloud":
+            result = store.ingest_nl(
+                req.text,
+                msg_id=msg_id,
+                session_id=req.session_id,
+                role=req.role,
+                dry_run=req.dry_run,
+            )
+        else:
+            result = _get_bonsai().ingest(
+                req.text,
+                msg_id=msg_id,
+                session_id=req.session_id,
+                role=req.role,
+                dry_run=req.dry_run,
+            )
     except Exception as exc:
-        logging.getLogger(__name__).warning("ingest: %s: %s", type(exc).__name__, exc)
-        return _json_bytes_response({"kind": "error", "data": f"{type(exc).__name__}: {exc}"})
+        logging.getLogger(__name__).warning(
+            "ingest[%s]: %s: %s", backend or "local", type(exc).__name__, exc,
+        )
+        return _json_bytes_response({
+            "kind": "error",
+            "data": f"{type(exc).__name__}: {exc}",
+            "backend": backend or "local",
+        })
     import dataclasses
     try:
         payload = dataclasses.asdict(result) if dataclasses.is_dataclass(result) else dict(result)
     except Exception:
         payload = {k: getattr(result, k) for k in ("statements", "executed", "parsed", "rejected")
                    if hasattr(result, k)}
-    return _json_bytes_response({"kind": "ingest", "data": payload})
+    # Which engine ran is not otherwise visible in the response, and the two
+    # produce different rejection profiles - worth one key to avoid guessing.
+    return _json_bytes_response({
+        "kind": "ingest", "data": payload, "backend": backend or "local",
+    })
 
 
 _MAX_MEDIA_BYTES = int(os.environ.get("GRAPHSTORE_MAX_MEDIA_BYTES", str(20 * 1024 * 1024)))
