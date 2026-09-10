@@ -1,14 +1,39 @@
 # graphstore - cloud-cpu image for no-GPU serverless (Railway / Fly / Render).
 #
 # Built FROM LOCAL SOURCE - the published PyPI wheel is stale (no /api/ingest-media,
-# no [cloud-cpu] extra). All "understanding" (NL->DSL + image/audio/video/pdf media)
-# routes to CLOUD LLMs via litellm; model2vec embeds on CPU; pymupdf parses PDFs.
-# No GPU, no torch, no local 4B/VLM/whisper. Lean image, fast build.
+# no [cloud-cpu] extra). Generation ("understanding": NL->DSL, ANSWER, and
+# image/audio/video/pdf media) routes to CLOUD LLMs via litellm. Retrieval runs
+# LOCALLY on CPU: a quantised ONNX embedder + ONNX cross-encoder reranker, both
+# baked into the image. pymupdf parses PDFs. No GPU, no torch, no local 4B/VLM.
+#
+# Model slots and why these:
+#   embedder  jina-v5-nano-retrieval q4    131 MB  MTEB v2 71.0, 768 dims, 8k ctx
+#   reranker  jina-reranker-v1-turbo int8   36 MB  ships onnx/model_int8.onnx,
+#                                                  the path OnnxReranker hardcodes
+# Both are hf_onnx family, so onnxruntime (already in [cloud-cpu]) is the only
+# runtime dep. GGUF embedders/rerankers need llama-cpp-python, which [cloud-cpu]
+# deliberately excludes.
+#
+# Env notes:
+#   GRAPHSTORE_MODEL_CACHE            build-time: where install-embedder writes.
+#   GRAPHSTORE_VECTOR_MODEL_CACHE_DIR runtime: config.vector.model_cache_dir.
+#     Must match the above. GraphStore calls installer.set_cache_dir() with this
+#     value at construction and set_cache_dir wins over GRAPHSTORE_MODEL_CACHE,
+#     so at its "./models" default the loader looks in /app/models and misses
+#     the baked weights.
+#   GRAPHSTORE_VECTOR_EMBEDDER_MAX_LENGTH  VectorConfig defaults to 512 and
+#     load_installed_embedder prefers the config value over the manifest's 8192,
+#     so leaving it unset silently truncates chunks (chunk_max_size 2000 chars is
+#     ~500 tokens before the heading prefix). 1024 clears a full chunk without
+#     paying for 8k attention.
 #
 # The platform injects PORT; the entrypoint binds it (GRAPHSTORE_PORT overrides).
-# Set OPENROUTER_API_KEY (or GROQ/AISTUDIO) + GRAPHSTORE_AUTH_TOKEN in the env.
+# Set OPENROUTER_API_KEY + GRAPHSTORE_AUTH_TOKEN in the platform env. Never bake
+# credentials into this image.
 FROM python:3.12-slim-bookworm
 
+# Weights live outside /data so a mounted volume never shadows them, and outside
+# /app so a source rebuild does not invalidate the model layer.
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -16,7 +41,14 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     GRAPHSTORE_DB_PATH=/data \
     GRAPHSTORE_HOST=0.0.0.0 \
     GRAPHSTORE_GPU=0 \
-    GRAPHSTORE_VECTOR_EMBEDDER=model2vec
+    GRAPHSTORE_MODEL_CACHE=/opt/graphstore-models \
+    GRAPHSTORE_VECTOR_MODEL_CACHE_DIR=/opt/graphstore-models \
+    GRAPHSTORE_VECTOR_EMBEDDER=installed:jina-v5-nano-retrieval \
+    GRAPHSTORE_VECTOR_EMBEDDER_MAX_LENGTH=1024 \
+    GRAPHSTORE_DSL_RERANKER=onnx \
+    GRAPHSTORE_DSL_RERANKER_MODEL_DIR=/opt/graphstore-models/jina-reranker-v1-turbo-en \
+    GRAPHSTORE_INGEST_NL_BACKEND=cloud \
+    GRAPHSTORE_INGEST_NL_MODELS=openrouter/deepseek/deepseek-v4-flash
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
@@ -26,6 +58,11 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install ".[cloud-cpu]"
+
+# Bake the weights so cold starts do not pay a HuggingFace round trip. Both
+# repos are public - no HF token, and none should ever be added here.
+RUN graphstore install-embedder jina-v5-nano-retrieval --variant q4
+RUN python -c "import os; from huggingface_hub import hf_hub_download; d = os.path.join(os.environ['GRAPHSTORE_MODEL_CACHE'], 'jina-reranker-v1-turbo-en'); [hf_hub_download('jinaai/jina-reranker-v1-turbo-en', f, local_dir=d) for f in ('onnx/model_int8.onnx', 'tokenizer.json')]"
 
 COPY docker/entrypoint.sh /usr/local/bin/graphstore-entrypoint
 RUN chmod +x /usr/local/bin/graphstore-entrypoint && mkdir -p /data
