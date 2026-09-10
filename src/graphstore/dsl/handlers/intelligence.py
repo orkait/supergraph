@@ -71,6 +71,40 @@ class IntelligenceHandlers:
                     neighbors.append(nb_int)
         return np.asarray(neighbors, dtype=np.int32)
 
+    # Cross-encoders truncate at their own max_length and ANSWER prompts have a
+    # token budget, so there is no point decoding a whole multi-MB blob.
+    _DOCUMENT_TEXT_CAP = 8000
+
+    def _document_text(self, slot: int) -> str:
+        """Body text for a node that carries it as a DOCUMENT blob, not a column.
+
+        ``CREATE NODE ... DOCUMENT "..."`` routes content to the DocumentStore
+        and doc_fts, never to a ColumnStore field - so ``_materialize_slot``
+        returns no content/summary/text for it. Callers that fall back to ``""``
+        silently degrade: the reranker scores every candidate as the empty
+        string (identical logits, ranking becomes a no-op) and ANSWER emits
+        "(no retrieved context)" while still citing the nodes. This is the
+        shape Research.ingest, the MCP gs_ingest tool, and /api/ingest-media
+        all produce, so it is the common case, not an edge case.
+
+        Returns "" when there is no document store, no blob, or the blob is
+        binary (a PDF or image body is not rerankable text).
+        """
+        ds = self._document_store
+        if ds is None:
+            return ""
+        try:
+            doc = ds.get_document(slot)
+        except Exception:
+            return ""
+        if not doc:
+            return ""
+        content, ctype = doc
+        from graphstore.document.store import _is_text_content_type
+        if not _is_text_content_type(ctype):
+            return ""
+        return content[: self._DOCUMENT_TEXT_CAP].decode("utf-8", errors="replace")
+
     @handles(RecallQuery)
     def _recall(self, q: RecallQuery) -> Result:
         """RECALL: spreading activation from a cue node."""
@@ -732,6 +766,11 @@ class IntelligenceHandlers:
         running_tokens = 0
         texts_for_rerank = []
 
+        # Hoisted: decides whether a candidate with no column text is worth a
+        # DocumentStore round trip below. With no reranker configured nothing
+        # consumes texts_for_rerank, so the blob read would be pure cost.
+        reranker = getattr(self, '_reranker', None)
+
         for slot in order:
             slot = int(slot)
             node = self.store._materialize_slot(slot)
@@ -753,6 +792,8 @@ class IntelligenceHandlers:
             retrieved_slots.append(slot)
 
             text = node.get("content") or node.get("summary") or node.get("text") or ""
+            if not text and reranker is not None:
+                text = self._document_text(slot)
             texts_for_rerank.append(text)
 
             if q.tokens is not None:
@@ -767,7 +808,6 @@ class IntelligenceHandlers:
         if warnings:
             meta.setdefault("warnings", []).extend(warnings)
         before_rerank_count = len(results)
-        reranker = getattr(self, '_reranker', None)
         reranker_ran = False
         reranker_error: str | None = None
         if reranker is not None and len(texts_for_rerank) > target_k:
@@ -989,6 +1029,13 @@ class IntelligenceHandlers:
                 or node.get("text")
                 or ""
             )
+            if not text and node_id is not None:
+                # DOCUMENT-only node: without this the block is dropped and the
+                # reader is handed "(no retrieved context)" while cited_slots
+                # still lists the node - an ungrounded answer wearing citations.
+                slot = self._resolve_slot(node_id)
+                if slot is not None:
+                    text = self._document_text(slot)
             if not text:
                 continue
             src = f" (source: {node_id})" if node_id else ""
