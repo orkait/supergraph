@@ -18,7 +18,7 @@ from superclaw.guards import (
     tool_failure_hint,
     tool_failure_stop_answer,
 )
-from superclaw.policy import Action, Policy
+from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.runtime import Completion, Message, Provider, ToolCall, estimate_tokens
 from superclaw.session import SessionStore
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
@@ -120,11 +120,15 @@ class _Run:
         if tool is None:
             return False, f"unknown tool {name!r}"
         decision = self.o.policy.evaluate(tool, args)
+        self.ctx.state["approval"] = {"escalated": decision.escalated, "network": decision.network}
         if decision.action == Action.ALLOW:
             return True, decision.reason
         if decision.action == Action.DENY:
             return False, decision.reason
-        request = {"tool": name, "args": args, "reason": decision.reason, "risk": decision.risk.level, "categories": decision.risk.categories}
+        prefix = args.get("prefix_rule") or []
+        prefix_error = validate_prefix(prefix, str(args.get("command") or "")) if prefix else "no prefix_rule offered"
+        request = {"tool": name, "args": args, "reason": decision.reason, "risk": decision.risk.level,
+                   "categories": decision.risk.categories, "prefix": prefix if not prefix_error else []}
         self.emit({"type": "permission_request", **request})
         if self.o.on_permission is None:
             return False, f"no interactive approver; {decision.reason}"
@@ -132,7 +136,11 @@ class _Run:
         self.emit({"type": "permission_decision", "tool": name, "decision": choice})
         if choice == "allow_session":
             self.o.policy.grant_session(name)
-        if choice in ("allow", "allow_session"):
+        if choice == "allow_prefix":
+            if prefix_error:
+                return False, f"prefix not remembered: {prefix_error}"
+            self.o.policy.grant_prefix(prefix)
+        if choice in ("allow", "allow_session", "allow_prefix"):
             return True, "approved"
         return False, "approval declined"
 

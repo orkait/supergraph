@@ -1,6 +1,6 @@
 import pytest
 
-from superclaw.policy import Action, Mode, Policy, classify_command
+from superclaw.policy import Action, Mode, Policy, classify_command, validate_prefix
 from superclaw.tools import Permission, Registry, Safety, SideEffect, Tool
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
@@ -37,8 +37,27 @@ def reg():
     return reg
 
 
-def by_mode(reg, ws, tool, args):
-    return {m.value: Policy(ws, m).evaluate(reg.get(tool), args).action for m in Mode}
+def by_mode(reg, ws, tool, args, sandboxed=True):
+    return {m.value: Policy(ws, m, sandboxed=sandboxed).evaluate(reg.get(tool), args).action for m in Mode}
+
+
+def test_escalation_and_missing_sandbox_always_prompt(reg, tmp_path):
+    escalated = {"command": "ls", "sandbox_permissions": "require_escalated", "justification": "need host state"}
+    assert by_mode(reg, tmp_path, "bash", escalated)["auto"] == Action.PROMPT
+    assert Policy(tmp_path, Mode.AUTO, sandboxed=True).evaluate(reg.get("bash"), {"command": "ls", "sandbox_permissions": "require_escalated"}).action == Action.DENY
+    no_backend = by_mode(reg, tmp_path, "bash", {"command": "ls"}, sandboxed=False)
+    assert (no_backend["auto"], no_backend["unsafe"]) == (Action.PROMPT, Action.ALLOW)
+    d = Policy(tmp_path, Mode.AUTO, sandboxed=True).evaluate(reg.get("bash"), {"command": "curl x", "additional_permissions": {"network": True}})
+    assert (d.action, d.network, d.escalated) == (Action.PROMPT, True, False)
+
+
+def test_prefix_rules_that_cannot_be_remembered():
+    assert validate_prefix(["git", "pull"], "git pull origin main") == ""
+    assert "too broad" in validate_prefix(["rm", "-rf"], "rm -rf x")
+    assert "too broad" in validate_prefix(["python3"], "python3 x.py")
+    assert "single-token" in validate_prefix(["make"], "make test")
+    assert "heredoc" in validate_prefix(["cat", "-n"], "cat -n <<EOF\nx\nEOF")
+    assert "match the start" in validate_prefix(["git", "push"], "git pull")
 
 
 def test_classify_command_categories():

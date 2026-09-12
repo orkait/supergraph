@@ -1,5 +1,6 @@
 import pytest
 
+from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.skills import Skill, load_skills
 from superclaw.tools import Registry, ToolContext
 from superclaw.tools.ask import AskUser, NON_INTERACTIVE_MESSAGE
@@ -41,6 +42,23 @@ class TestBash:
         res = Bash().run({"command": "sleep 5", "timeout_ms": 200}, ctx)
         assert not res.ok
         assert "timed out" in res.output
+
+    @pytest.mark.skipif(detect() is None, reason="bwrap not installed")
+    def test_sandbox_blocks_network_and_outside_writes_but_allows_workspace(self, ctx, tmp_path):
+        tool = Bash(detect())
+        assert tool.run({"command": "echo in > made.txt && cat made.txt"}, ctx).output == "in"
+        assert not tool.run({"command": "touch /etc/superclaw-probe"}, ctx).ok
+        assert not tool.run({"command": "curl -sm2 https://example.com"}, ctx).ok
+        assert tool.run({"command": "ls ~/.ssh 2>/dev/null | wc -l"}, ctx).output == "0"
+        ctx.state["approval"] = {"escalated": True, "network": False}
+        assert tool.run({"command": "test -w /tmp && echo host"}, ctx).output == "host"
+
+    def test_wrap_argv_shape(self, tmp_path):
+        argv = Bubblewrap().wrap(["bash", "-c", "x"], tmp_path, tmp_path, Grant(network=True, paths=["/opt/extra"]))
+        assert argv[0] == "bwrap" and argv[-3:] == ["bash", "-c", "x"]
+        assert "--unshare-net" not in argv
+        assert argv[argv.index("--bind") + 1] == str(tmp_path)
+        assert "/opt/extra" in argv
 
 
 class TestUpdatePlan:

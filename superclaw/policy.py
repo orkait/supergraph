@@ -33,6 +33,8 @@ class Decision:
     action: Action
     reason: str
     risk: Risk
+    escalated: bool = False
+    network: bool = False
 
 
 @dataclass
@@ -185,10 +187,30 @@ def classify_command(command: str) -> Classification:
     return Classification([c for c in ("interactive", "destructive", "network") if c in cats], segments)
 
 
+_UNGRANTABLE = {"rm", "sudo", "doas", "su", "bash", "sh", "zsh", "fish", "node", "perl", "ruby", "eval", "exec", "xargs", "env"}
+
+
+def validate_prefix(prefix: list[str], command: str) -> str:
+    if not prefix or any(not isinstance(p, str) or not p for p in prefix):
+        return "prefix_rule must be a non-empty list of tokens"
+    head = Path(prefix[0]).name
+    if head in _UNGRANTABLE or head.startswith("python"):
+        return f"a prefix starting with {head!r} is too broad to remember"
+    if len(prefix) == 1:
+        return "a single-token prefix is too broad to remember"
+    if "<<" in command:
+        return "commands with a heredoc cannot be remembered by prefix"
+    segments = _segments(_tokens(command))
+    if not segments or _strip_prefix(segments[0])[0][:len(prefix)] != prefix:
+        return "prefix_rule must match the start of the command"
+    return ""
+
+
 class Policy:
-    def __init__(self, workspace: Path, mode: Mode = Mode.ASK) -> None:
+    def __init__(self, workspace: Path, mode: Mode = Mode.ASK, sandboxed: bool = False) -> None:
         self.workspace = Path(workspace)
         self.mode = mode
+        self.sandboxed = sandboxed
         self._session_grants: set[str] = set()
         self._prefix_grants: list[list[str]] = []
 
@@ -196,8 +218,7 @@ class Policy:
         self._session_grants.add(tool_name)
 
     def grant_prefix(self, prefix: list[str]) -> None:
-        if prefix:
-            self._prefix_grants.append(list(prefix))
+        self._prefix_grants.append(list(prefix))
 
     def visible(self, tool: Tool) -> bool:
         if tool.safety.permission == Permission.DENY:
@@ -221,25 +242,50 @@ class Policy:
                     return str(e)
         return ""
 
-    def _evaluate_shell(self, tool: Tool, command: str) -> Decision:
+    def _evaluate_shell(self, tool: Tool, args: dict[str, Any]) -> Decision:
+        command = str(args.get("command") or "")
         cls = classify_command(command)
         if "interactive" in cls.categories:
             return Decision(Action.DENY, "interactive programs hang the agent; use a non-interactive form", Risk("high", cls.categories))
-        level = "critical" if "destructive" in cls.categories else "high" if "network" in cls.categories else "medium"
-        risk = Risk(level, ["shell", *cls.categories])
+        extra = args.get("additional_permissions") or {}
+        escalated = args.get("sandbox_permissions") == "require_escalated" or not self.sandboxed
+        network = "network" in cls.categories or bool(extra.get("network"))
+        categories = ["shell", *cls.categories]
+        outside = [p for p in extra.get("paths") or [] if not self._inside(p)]
+        if outside:
+            categories.append("out_of_workspace")
+        level = "critical" if "destructive" in cls.categories else "high" if network or escalated or outside else "medium"
+        risk = Risk(level, categories)
+        grant = dict(escalated=escalated, network=network)
         if self._prefix_covers(cls.segments):
-            return Decision(Action.ALLOW, "approved command prefix", risk)
+            return Decision(Action.ALLOW, "approved command prefix", risk, **grant)
         if self.mode == Mode.UNSAFE:
-            return Decision(Action.ALLOW, "unsafe mode", risk)
+            return Decision(Action.ALLOW, "unsafe mode", risk, **grant)
+        if args.get("sandbox_permissions") == "require_escalated":
+            why = str(args.get("justification") or "").strip()
+            if not why:
+                return Decision(Action.DENY, "require_escalated needs a justification", risk)
+            return Decision(Action.PROMPT, f"runs outside the sandbox: {why}", risk, **grant)
         if "destructive" in cls.categories:
-            return Decision(Action.PROMPT, "destructive shell command requires approval", risk)
-        if "network" in cls.categories:
-            return Decision(Action.PROMPT, "network access requires approval", risk)
+            return Decision(Action.PROMPT, "destructive shell command requires approval", risk, **grant)
+        if outside:
+            return Decision(Action.PROMPT, f"write access outside the workspace: {', '.join(outside)}", risk, **grant)
+        if network:
+            return Decision(Action.PROMPT, "network access requires approval", risk, **grant)
         if tool.name in self._session_grants:
-            return Decision(Action.ALLOW, "session grant", risk)
+            return Decision(Action.ALLOW, "session grant", risk, **grant)
+        if self.mode == Mode.AUTO and self.sandboxed:
+            return Decision(Action.ALLOW, "sandboxed workspace shell auto-allowed", risk, **grant)
         if self.mode == Mode.AUTO:
-            return Decision(Action.ALLOW, "workspace shell auto-allowed", risk)
-        return Decision(Action.PROMPT, tool.safety.reason, risk)
+            return Decision(Action.PROMPT, "no sandbox backend; approve to run unsandboxed", risk, **grant)
+        return Decision(Action.PROMPT, tool.safety.reason, risk, **grant)
+
+    def _inside(self, path: str) -> bool:
+        try:
+            jail(self.workspace, path)
+        except PathEscapes:
+            return False
+        return True
 
     def evaluate(self, tool: Tool, args: dict[str, Any]) -> Decision:
         safety = tool.safety
@@ -254,7 +300,7 @@ class Policy:
         if self.mode == Mode.PLAN:
             return Decision(Action.DENY, "plan mode is read-only", risk)
         if se == SideEffect.SHELL:
-            return self._evaluate_shell(tool, str(args.get("command") or ""))
+            return self._evaluate_shell(tool, args)
         if self.mode == Mode.UNSAFE:
             return Decision(Action.ALLOW, "unsafe mode", risk)
         if tool.name in self._session_grants:

@@ -30,7 +30,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Capability | How |
 |---|---|
 | Edits code | `read_file` `write_file` `edit_file` `list_directory` `glob` `grep`, all jailed to the workspace |
-| Runs commands | `bash`, with destructive and network commands classified and gated |
+| Runs commands | `bash` inside a `bubblewrap` sandbox: read-only root, writable workspace and `/tmp`, no network, `~/.ssh` `~/.aws` `~/.gnupg` masked; destructive and network commands classified and gated; `require_escalated` with a `justification` runs on the host after approval |
 | Plans | `update_plan`, persisted per session and restored on resume |
 | Remembers | `memory_search` `memory_note` over the graph, plus automatic recall into every run |
 | Loads skills lazily | `SKILL.md` files listed by name and description only; the body loads on `skill` |
@@ -49,7 +49,7 @@ The system prompt is 541 tokens (838 with the confirmation policy).
 | `plan` | allow | hidden | hidden | hidden |
 | `unsafe` | allow | allow | allow | allow |
 
-Anything outside the workspace is denied in every mode. Interactive programs (`vim`, `less`, `top`, a bare REPL, `git rebase -i`) are denied because they hang the agent. Headless `exec` has no approver, so a prompt is a denial there; use `--mode auto` or a session grant.
+Anything outside the workspace is denied in every mode. Interactive programs (`vim`, `less`, `top`, a bare REPL, `git rebase -i`) are denied because they hang the agent. Headless `exec` has no approver, so a prompt is a denial there; use `--mode auto` or a session grant. Without `bwrap` on the host, `auto` shell degrades to a prompt rather than running unsandboxed. An approval can be remembered as a command prefix (`p` in the TUI) when the model offered a narrow `prefix_rule`; prefixes for `rm`, `sudo`, interpreters, single tokens and heredoc commands are never remembered.
 
 ## 🧠 supergraph as the substrate
 
@@ -137,7 +137,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 
 | Limitation | Detail |
 |---|---|
-| No OS sandbox | the path jail resolves symlinks and refuses escapes, but there is a check-to-use window; treat `unsafe` and `auto` as trusting the workspace |
+| Linux-only sandbox | `bubblewrap` covers `bash`; file tools rely on the path jail, which resolves symlinks but has a check-to-use window. No macOS Seatbelt yet, and network approval is all-or-nothing rather than a domain allowlist |
 | No streaming | completions are collected whole, so text appears per turn rather than per token |
 | No MCP, no hooks, no LSP | extension points only |
 | Substrate gaps | no spend ceiling in `IngestConfig`, no `__origin__` on facts, no `__invalid_at__` window on beliefs |

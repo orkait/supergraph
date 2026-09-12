@@ -21,6 +21,7 @@ class PermissionScreen(ModalScreen[str]):
     BINDINGS = [
         ("a", "choose('allow')", "Allow once"),
         ("s", "choose('allow_session')", "Allow for session"),
+        ("p", "choose('allow_prefix')", "Remember prefix"),
         ("d", "choose('deny')", "Deny"),
         ("escape", "choose('deny')", "Deny"),
     ]
@@ -31,6 +32,7 @@ class PermissionScreen(ModalScreen[str]):
 
     def compose(self) -> ComposeResult:
         args = json.dumps(self.request["args"], indent=1)
+        prefix = self.request.get("prefix") or []
         with Vertical(id="dialog"):
             yield Label(f"Permission: {self.request['tool']}", classes="title")
             yield Static(args[:1200] + ("…" if len(args) > 1200 else ""), classes="args")
@@ -38,13 +40,17 @@ class PermissionScreen(ModalScreen[str]):
             with Horizontal(classes="buttons"):
                 yield Button("Allow once (a)", id="allow", variant="primary")
                 yield Button("Allow for session (s)", id="allow_session")
+                if prefix:
+                    yield Button(f"Remember `{' '.join(prefix)}` (p)", id="allow_prefix")
                 yield Button("Deny (d)", id="deny", variant="error")
+
+    def action_choose(self, choice: str) -> None:
+        if choice == "allow_prefix" and not self.request.get("prefix"):
+            return
+        self.dismiss(choice)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id)
-
-    def action_choose(self, choice: str) -> None:
-        self.dismiss(choice)
 
 
 class QuestionScreen(ModalScreen[str]):
