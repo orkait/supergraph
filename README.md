@@ -5,7 +5,7 @@
 **A memory database for AI agents**
 
 [![CI](https://github.com/orkait/supergraph/actions/workflows/ci.yml/badge.svg)](https://github.com/orkait/supergraph/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/supergraph?color=f59e0b&logo=pypi&logoColor=white)](https://pypi.org/project/supergraph/)
+[![Package](https://img.shields.io/badge/pip-supergraphdb-f59e0b?logo=pypi&logoColor=white)](https://pypi.org/project/supergraphdb/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-ea580c?logo=gnu&logoColor=white)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-website%2Fdocs-f59e0b?logo=readthedocs&logoColor=white)](website/docs/intro.md)
@@ -16,7 +16,7 @@
 
 An embedded memory database for AI agents. Facts get written with confidence scores, expire, get contradicted, decay by recency. Retrieval fuses vector similarity, BM25, graph structure, and recency in one call. Everything goes through a typed DSL. Runs in-process, persists to SQLite.
 
-Status: v0.6.0, alpha.
+Status: v0.7.0, alpha. Two parts: this substrate (`import supergraph`) and the [superclaw](superclaw/README.md) terminal agent that uses it as memory.
 
 ## 📦 Install
 
@@ -37,6 +37,7 @@ pip install 'supergraphdb[playground]'   # FastAPI web UI
 pip install 'supergraphdb[gpu]'          # onnxruntime-gpu, Linux x86_64, CUDA 12
 pip install 'supergraphdb[mcp]'          # Model Context Protocol server (supergraph-mcp)
 pip install 'supergraphdb[pro]'          # one-shot agentic memory bundle (see Pro mode below)
+pip install 'supergraphdb[superclaw]'    # the superclaw terminal coding agent (TUI + headless exec)
 ```
 
 Full extras matrix: [Installation](website/docs/installation.md).
