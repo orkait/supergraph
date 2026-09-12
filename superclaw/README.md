@@ -37,7 +37,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Loads skills lazily | `SKILL.md` files listed by name and description only; the body loads on `skill` |
 | Asks | `ask_user` with options and a recommended default |
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
-| Fits the window | proactive compaction at 70% of the context window, summarising the oldest middle and keeping the plan verbatim |
+| Fits the window | proactive compaction at 70% of the context window: the summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary |
 
 The system prompt is 541 tokens (838 with the confirmation policy).
 

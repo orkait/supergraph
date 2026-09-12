@@ -1,23 +1,36 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Callable
 
 from superclaw.runtime import Message
 
 SUMMARY_LABEL = "[Summary of earlier conversation]"
+RESUME_NOTE = "Continue from here. Do not acknowledge this summary or restart finished work; the last user message is the current request."
+PRESERVED_LABEL = "## Preserved state (carried across compaction)"
 TRIGGER_RATIO = 0.7
 DEFAULT_PRESERVE_LAST = 6
 TOOL_RESULT_CLAMP = 2000
 TOOL_ARGS_CLAMP = 500
+USER_WORD_BUDGET = 256
+ASSISTANT_WORD_BUDGET = 200
+TOOL_CALLS_PER_TURN = 8
+TOOL_ARG_BYTES = 120
+ERROR_BYTES = 150
+RESULT_BYTES = 1200
+PREVIOUS_SUMMARY_BYTES = 16 * 1024
+BRIEF_MAX_BYTES = 24 * 1024
+_WORD = re.compile(r"\S+")
 
 SUMMARY_INSTRUCTIONS = (
-    "You are compacting a coding-assistant conversation to save context. "
-    "Write a dense, factual summary of the conversation so far. Preserve: the user's goals and explicit constraints; "
-    "decisions made and why; files created or modified (with paths) and key code changes; commands run and their important "
-    "results; and anything still in progress or unresolved. Omit pleasantries. Use terse bullet points. Do not invent details. "
-    "If the conversation already begins with an earlier summary block, treat its facts as established context and carry them "
-    "forward into the new summary; never drop earlier information."
+    "You are compacting a coding-assistant conversation to save context. Write a dense, factual summary in exactly these nine sections, "
+    "each as a heading followed by terse bullets:\n"
+    "1. Task and goals\n2. User messages, every one, quoted verbatim in order\n3. Decisions made and why\n"
+    "4. Files created or modified, with paths\n5. Commands run and their important results\n6. Errors hit and how they were resolved\n"
+    "7. Constraints and security rules stated by the user or the system, verbatim\n8. Open items and unresolved questions\n9. The next concrete step\n"
+    "Do not invent details. If the brief begins with [previous summary], treat its facts as established and carry every one of them forward."
 )
 
 
@@ -38,6 +51,21 @@ def _clamp(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + f"… [{len(text) - limit} more chars]"
 
 
+def _words(text: str, budget: int) -> str:
+    words = _WORD.findall(text)
+    if len(words) <= budget:
+        return text.strip()
+    return " ".join(words[:budget]) + f" … [{len(words) - budget} more words]"
+
+
+def _first_line(text: str) -> str:
+    return text.strip().split("\n", 1)[0]
+
+
+def _call_line(name: str, arguments: str) -> str:
+    return f"* {name}({_clamp(arguments, TOOL_ARG_BYTES)})"
+
+
 def render_transcript(messages: list[Message]) -> str:
     lines = []
     for m in messages:
@@ -51,12 +79,80 @@ def render_transcript(messages: list[Message]) -> str:
     return "\n".join(lines)
 
 
+def _tool_names(messages: list[Message]) -> dict[str, str]:
+    return {c.id: c.name for m in messages for c in m.tool_calls}
+
+
+def project(messages: list[Message]) -> str:
+    names = _tool_names(messages)
+    sections: list[str] = []
+    previous = ""
+    for index, m in enumerate(messages):
+        if m.role == "user":
+            content = m.content.split(PRESERVED_LABEL, 1)[0].strip()
+            if content.startswith(SUMMARY_LABEL):
+                previous = _clamp(content[len(SUMMARY_LABEL):].replace(RESUME_NOTE, "").strip(), PREVIOUS_SUMMARY_BYTES)
+                continue
+            if content:
+                sections.append(f"[user #{index}]\n{_words(content, USER_WORD_BUDGET)}")
+        elif m.role == "assistant":
+            lines = []
+            if m.content.strip():
+                lines.append(_words(m.content, ASSISTANT_WORD_BUDGET))
+            calls = m.tool_calls[-TOOL_CALLS_PER_TURN:]
+            if len(m.tool_calls) > len(calls):
+                lines.append(f"* ({len(m.tool_calls) - len(calls)} earlier tool calls omitted)")
+            lines += [_call_line(c.name, c.arguments) for c in calls]
+            if lines:
+                sections.append(f"[assistant #{index}]\n" + "\n".join(lines))
+        elif m.role == "tool":
+            name = names.get(m.tool_call_id, "tool")
+            if m.is_error:
+                sections.append(f"[tool_error #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}")
+            elif name == "ask_user":
+                sections.append(f"[user_answer #{index}]\n{_clamp(m.content, RESULT_BYTES)}")
+            elif name in ("write_file", "edit_file"):
+                sections.append(f"[tool_result #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}")
+    brief = "\n\n".join(sections)
+    if len(brief) > BRIEF_MAX_BYTES:
+        marker = "\n\n...[middle omitted to fit the compaction budget]...\n\n"
+        head = (BRIEF_MAX_BYTES - len(marker)) * 2 // 5
+        tail = BRIEF_MAX_BYTES - len(marker) - head
+        brief = brief[:head] + marker + brief[-tail:]
+    if previous:
+        brief = f"[previous summary]\n{previous}\n\n{brief}"
+    return brief.strip()
+
+
+def preserved_state(middle: list[Message], plan_text: str) -> str:
+    skills: list[str] = []
+    edits: list[str] = []
+    for m in middle:
+        for c in m.tool_calls:
+            try:
+                args = json.loads(c.arguments or "{}")
+            except ValueError:
+                continue
+            if c.name == "skill" and args.get("name"):
+                skills.append(str(args["name"]))
+            if c.name in ("write_file", "edit_file") and args.get("path"):
+                edits.append(str(args["path"]))
+    parts = []
+    if plan_text:
+        parts.append(plan_text)
+    if skills:
+        parts.append("Skills loaded: " + ", ".join(dict.fromkeys(skills)))
+    if edits:
+        parts.append("Files edited: " + ", ".join(list(dict.fromkeys(edits))[-20:]))
+    return f"{PRESERVED_LABEL}\n" + "\n".join(parts) if parts else ""
+
+
 def compact(
     messages: list[Message],
     *,
     preserve_last: int = DEFAULT_PRESERVE_LAST,
-    summarize: Callable[[list[Message]], str],
-    preserved_state: str = "",
+    summarize: Callable[[str], str],
+    plan_text: str = "",
 ) -> CompactionResult:
     if preserve_last <= 0:
         preserve_last = DEFAULT_PRESERVE_LAST
@@ -69,15 +165,10 @@ def compact(
     middle = messages[system_end:boundary]
     if not middle:
         return CompactionResult(messages=list(messages), preserved=len(messages))
-    summary = summarize(middle).strip()
+    summary = summarize(project(middle)).strip()
     content = f"{SUMMARY_LABEL}\n{summary}"
-    if preserved_state:
-        content += f"\n\n{preserved_state}"
+    if state := preserved_state(middle, plan_text):
+        content += f"\n\n{state}"
+    content += f"\n\n{RESUME_NOTE}"
     compacted = [*messages[:system_end], Message(role="user", content=content), *messages[boundary:]]
-    return CompactionResult(
-        messages=compacted,
-        removed=len(middle),
-        preserved=len(messages) - len(middle),
-        summary=summary,
-        compacted=True,
-    )
+    return CompactionResult(messages=compacted, removed=len(middle), preserved=len(messages) - len(middle), summary=summary, compacted=True)
