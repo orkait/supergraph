@@ -103,11 +103,13 @@ playground = [
     "pydantic>=2.0",
 ]
 # MCP server: expose supergraph as agent-callable tools over the Model
-# Context Protocol. Required for tools/mcp/supergraph_mcp.py (used by
-# Claude Desktop, Cursor, and other MCP-aware clients). The server runs
-# in-process by default - no playground HTTP server needed.
+# Context Protocol. Required by the `supergraph-mcp` console script (used by
+# Claude Desktop, Cursor, and other MCP-aware clients; see tools/mcp/). The
+# server runs in-process by default - no playground HTTP server needed.
 mcp = [
-    "mcp>=1.0",
+    # mcp 2.x renamed FastMCP to MCPServer and changed the decorator API, so
+    # server.py fails at import against it. Unpin once migrated.
+    "mcp>=1.0,<2",
 ]
 # Cloud NL->DSL ingestion: multi-provider LLM transport via litellm. Powers
 # CloudIngestor (supergraph.ingest.llm) and gs.ingest_nl / ingest_nl_stream.

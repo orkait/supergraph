@@ -5112,6 +5112,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
+    { name = "ruff" },
     { name = "tokenizers" },
 ]
 embedders-extra = [
@@ -5188,7 +5189,7 @@ requires-dist = [
     { name = "llama-cpp-python", marker = "extra == 'embedders-extra'", specifier = ">=0.3" },
     { name = "llama-cpp-python", extras = ["server"], marker = "extra == 'vision'", specifier = ">=0.3" },
     { name = "markitdown", marker = "extra == 'ingest'", specifier = ">=0.1" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0,<2" },
     { name = "model2vec", specifier = ">=0.4" },
     { name = "msgspec", specifier = ">=0.18" },
     { name = "numpy", specifier = ">=1.24" },
@@ -5206,6 +5207,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.4" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.8" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "supergraph", extras = ["audio"], marker = "extra == 'pro'" },
     { name = "supergraph", extras = ["cloud"], marker = "extra == 'all'" },
