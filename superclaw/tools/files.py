@@ -4,6 +4,7 @@ import re
 from pathlib import Path, PurePath
 from typing import Any
 
+from superclaw.settings import LIMITS
 from superclaw.tools import (
     Permission,
     Result,
@@ -16,8 +17,6 @@ from superclaw.tools import (
 )
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
-MAX_READ_BYTES = 256 * 1024
-MAX_ENTRIES = 500
 
 
 def _read(side_effect_reason: str) -> Safety:
@@ -67,8 +66,8 @@ class ReadFile(Tool):
             return Result.error(f"Error: {args['path']} is a directory; use list_directory")
         data = target.read_bytes()
         ctx.files.record(target, data)
-        truncated = len(data) > MAX_READ_BYTES
-        text = data[:MAX_READ_BYTES].decode("utf-8", errors="replace")
+        truncated = len(data) > LIMITS.read_file_bytes
+        text = data[:LIMITS.read_file_bytes].decode("utf-8", errors="replace")
         lines = text.split("\n")
         if lines and lines[-1] == "":
             lines.pop()
@@ -78,7 +77,7 @@ class ReadFile(Tool):
         window = lines[start - 1:end]
         out = "\n".join(f"{start + i}→{line}" for i, line in enumerate(window))
         if truncated:
-            out += f"\n[... file truncated at {MAX_READ_BYTES} bytes ...]"
+            out += f"\n[... file truncated at {LIMITS.read_file_bytes} bytes ...]"
         return Result.success(out, truncated=truncated)
 
 
@@ -163,7 +162,7 @@ class ListDirectory(Tool):
         "properties": {
             "path": {"type": "string", "description": "Directory to list. Defaults to workspace root.", "default": "."},
             "recursive": {"type": "boolean", "description": "Whether to list recursively.", "default": False},
-            "max_depth": {"type": "integer", "description": "Maximum recursion depth when recursive is true.", "default": 2, "minimum": 1, "maximum": 5},
+            "max_depth": {"type": "integer", "description": "Maximum recursion depth when recursive is true.", "default": LIMITS.list_directory_depth, "minimum": 1, "maximum": LIMITS.list_directory_max_depth},
         },
         "additionalProperties": False,
     }
@@ -173,16 +172,16 @@ class ListDirectory(Tool):
         base = jail(ctx.workspace, args.get("path") or ".")
         if not base.is_dir():
             return Result.error(f"Error: not a directory: {args.get('path') or '.'}")
-        depth = int(args.get("max_depth") or 2) if args.get("recursive") else 1
+        depth = int(args.get("max_depth") or LIMITS.list_directory_depth) if args.get("recursive") else 1
         rows = []
         for entry in _walk(base, depth):
             rel = entry.relative_to(base).as_posix()
             rows.append(rel + "/" if entry.is_dir() else rel)
         rows.sort()
-        truncated = len(rows) > MAX_ENTRIES
-        out = "\n".join(rows[:MAX_ENTRIES])
+        truncated = len(rows) > LIMITS.list_directory_entries
+        out = "\n".join(rows[:LIMITS.list_directory_entries])
         if truncated:
-            out += f"\n[... {len(rows) - MAX_ENTRIES} more entries ...]"
+            out += f"\n[... {len(rows) - LIMITS.list_directory_entries} more entries ...]"
         return Result.success(out or "(empty)", truncated=truncated)
 
 
@@ -195,7 +194,7 @@ class Glob(Tool):
         "properties": {
             "pattern": {"type": "string", "description": 'Glob pattern, for example "**/*.py".'},
             "cwd": {"type": "string", "description": "Directory to scan. Defaults to workspace root.", "default": "."},
-            "limit": {"type": "integer", "description": "Maximum matches to return.", "default": 100, "minimum": 1, "maximum": 1000},
+            "limit": {"type": "integer", "description": "Maximum matches to return.", "default": LIMITS.glob_limit, "minimum": 1, "maximum": LIMITS.glob_max_limit},
             "include_dirs": {"type": "boolean", "description": "Whether directory matches should be included.", "default": False},
         },
         "required": ["pattern"],
@@ -205,7 +204,7 @@ class Glob(Tool):
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         base = jail(ctx.workspace, args.get("cwd") or ".")
-        limit = int(args.get("limit") or 100)
+        limit = int(args.get("limit") or LIMITS.glob_limit)
         rows = []
         for match in sorted(base.glob(args["pattern"])):
             if any(part in IGNORED_DIRS for part in match.relative_to(base).parts):
@@ -231,7 +230,7 @@ class Grep(Tool):
             "glob": {"type": "string", "description": 'File-name filter such as "*.py".'},
             "output_mode": {"type": "string", "enum": ["content", "files_with_matches", "count"], "default": "content"},
             "case_insensitive": {"type": "boolean", "default": False},
-            "head_limit": {"type": "integer", "default": 50},
+            "head_limit": {"type": "integer", "default": LIMITS.grep_head_limit},
         },
         "required": ["pattern"],
         "additionalProperties": False,
@@ -245,7 +244,7 @@ class Grep(Tool):
         except re.error as e:
             return Result.error(f"Error: invalid regex: {e}")
         mode = args.get("output_mode") or "content"
-        head = int(args.get("head_limit") or 50)
+        head = int(args.get("head_limit") or LIMITS.grep_head_limit)
         root = Path(ctx.workspace).resolve()
         rows: list[str] = []
         truncated = False

@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from superclaw.settings import LIMITS
+
 EVENTS = ("sessionStart", "beforeTool", "afterTool", "stop")
-BLOCK_EXIT_CODE = 2
-DEFAULT_TIMEOUT_S = 60
 
 
 @dataclass(frozen=True)
@@ -18,7 +18,7 @@ class Hook:
     event: str
     command: list[str]
     matcher: str = ""
-    timeout_s: int = DEFAULT_TIMEOUT_S
+    timeout_s: int = LIMITS.hook_timeout_s
 
 
 @dataclass
@@ -48,7 +48,7 @@ def _parse(path: Path) -> list[Hook]:
         hooks.append(Hook(
             id=str(raw.get("id") or f"{raw['event']}:{command[0]}"), event=str(raw["event"]),
             command=[str(c) for c in command], matcher=str(raw.get("matcher") or ""),
-            timeout_s=int(raw.get("timeout_s") or DEFAULT_TIMEOUT_S),
+            timeout_s=int(raw.get("timeout_s") or LIMITS.hook_timeout_s),
         ))
     return hooks
 
@@ -91,13 +91,13 @@ class Dispatcher:
                         outcome.context.append(str(body["additionalContext"]))
                 except ValueError:
                     outcome.errors.append(f"{hook.id}: stdout is not JSON")
-            if proc.returncode == BLOCK_EXIT_CODE and event in ("beforeTool", "stop"):
+            if proc.returncode == LIMITS.hook_block_exit_code and event in ("beforeTool", "stop"):
                 outcome.blocked = True
                 outcome.blocked_by = hook.id
                 reason = proc.stderr.decode("utf-8", errors="replace").strip()
                 if reason:
                     outcome.context.append(reason)
                 return outcome
-            if proc.returncode not in (0, BLOCK_EXIT_CODE):
-                outcome.errors.append(f"{hook.id}: exit {proc.returncode}: {proc.stderr.decode('utf-8', errors='replace').strip()[:200]}")
+            if proc.returncode not in (0, LIMITS.hook_block_exit_code):
+                outcome.errors.append(f"{hook.id}: exit {proc.returncode}: {proc.stderr.decode('utf-8', errors='replace').strip()[:LIMITS.hook_error_chars]}")
         return outcome

@@ -10,12 +10,13 @@ from supergraph.core.errors import SuperGraphError
 
 from superclaw.compaction import SUMMARY_LABEL
 from superclaw.runtime import Message, ToolCall
+from superclaw.settings import LIMITS
 
 NAMESPACE = "superclaw"
 
 
 def prompt_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
 
 
 def _lit(value: Any) -> str:
@@ -30,7 +31,7 @@ class SessionStore:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def create(self, *, cwd: str, model: str, title: str = "", parent: str = "") -> str:
-        sid = f"s_{time.strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(3)}"
+        sid = f"s_{time.strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(LIMITS.session_id_bytes)}"
         self._x(
             f'CREATE NODE {_lit("session:" + sid)} kind = "session" sid = {_lit(sid)} cwd = {_lit(cwd)} '
             f'model = {_lit(model)} title = {_lit(title)} parent = {_lit(parent)} '
@@ -52,7 +53,7 @@ class SessionStore:
         }
 
     def recent(self) -> list[dict[str, Any]]:
-        rows = self._x('NODES WHERE kind = "session" LIMIT 1000').data or []
+        rows = self._x(f'NODES WHERE kind = "session" LIMIT {LIMITS.session_list_limit}').data or []
         rows.sort(key=lambda r: (r.get("created", 0), r.get("sid", "")), reverse=True)
         return [
             {"id": r["sid"], "cwd": r.get("cwd", ""), "model": r.get("model", ""), "title": r.get("title", ""),
@@ -69,7 +70,7 @@ class SessionStore:
         if meta is None:
             raise KeyError(f"unknown session {sid}")
         seq = int(meta["event_count"]) + 1
-        node = f"ev:{sid}:{seq:06d}"
+        node = f"ev:{sid}:{seq:0{LIMITS.event_seq_digits}d}"
         self._x(
             f'CREATE NODE {_lit(node)} kind = "event" sid = {_lit(sid)} seq = {seq} etype = {_lit(etype)} '
             f'DOCUMENT {_lit(json.dumps(payload))}'
@@ -79,7 +80,7 @@ class SessionStore:
         return seq
 
     def events(self, sid: str) -> list[dict[str, Any]]:
-        rows = self._x(f'NODES WHERE kind = "event" AND sid = {_lit(sid)} ORDER BY seq ASC LIMIT 100000').data or []
+        rows = self._x(f'NODES WHERE kind = "event" AND sid = {_lit(sid)} ORDER BY seq ASC LIMIT {LIMITS.session_events_limit}').data or []
         out = []
         for r in rows:
             doc = self._x(f'NODE {_lit(r["id"])} WITH DOCUMENT').data.get("_document") or "{}"
