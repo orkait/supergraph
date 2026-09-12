@@ -51,7 +51,7 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
             print(line, file=sys.stderr)
 
     emit({"type": "run_start", "sessionId": sid, "cwd": str(rt.workspace), "model": rt.model, "mode": rt.mode.value})
-    res = run_once(rt, prompt, sid, on_event=emit, require_completion=args.require_completion)
+    res = run_once(rt, prompt, sid, on_event=emit, require_completion=args.require_completion or args.verify, verify=args.verify)
     status = "incomplete" if res.incomplete else "success"
     exit_code = 2 if res.incomplete else 0
     if stream:
@@ -98,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("prompt", help="the prompt, or - to read stdin")
     ex.add_argument("--output-format", choices=["text", "json", "stream-json"], default="text")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
+    ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
     sub.add_parser("sessions", help="list sessions")
     sub.add_parser("skills", help="list discovered skills")
     return parser

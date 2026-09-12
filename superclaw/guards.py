@@ -9,7 +9,11 @@ FAILURE_STOP_AT = 6
 STALE_TOOL_CALLS = 10
 TOOL_ONLY_REMINDER_AT = 6
 MAX_CONTINUE_NUDGES = 3
+IDENTICAL_CALL_AT = 3
+MAX_CALLS_PER_TURN = 42
 PLAN_TOOL = "update_plan"
+
+_PROMISES = ("i'll ", "i will ", "let me ", "next, ", "next steps", "next step", "now i'll ", "now let me ", "remaining:", "todo:")
 
 DROPPED_TOOL_CALL_NOTICE = (
     "Your previous tool call was malformed (it was missing a tool name or had invalid JSON arguments) and was not executed. "
@@ -84,6 +88,38 @@ def ends_with_continuation_cue(text: str) -> bool:
     return any(clause.startswith(cue) for cue in _CUES)
 
 
+def ends_with_promise(text: str) -> bool:
+    paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
+    if not paragraphs:
+        return False
+    last = paragraphs[-1].lower()
+    first_line = last.split("\n", 1)[0]
+    if first_line.startswith("let me know"):
+        return False
+    return any(first_line.startswith(p) for p in _PROMISES) or ends_with_continuation_cue(last)
+
+
+def promise_nudge() -> str:
+    return (
+        "Your last paragraph describes work still to do. Do that work now with tool calls instead of ending the turn; "
+        "if it is genuinely finished, state the result without a next-steps list."
+    )
+
+
+def identical_call_reminder(name: str, count: int) -> str:
+    return (
+        f"You have called `{name}` {count} times with identical input. Repeating the same call returns the same result; "
+        "change the arguments, use a different tool, or state what you found."
+    )
+
+
+def calls_per_turn_reminder(count: int) -> str:
+    return (
+        f"This turn issued {count} tool calls. Stop and summarise what you have learned before issuing more; "
+        "batch only independent read-only lookups."
+    )
+
+
 def error_signature(output: str) -> str:
     sig = output.strip().lower()
     sig = re.sub(r"(?:/[^\s/]+)+", "<path>", sig)
@@ -120,6 +156,14 @@ class Guards:
         self._failure_count = 0
         self._calls_since_plan = 0
         self._plan_reminded = False
+        self._identical: tuple[str, str] | None = None
+        self._identical_count = 0
+
+    def observe_identical(self, name: str, arguments: str) -> str | None:
+        key = (name, arguments)
+        self._identical_count = self._identical_count + 1 if key == self._identical else 1
+        self._identical = key
+        return identical_call_reminder(name, self._identical_count) if self._identical_count == IDENTICAL_CALL_AT else None
 
     def observe_turn(self, text: str, tool_calls: int) -> bool:
         if not text.strip() and tool_calls == 0:

@@ -35,7 +35,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Remembers | `memory_search` `memory_note` over the graph, plus automatic recall into every run |
 | Loads skills lazily | `SKILL.md` files listed by name and description only; the body loads on `skill` |
 | Asks | `ask_user` with options and a recommended default |
-| Stays honest | same-error streaks halt the run, empty turns are capped, a headless run is marked `incomplete` when plan items remain |
+| Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
 | Fits the window | proactive compaction at 70% of the context window, summarising the oldest middle and keeping the plan verbatim |
 
 The system prompt is 541 tokens (838 with the confirmation policy).
@@ -105,6 +105,7 @@ superclaw exec --output-format json "..."                         # one JSON obj
 superclaw exec --output-format stream-json "..."                  # JSONL events
 superclaw --resume latest exec "continue where you left off"
 superclaw exec --require-completion "..."                         # exit 2 while plan items remain
+superclaw exec --verify "..."                                     # plus a verifier call that refuses proxy signals
 echo "prompt on stdin" | superclaw exec -
 ```
 
@@ -130,7 +131,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 | Constraint | Consequence |
 |---|---|
 | Narrow prompts, not one preamble | the core prompt stays under 1k tokens; skills and guidelines load on demand or per project |
-| Completion must be able to fail | `--require-completion` refuses a no-tool answer while plan items are pending, nudges three times, then exits 2 |
+| Completion must be able to fail | `--require-completion` refuses a no-tool answer while plan items are pending; `--verify` adds a separate read-only model call that treats passing tests, a finished plan and visible effort as evidence only when they cover every requirement; three nudges, then exit 2 |
 | No sub-agents by default | there is no delegation tool; fan-out is an extension point, not a feature |
 
 ## ⚠️ Limitations

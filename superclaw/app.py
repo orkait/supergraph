@@ -119,11 +119,12 @@ def run_once(
     on_permission: Callable[[dict[str, Any]], str] | None = None,
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None,
     require_completion: bool = False,
+    verify: bool = False,
 ) -> Result:
     return run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
         system_prompt=system_prompt_for(rt, prompt), history=rt.store.replay(sid),
-        max_turns=rt.max_turns, context_window=rt.context_window, require_completion_signal=require_completion,
+        max_turns=rt.max_turns, context_window=rt.context_window, require_completion_signal=require_completion, verify=verify,
         on_event=on_event, on_permission=on_permission, on_ask_user=on_ask_user,
         session=rt.store, session_id=sid,
     ))
