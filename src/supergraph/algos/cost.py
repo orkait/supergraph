@@ -1,9 +1,3 @@
-"""Cost estimation for MATCH and TRAVERSE queries.
-
-Pure numeric simulation of frontier growth over sparse edge matrices.
-The caller supplies a callable that extracts an edge_type-aware matrix
-so this module stays free of supergraph-specific objects.
-"""
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
@@ -45,13 +39,6 @@ def estimate_match_cost(
     get_matrix: Callable[[Optional[str]], Any],
     threshold: float = DEFAULT_FRONTIER_THRESHOLD,
 ) -> CostEstimate:
-    """Frontier growth across a sequence of MATCH arrow hops.
-
-    Args:
-        edge_types: one per arrow; None = any edge type.
-        get_matrix: callable(edge_type_or_None) -> csr_matrix or None.
-        threshold: frontier cap; rejection triggers once crossed.
-    """
     frontier_size = 1.0
     hops: list = []
     for edge_type in edge_types:
@@ -84,7 +71,6 @@ def estimate_traverse_cost(
     matrix,
     threshold: float = DEFAULT_FRONTIER_THRESHOLD,
 ) -> CostEstimate:
-    """Frontier growth for a TRAVERSE query at the given depth."""
     if matrix is None:
         return CostEstimate(rejected=False, estimated_frontier=0.0)
     avg_degree = _avg_degree(matrix)

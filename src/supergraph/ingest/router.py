@@ -1,4 +1,3 @@
-"""Tiered ingestor routing: deterministic parsers first, VLM as fallback."""
 from pathlib import Path
 from supergraph.ingest.base import IngestResult
 
@@ -14,19 +13,14 @@ EXTENSION_MAP = {
     "gif": "markitdown", "webp": "markitdown",
 }
 
-# Formats only docling can handle - added when docling is installed
 _DOCLING_EXCLUSIVE = {
-    "tex": "docling",           # LaTeX
-    "adoc": "docling",          # AsciiDoc
-    "tif": "docling",           # TIFF images
+    "tex": "docling",
+    "adoc": "docling",
+    "tif": "docling",
     "tiff": "docling",
-    "bmp": "docling",           # BMP images
+    "bmp": "docling",
 }
 
-# Audio formats routed through the whisper ingestor when the `[audio]` extra
-# is installed. Added dynamically so users without the extra still get a
-# clear "Unsupported format" error (router default) rather than an
-# obscure faster-whisper ImportError at convert time.
 _AUDIO_EXTS = {
     "wav": "whisper",
     "mp3": "whisper",
@@ -55,15 +49,6 @@ _ingestor_cache = {}
 
 
 def _kwargs_cache_key(kwargs: dict) -> tuple:
-    """Produce a hashable, order-independent key from kwargs.
-
-    Used to distinguish cached ingestors with different configuration
-    (e.g., max_tokens=500 vs max_tokens=1000). Pre-fix, the cache keyed
-    by ingestor name only, so a second construction with different
-    kwargs silently returned the first instance with the ORIGINAL kwargs
-    still active (bug #59). Values must be hashable; non-hashable values
-    fall back to their repr.
-    """
     items = []
     for k in sorted(kwargs.keys()):
         v = kwargs[k]
@@ -117,25 +102,9 @@ def ingest_file(file_path: str, using: str | None = None, **kwargs) -> IngestRes
 
 
 def list_ingestors() -> list[dict]:
-    """Report available ingestors + their registered extensions.
-
-    Tier stack:
-      1. markitdown   (always, part of [ingest])
-      2. pymupdf4llm  (PDF-only, part of [ingest])
-      3. docling      (heavier PDF + OCR + LaTeX/AsciiDoc, [ingest-pro])
-      4. vision       (image captioning via VLM sidecar, [vision])
-      4. whisper      (speech-to-text via faster-whisper, [audio])
-
-    Tiers 4 are modality-specific fallbacks, not a linear escalation.
-    """
     _docling_formats = ["pdf", "docx", "pptx", "xlsx", "md", "html", "csv",
                         "png", "jpg", "jpeg", "tiff", "tif", "bmp", "webp",
                         "tex", "adoc"]
-    # Probe by importlib metadata, not by import. The vision sidecar's
-    # llama-cpp-python loads its native lib at module import; on hosts with
-    # missing/broken CUDA libs that import raises RuntimeError (not
-    # ImportError) and crashes the whole capability registry. Distribution
-    # metadata is a pure file-system read with no side effects.
     import importlib.metadata as _im
     import importlib.util as _il
 
@@ -147,8 +116,6 @@ def list_ingestors() -> list[dict]:
             return False
 
     docling_available = _il.find_spec("docling") is not None
-    # Check parent dist; find_spec("llama_cpp.server") would import
-    # llama_cpp.__init__ which triggers the dlopen we're avoiding.
     vision_available = _installed("llama-cpp-python")
     stt_available = _il.find_spec("faster_whisper") is not None
 

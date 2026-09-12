@@ -1,4 +1,3 @@
-"""Model installer: download, verify, activate."""
 
 import os
 import subprocess
@@ -17,13 +16,11 @@ _cache_dir_override: Path | None = None
 
 
 def set_cache_dir(path: str | Path | None) -> None:
-    """Override the model cache directory (from config)."""
     global _cache_dir_override
     _cache_dir_override = Path(path) if path else None
 
 
 def _effective_cache_dir() -> Path:
-    """Resolution order: explicit set_cache_dir() > SUPERGRAPH_MODEL_CACHE env > default."""
     if _cache_dir_override is not None:
         return _cache_dir_override
     env = os.environ.get("SUPERGRAPH_MODEL_CACHE")
@@ -37,22 +34,6 @@ def get_model_dir(name: str) -> Path:
 
 
 def is_installed(name: str) -> bool:
-    """Report True only for usable installs.
-
-    Pre-fix, the check short-circuited on any ``.onnx`` or ``.gguf`` file
-    in the model directory. An interrupted download could leave the weight
-    file present but the tokenizer and manifest missing, leaving
-    ``load_installed_embedder`` to crash on first use (bug #75). We now
-    verify the directory is self-consistent by family:
-
-      - GGUF family: at least one ``.gguf`` + a ``manifest.json``.
-      - ONNX family: at least one ``.onnx`` + a ``manifest.json`` +
-        ``tokenizer.json`` (loader needs both).
-
-    Users can run ``supergraph install-embedder <name>`` to heal partial
-    installs: the existing install path is idempotent on HF side thanks to
-    hf_hub_download's content-hash check.
-    """
     model_dir = get_model_dir(name)
     if not model_dir.exists():
         return False
@@ -62,22 +43,13 @@ def is_installed(name: str) -> bool:
     has_gguf = any(model_dir.rglob("*.gguf"))
     has_onnx = any(model_dir.rglob("*.onnx"))
     if has_gguf:
-        # GGUF self-contains tokenization, so manifest + weight is enough.
         return True
     if has_onnx:
-        # ONNX models need the HF tokenizer side-by-side.
         return (model_dir / "tokenizer.json").exists()
     return False
 
 
 def install_embedder(name: str, variant: str | None = None) -> Path:
-    """Download and install an embedder model.
-
-    1. Check deps are installed, install if not
-    2. Download model files from HuggingFace
-    3. Write manifest
-    4. Return model directory
-    """
     info = get_model_info(name)
     if info is None:
         available = list(SUPPORTED_MODELS.keys())
@@ -87,11 +59,6 @@ def install_embedder(name: str, variant: str | None = None) -> Path:
     model_dir = get_model_dir(name)
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Install missing deps. Library-code pip invocation is dangerous —
-    # it can mutate the active Python environment in ways the caller did
-    # not ask for, and in notebooks / shared envs this is particularly
-    # surprising (bug #73). Require explicit opt-in via env var; otherwise
-    # raise with a clear install hint so the user runs pip themselves.
     import os as _os
     allow_install = _os.environ.get("SUPERGRAPH_AUTO_PIP_INSTALL") == "1"
     for dep in info["deps"]:
@@ -114,7 +81,6 @@ def install_embedder(name: str, variant: str | None = None) -> Path:
             print(f"Installing {dep_name}...")
             subprocess.check_call([sys.executable, "-m", "pip", "install", dep_name, "-q"])
 
-    # 2. Download model files
     from huggingface_hub import hf_hub_download
 
     repo_id = info["repo_id"]
@@ -132,7 +98,6 @@ def install_embedder(name: str, variant: str | None = None) -> Path:
         print(f"Downloading {f}...")
         hf_hub_download(repo_id, f, local_dir=str(model_dir))
 
-    # 3. Write manifest
     import json
     primary_file = variant_info["files"][0]
     manifest = {
@@ -173,11 +138,6 @@ def load_installed_embedder(
     gpu_mem_limit: int | None = None,
     max_length: int | None = None,
 ):
-    """Load an installed embedder (ONNX or GGUF).
-
-    For ONNX: pass ``providers=["CUDAExecutionProvider", ...]`` for GPU.
-    For GGUF: pass ``n_gpu_layers=-1`` to offload all layers to GPU.
-    """
     model_dir = get_model_dir(name)
     if not is_installed(name):
         raise FileNotFoundError(
@@ -216,7 +176,6 @@ def load_installed_embedder(
 
 
 def _detect_onnx_package() -> str:
-    """Detect GPU and return appropriate onnxruntime package."""
     try:
         result = subprocess.run(["nvidia-smi"], capture_output=True)
         if result.returncode == 0:

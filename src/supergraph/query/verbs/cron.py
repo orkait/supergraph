@@ -1,14 +1,3 @@
-"""SYS CRON sub-namespace. Access via ``q.sys.cron.*``.
-
-Grammar:
-  sys_cron: "CRON" cron_command
-  cron_add:    "ADD" STRING "SCHEDULE" STRING "QUERY" STRING
-  cron_delete: "DELETE" STRING
-  cron_enable: "ENABLE" STRING
-  cron_disable: "DISABLE" STRING
-  cron_list:   "LIST"
-  cron_run:    "RUN" STRING
-"""
 from __future__ import annotations
 
 from supergraph.query.escape import dsl_literal

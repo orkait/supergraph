@@ -1,4 +1,3 @@
-"""Mutation handlers for the DSL executor (create, update, delete, merge, batch)."""
 
 import logging
 import time
@@ -29,9 +28,6 @@ _ner_unavailable_warned = False
 
 
 def _warn_ner_unavailable(exc: Exception) -> None:
-    """Log once that NER is unavailable. Entity extraction is opt-in (onnxruntime
-    + tokenizers + model files); when it is missing, writes proceed without
-    entities instead of failing."""
     global _ner_unavailable_warned
     if not _ner_unavailable_warned:
         _ner_unavailable_warned = True
@@ -46,18 +42,6 @@ def _warn_ner_unavailable(exc: Exception) -> None:
 class MutationHandlers:
 
     def _generate_auto_id(self, kind: str, data: dict) -> str:
-        """Generate a deterministic content-hash ID from kind + sorted fields.
-
-        Serializes each field value through ``json.dumps(..., sort_keys=True)``
-        so that nested dicts, lists, and scalar values all produce a stable
-        canonical form. Pre-fix, ``str(value)`` was used which produces
-        dict reprs whose key ordering depends on insertion order — two
-        callers building semantically-equal dicts via different code paths
-        could hash to different auto-IDs (bug #30). The ``default=str``
-        fallback catches non-JSON-serializable types (datetimes, sets) by
-        rendering them via their string repr, which is still deterministic
-        within a single process.
-        """
         import hashlib
         import json
         parts = [f"kind={kind}"]
@@ -71,10 +55,6 @@ class MutationHandlers:
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def _handle_vector(self, slot: int, kind: str, data: dict, explicit_vector: list[float] | None) -> bool:
-        """Handle explicit VECTOR clause or auto-embed from schema EMBED field.
-
-        Returns True if a vector was stored or queued for this slot.
-        """
         if explicit_vector is not None and self._vector_store is not None:
             vec = np.array(explicit_vector, dtype=np.float32)
             self._vector_store.add(slot, vec)
@@ -100,7 +80,6 @@ class MutationHandlers:
         return False
 
     def _try_auto_embed(self, slot: int, kind: str, data: dict) -> bool:
-        """Auto-embed if schema has EMBED field defined for this kind."""
         kind_def = self.schema.describe_node_kind(kind)
         if kind_def and kind_def.get("embed_field"):
             embed_field = kind_def["embed_field"]
@@ -110,14 +89,6 @@ class MutationHandlers:
         return False
 
     def _embed_and_store(self, slot: int, text: str) -> bool:
-        """Embed text and store vector at slot.
-
-        In deferred mode (set via deferred_embeddings context), appends to
-        pending queue and auto-flushes when the batch size is reached.
-        Otherwise embeds immediately. Handles lazy vector store init.
-
-        Returns True if the embedding was stored or queued.
-        """
         if not self._embedder:
             return False
         if self._vector_store is None:
@@ -137,7 +108,6 @@ class MutationHandlers:
         return True
 
     def _batch_embed_and_store(self, items: list[tuple[int, str]]) -> None:
-        """Batch-embed multiple (slot, text) pairs in one model call."""
         if not self._embedder or not items:
             return
         slots, texts = zip(*items)
@@ -153,7 +123,6 @@ class MutationHandlers:
                 self._batch_vector_record.append(slot)
 
     def flush_pending_embeddings(self) -> None:
-        """Flush any pending embeddings queued in deferred mode."""
         pending = getattr(self, "_pending_embeddings", None)
         if not pending:
             return
@@ -161,12 +130,6 @@ class MutationHandlers:
         pending.clear()
 
     def _collect_doc_children(self, doc_id: str) -> list[tuple[str, int]]:
-        """Collect all (node_id, slot) pairs for a document's children.
-
-        Uses built CSR matrices instead of scanning raw edge lists - O(fanout)
-        per edge type instead of O(|E|) per type, and section -> chunk descent
-        becomes two neighbor lookups rather than N*M list scans.
-        """
         doc_slot = self._resolve_slot(doc_id)
         if doc_slot is None:
             return []
@@ -193,7 +156,6 @@ class MutationHandlers:
 
     @staticmethod
     def _parse_event_at(val) -> int | None:
-        """Parse EVENT_AT value to epoch ms using the core temporal parser."""
         if val is None:
             return None
         if isinstance(val, (int, float)):
@@ -205,7 +167,6 @@ class MutationHandlers:
         return ms
 
     def _apply_event_at(self, node_id: str, event_at) -> None:
-        """Set __event_at__ reserved column from EVENT_AT clause."""
         ms = self._parse_event_at(event_at)
         if ms is not None:
             str_id = self.store.string_table.intern(node_id)
@@ -214,20 +175,6 @@ class MutationHandlers:
 
     @handles(CreateNode, write=True)
     def _create_node(self, q: CreateNode) -> Result:
-        """Create a node. Text content has four distinct landing pads:
-
-        | Clause                  | ColumnStore | DocumentStore blob | doc_fts BM25 | Embedded |
-        |-------------------------|-------------|--------------------|--------------|----------|
-        | Regular field (text=X)  | yes         | no                 | no           | iff schema has EMBED <field> |
-        | DOCUMENT "..."          | no          | yes                | yes (text/*) | fallback when no sentences + no VECTOR |
-        | VECTOR [...]            | no          | no                 | no           | yes (direct) |
-        | put_summary / INGEST    | no          | yes (via ingest)   | yes          | per-sentence via pipeline |
-
-        Pick the one that matches what you want REMEMBER to find:
-          - Column field with EMBED  -> semantic (vec) search
-          - DOCUMENT "plaintext"     -> both vec (fallback) and BM25 work
-          - INGEST file.pdf          -> full pipeline, sentence-level vectors + BM25
-        """
         data = {fp.name: fp.value for fp in q.fields}
         kind = data.pop("kind", "default")
         self.schema.validate_node(kind, data)
@@ -243,8 +190,6 @@ class MutationHandlers:
             slot = self.store.id_to_slot[str_id]
             self.store.columns.set_reserved(slot, "__context__", self.store._active_context)
 
-        # ── Sentence splitting + entity extraction ──────────────
-        # Only split if this is a primary node, not a sentence/entity already
         is_sub_node = kind in ("sentence", "entity")
         
         from supergraph.algos.sentence_split import split_sentences
@@ -257,7 +202,6 @@ class MutationHandlers:
         entity_score_threshold = getattr(self, '_entity_score_threshold', 0.6)
         entity_max_length = getattr(self, '_entity_max_length', 256)
 
-        # Get text to split from embed field or content
         kind_def = self.schema.describe_node_kind(kind)
         embed_field = kind_def.get("embed_field") if kind_def else None
         text_to_split = data.get(embed_field) if embed_field else data.get("content", "")
@@ -270,12 +214,8 @@ class MutationHandlers:
 
         need_sentence_nodes = enable_sentences and not is_sub_node and len(sentences) >= 1
         if need_sentence_nodes:
-            # Parse parent's EVENT_AT for inheritance by sentence nodes
             parent_event_ms = self._parse_event_at(getattr(q, 'event_at', None))
 
-            # Batch NER across all sentences (1 ONNX run instead of N).
-            # NER is opt-in: degrade to no entities rather than failing the
-            # write when onnxruntime/tokenizers or the model files are absent.
             if entity_model_dir:
                 try:
                     all_ents = extract_batch(
@@ -289,7 +229,6 @@ class MutationHandlers:
             else:
                 all_ents = [[] for _ in sentences]
 
-            # Batch sentence embeddings when embedder supports it and not deferred
             batch_embed_sentences = (
                 self._embedder is not None
                 and not getattr(self, '_defer_embeddings', False)
@@ -308,13 +247,11 @@ class MutationHandlers:
                 self.store.put_edge(node_id, sent_id, "has_sentence")
                 sent_slots.append(sent_slot)
 
-                # Embed (deferred path only; batched path runs after the loop)
                 if self._embedder and getattr(self, '_defer_embeddings', False):
                     self._pending_embeddings.append((sent_slot, sent_text))
                     if len(self._pending_embeddings) >= self._embed_batch_size:
                         self.flush_pending_embeddings()
 
-                # Entity linking (use pre-computed batch result)
                 if entity_model_dir:
                     ents = all_ents[i]
                     sentence_entities: dict[str, str] = {}
@@ -344,9 +281,6 @@ class MutationHandlers:
             if batch_embed_sentences:
                 self._batch_embed_and_store(list(zip(sent_slots, sentences)))
 
-        # ── Standard embedding / document handling ──────────────
-        # Sentences supplement the parent for fine-grained retrieval.
-        # Parent is still embedded for direct retrieval and update-re-embed.
         str_id = self.store.string_table.intern(node_id)
         slot = self.store.id_to_slot[str_id]
 
@@ -354,7 +288,6 @@ class MutationHandlers:
             
         if q.document and self._document_store:
             self._document_store.put_document(slot, q.document.encode("utf-8"), "text/plain")
-            # Only fallback-embed parent if no sentence nodes and no explicit vector
             if not need_sentence_nodes and not embedded and q.vector is None and self._embedder:
                 self._embed_and_store(slot, q.document)
         node = self.store.get_node(node_id)
@@ -365,7 +298,6 @@ class MutationHandlers:
         data = {fp.name: fp.value for fp in q.fields}
         self.store.update_node(q.id, data)
 
-        # Auto re-embed if an embed field was updated
         if self._embedder:
             str_id = self.store.string_table.intern(q.id)
             slot = self.store.id_to_slot.get(str_id)
@@ -464,7 +396,6 @@ class MutationHandlers:
 
     @handles(UpdateNodes, write=True)
     def _update_nodes(self, q: UpdateNodes) -> Result:
-        """UPDATE NODES WHERE ... SET ...: bulk column update."""
         n = self.store._next_slot
         if n == 0:
             return Result(kind="ok", data={"updated": 0}, count=0)
@@ -535,9 +466,6 @@ class MutationHandlers:
 
         for fp in q.fields:
             if fp.name in self.store._indexed_fields:
-                # Incremental reindex of only the affected slots instead
-                # of a full table rescan. For a single-slot UPDATE on a
-                # 1M-row table this is 1M× faster (bug #32).
                 self.store.reindex_slots(fp.name, matching_slots)
 
         if self._embedder and self._vector_store is not None:
@@ -569,10 +497,6 @@ class MutationHandlers:
 
     @handles(MergeStmt, write=True)
     def _merge(self, q: MergeStmt) -> Result:
-        """MERGE NODE src INTO tgt: copy fields, rewire edges, tombstone source.
-
-        Snapshotted for atomic rollback on failure.
-        """
         if q.source_id not in self.store.string_table:
             raise NodeNotFound(q.source_id)
         src_str = self.store.string_table.intern(q.source_id)
@@ -593,9 +517,6 @@ class MutationHandlers:
                 f"{q.source_id!r} == {q.target_id!r}"
             )
 
-        # Centralized snapshot captures everything including the fields the
-        # pre-fix hand-rolled version missed: string_table, secondary_indices,
-        # _indexed_fields, _edge_data_idx (bug #36).
         snap = self.store.make_snapshot()
 
         try:
@@ -640,17 +561,12 @@ class MutationHandlers:
                 count=1,
             )
         except Exception:
-            # Single restore undoes every field the centralized primitive
-            # captured, including the index structures the old rollback
-            # missed. _rebuild_edges still runs so the CSR matrices match
-            # the restored _edges_by_type.
             self.store.restore_snapshot(snap)
             self.store._rebuild_edges()
             raise
 
     @handles(ForgetNode, write=True)
     def _forget(self, q: ForgetNode) -> Result:
-        """FORGET NODE: hard delete blob + vector + memory (irreversible)."""
         slot = self._resolve_slot(q.id)
         if slot is None:
             raise NodeNotFound(q.id)
@@ -687,18 +603,11 @@ class MutationHandlers:
 
     @handles(Batch, write=True)
     def _batch(self, q: Batch) -> Result:
-        """Execute batch with rollback on failure."""
         enable_rollback = getattr(self, '_enable_rollback', True)
 
         prev_record = self._batch_vector_record
         self._batch_vector_record = [] if enable_rollback else None
 
-        # Only pay the snapshot cost when rollback is actually requested.
-        # This preserves the pre-fix behavior where BATCH ... NOROLLBACK
-        # (the non-transactional fast path) skipped the store-wide copy.
-        # Centralized primitive captures everything the 9-line hand-rolled
-        # version did, plus the fields it was missing — string_table,
-        # secondary_indices, _indexed_fields, _edge_data_idx (bug #8).
         snap = self.store.make_snapshot() if enable_rollback else None
 
         try:
@@ -727,9 +636,6 @@ class MutationHandlers:
             self.store._ensure_edges_built()
             return Result(kind="ok", data=None, count=0)
         except Exception as e:
-            # Vector state: BATCH tracks mid-batch VECTOR assignments so we
-            # can unwind them out-of-band. The centralized primitive doesn't
-            # touch runtime.vector_store on purpose.
             if enable_rollback and self._batch_vector_record:
                 vs = self._vector_store
                 if vs is not None:

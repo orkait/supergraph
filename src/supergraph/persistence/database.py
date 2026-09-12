@@ -1,8 +1,3 @@
-"""SQLite wrapper for supergraph persistence.
-
-Manages the database schema (blobs, wal, query_log, metadata tables),
-connection setup with WAL mode, and metadata helpers.
-"""
 
 import sqlite3
 from pathlib import Path
@@ -11,7 +6,6 @@ SCHEMA_VERSION = 1
 
 
 def open_database(path: str | Path, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
-    """Open or create the supergraph database."""
     conn = sqlite3.connect(str(path), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -87,7 +81,6 @@ def _create_tables(conn: sqlite3.Connection):
 
 
 def _migrate_query_log(conn: sqlite3.Connection):
-    """Add new columns to query_log if they don't exist (backwards compat)."""
     cursor = conn.execute("PRAGMA table_info(query_log)")
     existing_cols = {row[1] for row in cursor.fetchall()}
     migrations = [

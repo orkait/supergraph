@@ -1,4 +1,3 @@
-"""Visibility mask primitives - tombstones, TTL, retraction, context."""
 
 import numpy as np
 
@@ -11,7 +10,6 @@ __all__ = [
 
 
 def build_tombstone_mask(tombstones, n: int) -> np.ndarray:
-    """Bool mask marking tombstoned slot indices."""
     mask = np.zeros(n, dtype=bool)
     if not tombstones:
         return mask
@@ -28,7 +26,6 @@ def apply_ttl_mask(
     presence: np.ndarray,
     now_ms: int,
 ) -> np.ndarray:
-    """Drop slots whose __expires_at__ has already passed."""
     expired = presence & (expires_col > 0) & (expires_col < now_ms)
     return mask & ~expired
 
@@ -38,7 +35,6 @@ def apply_retracted_mask(
     retracted_col: np.ndarray,
     presence: np.ndarray,
 ) -> np.ndarray:
-    """Drop slots whose __retracted__ flag is set."""
     return mask & ~(presence & (retracted_col == 1))
 
 
@@ -52,7 +48,6 @@ def full_live_mask(
     retracted_col: np.ndarray | None = None,
     retracted_pres: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Unified visibility: alive ∧ ¬tombstoned ∧ ¬ttl_expired ∧ ¬retracted."""
     mask = node_ids[:n] >= 0
     if tombstones:
         mask = mask & ~build_tombstone_mask(tombstones, n)

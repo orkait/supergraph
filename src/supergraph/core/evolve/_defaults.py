@@ -1,7 +1,3 @@
-"""Default evolution rules shipped with supergraph.
-
-All rules are disabled by default - agents must explicitly enable them.
-"""
 
 STARTER_RULES = [
     {

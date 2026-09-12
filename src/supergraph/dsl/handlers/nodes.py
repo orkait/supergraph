@@ -1,4 +1,3 @@
-"""Node CRUD + COUNT handlers."""
 
 import numpy as np
 
@@ -98,13 +97,6 @@ class NodeHandlers:
                 fallback_predicate,
             )
             if col_sorted_slots is not None:
-                # When the predicate fallback is in play, `_order_slots_by_column`
-                # asked `topk_slot_order` for a FULL sort (full_sort=True) and
-                # returned the whole sorted slot array, unsliced. The caller
-                # must apply offset/limit AFTER the Python-side predicate filter
-                # so that "NODES WHERE x CONTAINS y ORDER BY z LIMIT N" returns
-                # at most N rows. Without this slicing the LIMIT clause was
-                # silently ignored under any non-column-filter WHERE — bug #90.
                 nodes = self.store._materialize_bulk(col_sorted_slots)
                 if fallback_predicate:
                     nodes = [n for n in nodes if fallback_predicate(n)]
@@ -160,8 +152,6 @@ class NodeHandlers:
                             nodes = self.store.get_all_nodes(kind=kind_filter)
                             count = sum(1 for n in nodes if self._eval_where(q.where.expr, n))
             else:
-                # Honor namespace/context isolation: a raw node_count would
-                # leak namespaced (and context) nodes into the default view.
                 if (getattr(self.store, "_active_namespace", None) is not None
                         or self.store.columns.has_column("__namespace__")
                         or self.store._active_context is not None):
@@ -181,9 +171,6 @@ class NodeHandlers:
                         if self._eval_where(q.where.expr, e) and self._edge_visible(e)
                     )
             else:
-                # Honor namespace/context isolation: an edge is visible only when
-                # BOTH endpoints are visible under the current view, else a raw
-                # edge_count leaks edges between namespaced (or context) nodes.
                 if (getattr(self.store, "_active_namespace", None) is not None
                         or self.store.columns.has_column("__namespace__")
                         or self.store._active_context is not None):
@@ -200,8 +187,6 @@ class NodeHandlers:
         return Result(kind="count", data=count, count=count)
 
     def _edge_visible(self, edge: dict) -> bool:
-        """True when both edge endpoints are visible under the current view
-        (namespace/context/TTL/retraction). Cheap no-op when nothing is scoped."""
         if (getattr(self.store, "_active_namespace", None) is None
                 and not self.store.columns.has_column("__namespace__")
                 and self.store._active_context is None):

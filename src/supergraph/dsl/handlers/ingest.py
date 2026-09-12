@@ -1,4 +1,3 @@
-"""Ingest and connect handlers for the DSL executor."""
 
 import hashlib
 import logging
@@ -17,7 +16,6 @@ class IngestHandlers:
 
     @staticmethod
     def _infer_event_at_from_metadata(metadata: dict) -> int | None:
-        """Best-effort event time extraction from parser metadata."""
         from supergraph.core.temporal import parse_date
 
         for key in ("event_at", "event_time", "date", "published_at", "published", "timestamp"):
@@ -33,18 +31,15 @@ class IngestHandlers:
 
     @handles(IngestStmt, write=True)
     def _ingest(self, q: IngestStmt) -> Result:
-        """INGEST: parse file, chunk, create graph nodes + edges, store documents."""
         from supergraph.ingest.router import ingest_file
         import os as _os
 
         resolved = _Path(q.file_path).resolve()
-        # Also resolve the real path following symlinks to prevent symlink traversal
         real_resolved = _Path(_os.path.realpath(resolved))
         if self._ingest_root:
             root = _Path(self._ingest_root).resolve()
             real_root = _Path(_os.path.realpath(root))
             root_str = str(real_root)
-            # Use os.sep to prevent prefix collision (/data vs /data2)
             if str(real_resolved) != root_str and not str(real_resolved).startswith(root_str + _os.sep):
                 raise SuperGraphError(
                     f"Path traversal not allowed: {q.file_path} "
@@ -74,10 +69,6 @@ class IngestHandlers:
         summary_len = getattr(self, '_summary_max_length', 200)
         chunk_overlap = getattr(self, '_chunk_overlap', 50)
 
-        # Ingestors may pre-chunk (e.g. pymupdf4llm preserves per-page
-        # provenance by returning page-scoped chunks with .page set). When
-        # IngestResult.chunks is already populated, skip re-chunking - we'd
-        # lose the page numbers.
         if result.chunks:
             chunks = result.chunks
             logger.info("[ingest] using %d pre-chunked segments from %s",
@@ -121,13 +112,6 @@ class IngestHandlers:
             if isinstance(v, (str, int, float)) and k not in ("source",)
         })
 
-        # Snapshot before any mutation so a mid-INGEST failure (embedding
-        # crash, disk full, VLM timeout) can roll the graph back to the
-        # exact pre-INGEST state. Pre-fix, a failure after some chunks
-        # were created left the parent node, document-store row, and
-        # partial section/chunk nodes persisted with no indication of
-        # partial state (bug #48). DocumentStore writes are tracked
-        # separately since they live outside the StoreSnapshot primitive.
         store_snap = self.store.make_snapshot()
         doc_slots_written: list[int] = []
         try:
@@ -136,9 +120,6 @@ class IngestHandlers:
                 metadata_fields, doc_slots_written,
             )
         except Exception:
-            # Roll back the store to its pre-INGEST state. Then unwind
-            # DocumentStore writes we tracked — restore_snapshot doesn't
-            # touch DocumentStore since documents live outside the store.
             self.store.restore_snapshot(store_snap)
             self.store._rebuild_edges()
             if self._document_store:
@@ -154,8 +135,6 @@ class IngestHandlers:
 
     def _ingest_body(self, q, result, chunks, parent_id, parent_kind,
                      metadata_fields, doc_slots_written: list[int]) -> Result:
-        """Internal ingest body, extracted so the top-level _ingest can wrap
-        the whole thing in a StoreSnapshot + DocumentStore rollback (bug #48)."""
         import time
         parent_slot = self.store.put_node(parent_id, parent_kind, metadata_fields)
         self.store.columns.set_reserved(parent_slot, "__blob_state__", "warm")
@@ -199,14 +178,12 @@ class IngestHandlers:
         embed_batch: list[tuple[int, str]] = []
         logger.info("[ingest] creating %d chunks for %s ...", len(chunks), parent_id)
 
-        # Entity extraction config
         entity_model_dir = getattr(self, '_entity_model_dir', None)
         entity_score_threshold = getattr(self, '_entity_score_threshold', 0.6)
         entity_max_length = getattr(self, '_entity_max_length', 256)
 
-        entity_seen: dict[str, str] = {}  # slug -> display_name
+        entity_seen: dict[str, str] = {}
 
-        # Pre-batch NER across all chunks (1 ONNX run instead of N)
         chunk_ents: list[list] = [[] for _ in chunks]
         if entity_model_dir:
             from supergraph.ingest.entity_extract import extract_batch, slug as _ent_slug
@@ -216,8 +193,6 @@ class IngestHandlers:
                     score_threshold=entity_score_threshold, max_length=entity_max_length,
                 )
             except (ImportError, FileNotFoundError, OSError) as e:
-                # NER is opt-in: skip entities rather than failing ingest when
-                # onnxruntime/tokenizers or the model files are unavailable.
                 logger.warning(
                     "entity extraction (NER) unavailable during ingest; chunks "
                     "stored without entities (%s: %s)", type(e).__name__, e,
@@ -254,7 +229,6 @@ class IngestHandlers:
             else:
                 self.store.put_edge(parent_id, chunk_id, "has_chunk")
 
-            # Entity linking (use pre-computed batch result)
             if entity_model_dir:
                 for ent in chunk_ents[i]:
                     s = _ent_slug(ent.text)
@@ -272,7 +246,6 @@ class IngestHandlers:
                     except Exception as err:
                         logger.debug("put_edge(%s -> %s) skipped during ingest entity link: %s", chunk_id, ent_id, err)
 
-            # Embed chunk text for vector retrieval
             embed_batch.append((chunk_slot, embed_text))
             
         if ds:
@@ -323,10 +296,6 @@ class IngestHandlers:
         logger.info("[ingest] %s done: %d sections, %d chunks, %d images",
                      parent_id, len(sections), len(chunks), image_count)
 
-        # Surface ingestor-level warnings (e.g. scanned PDF with near-zero
-        # text extraction) to the caller. Without this, users only discover
-        # a low-confidence ingest when REMEMBER returns nothing against the
-        # new doc.
         meta: dict = {}
         warnings: list[str] = []
         ing_warning = result.metadata.get("warning")
@@ -350,7 +319,6 @@ class IngestHandlers:
         }, count=len(chunks), meta=meta)
 
     def _ingest_image_with_vision(self, q: IngestStmt, safe_path: str, ext: str) -> Result:
-        """Handle standalone image ingest with VLM description."""
         from supergraph.ingest.vision import VisionHandler
 
         with open(safe_path, "rb") as f:
@@ -403,7 +371,6 @@ class IngestHandlers:
 
     @handles(ConnectNode, write=True)
     def _connect_node(self, q: ConnectNode) -> Result:
-        """CONNECT NODE: wire one node to similar neighbors via vector similarity."""
         from supergraph.ingest.connector import connect_node as _connect_node_fn
         return _connect_node_fn(
             self.store, self._vector_store,

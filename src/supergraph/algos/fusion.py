@@ -1,4 +1,3 @@
-"""Score fusion primitives for hybrid retrieval."""
 
 import numpy as np
 
@@ -16,11 +15,6 @@ def rrf_fuse(
     rank_groups: list[dict[str, int]],
     k_rrf: float = 60.0,
 ) -> dict[str, float]:
-    """Reciprocal Rank Fusion over N ranked lists keyed by id.
-
-    Each entry in rank_groups is {item_id: rank_from_0}. Returns fused
-    {item_id: score} summing 1 / (k_rrf + rank) across groups.
-    """
     fused: dict[str, float] = {}
     fused_get = fused.get
     for group in rank_groups:
@@ -34,15 +28,6 @@ def rrf_remember_fusion(
     candidate_slots: np.ndarray,
     k_rrf: float = 60.0,
 ) -> np.ndarray:
-    """Reciprocal Rank Fusion over N signal arrays aligned by slot index.
-
-    For each signal, ranks the candidate_slots by that signal's values (desc),
-    then sums 1 / (k_rrf + rank) across all signals. Returns a full-length
-    score array (same shape as each signal) with RRF scores at candidate slots.
-
-    Signals with all-zero values for a candidate contribute rank = len(candidates)
-    (worst rank) for that candidate, so inactive signals don't distort rankings.
-    """
     n = signals[0].shape[0]
     fused = np.zeros(n, dtype=np.float64)
     n_cand = len(candidate_slots)
@@ -54,13 +39,9 @@ def rrf_remember_fusion(
 
     for sig in signals:
         sig_vals = sig[candidate_slots]
-        # Rank with tie-aware averaging: equal values get equal rank.
-        # Standard RRF requires this - arbitrary tie-breaking biases
-        # toward lower slot indices.
         order = np.argsort(-sig_vals)
         raw_ranks = np.empty(n_cand, dtype=np.float64)
         raw_ranks[order] = np.arange(n_cand, dtype=np.float64)
-        # Average ranks for tied values
         sorted_vals = sig_vals[order]
         i = 0
         while i < n_cand:
@@ -71,7 +52,6 @@ def rrf_remember_fusion(
                 avg_rank = np.mean(raw_ranks[order[i:j]])
                 raw_ranks[order[i:j]] = avg_rank
             i = j
-        # Zero-signal candidates get worst rank (pushed to bottom)
         zero_mask = sig_vals == 0.0
         raw_ranks[zero_mask] = n_cand
         fused[candidate_slots] += 1.0 / (k_rrf + raw_ranks)
@@ -80,7 +60,6 @@ def rrf_remember_fusion(
 
 
 def normalize_bm25(scores: np.ndarray) -> np.ndarray:
-    """Scale BM25 scores by their max. Returns all-zero if max == 0."""
     if scores.size == 0:
         return scores
     m = float(scores.max())
@@ -95,10 +74,6 @@ def recency_decay(
     now_ms: int,
     half_life_days: float = 30.0,
 ) -> np.ndarray:
-    """Exponential decay score from timestamp column.
-
-    Missing timestamps return 1.0 (treat as most recent).
-    """
     if updated_at_ms.size == 0:
         return np.ones(0, dtype=np.float64)
     age_ms = (now_ms - updated_at_ms.astype(np.float64))
@@ -113,11 +88,6 @@ def temporal_proximity(
     anchor_ms: int,
     decay_days: float = 365.0,
 ) -> np.ndarray:
-    """Gaussian proximity score: how close is __event_at__ to the query anchor.
-
-    Returns 1.0 for exact match, decays symmetrically with distance.
-    Missing __event_at__ returns 1.0 (neutral - don't penalize non-temporal nodes).
-    """
     if event_at_ms.size == 0:
         return np.ones(0, dtype=np.float64)
     dist_ms = np.abs(anchor_ms - event_at_ms.astype(np.float64))
@@ -135,11 +105,6 @@ def weighted_remember_fusion(
     recall_signal: np.ndarray,
     weights: list[float],
 ) -> np.ndarray:
-    """5-signal weighted sum over aligned candidate arrays.
-
-    Returns a float64 array of fused scores indexed the same as the inputs.
-    Missing weights fall back to defaults [0.30, 0.20, 0.15, 0.20, 0.15].
-    """
     defaults = (0.30, 0.20, 0.15, 0.20, 0.15)
     w = [
         weights[i] if i < len(weights) else defaults[i]

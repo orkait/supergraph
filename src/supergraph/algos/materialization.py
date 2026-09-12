@@ -1,8 +1,3 @@
-"""Vectorized bulk materialization of slot indices into node dicts.
-
-Hot path for NODES / RECALL / SIMILAR / REMEMBER result rendering.
-One numpy fancy-index op per column instead of per-slot Python loops.
-"""
 
 import numpy as np
 
@@ -22,21 +17,6 @@ def materialize_bulk(
     presence: dict,
     dtypes: dict,
 ) -> list[dict]:
-    """Materialize a set of slot indices into node dicts.
-
-    Args:
-        slots: int array of slot indices to materialize.
-        node_ids: per-slot interned id (int32).
-        node_kinds: per-slot kind id (int32).
-        id_to_str: list such that id_to_str[i] == string for interned id i.
-        columns: {field_name: numpy array}.
-        presence: {field_name: bool numpy array}.
-        dtypes: {field_name: "int32_interned" | "int64" | "float64" | ...}.
-
-    Returns:
-        list[dict] - each dict has "id", "kind", plus any present field values.
-        Reserved fields (name starts AND ends with "_") are skipped.
-    """
     if len(slots) == 0:
         return []
 

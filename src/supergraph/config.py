@@ -1,13 +1,3 @@
-"""Typed configuration for supergraph via msgspec Structs.
-
-One file, sectioned by engine. Missing keys auto-fill from defaults.
-
-Load order (each layer overrides the previous):
-    1. config.py dataclass defaults (source of truth for types + default values)
-    2. supergraph.json file (per-deployment overrides)
-    3. SUPERGRAPH_* environment variables (Docker/k8s friendly)
-    4. Constructor kwargs (code-level, highest priority)
-"""
 
 from __future__ import annotations
 
@@ -23,14 +13,6 @@ _log = logging.getLogger(__name__)
 
 
 def _coerce_remember_weights(weights) -> list[float]:
-    """Accept 3 or 4 weights for REMEMBER fusion.
-
-    Fusion interprets the list based on length + graph_signal_enabled:
-      4 weights, graph on   -> [vec, bm25, recency, graph]  (additive)
-      3 weights, graph on   -> [vec, bm25, graph]           (graph replaces recency)
-      3 weights, graph off  -> [vec, bm25, recency]         (classic)
-    See intelligence.py::_remember for the matching dispatch.
-    """
     parsed = [float(w) for w in weights]
     if len(parsed) not in (3, 4):
         raise ValueError(f"remember_weights must have length 3 or 4, got {len(parsed)}")
@@ -79,9 +61,9 @@ class DslConfig(msgspec.Struct, frozen=True):
     optimize_interval: int = 500
     recall_decay: float = 0.5912428069710964
     remember_weights: list[float] = msgspec.field(default_factory=lambda: [0.52, 0.25, 0.15, 0.08])
-    fusion_method: str = "weighted"  # "rrf" or "weighted"
+    fusion_method: str = "weighted"
     rrf_k: float = 60.0
-    recency_half_life_days: float = 7300.0  # ~20 years
+    recency_half_life_days: float = 7300.0
     similar_to_oversample: int = 2
     lexical_search_oversample: int = 3
     nucleus_expansion: bool = False
@@ -94,10 +76,6 @@ class DslConfig(msgspec.Struct, frozen=True):
     enable_rollback: bool = True
     graph_signal_enabled: bool = True
     entity_extractor: str = "tinybert_onnx"
-    # NER entity extraction is opt-in. Default off: writes do not require
-    # onnxruntime + the NER model and never extract entities unless a model dir
-    # is set here (or via SUPERGRAPH_DSL_ENTITY_MODEL_DIR), e.g.
-    # f"{os.environ.get('MODELS_DIR', './models')}/tinybert-ner".
     entity_model_dir: str | None = None
     entity_score_threshold: float = 0.6
     entity_max_length: int = 256
@@ -105,12 +83,6 @@ class DslConfig(msgspec.Struct, frozen=True):
     reranker_model_dir: str | None = f"{os.environ.get('MODELS_DIR', './models')}/jina-reranker-v3/jina-reranker-v3-Q8_0.gguf"
     reranker_projector_path: str | None = f"{os.environ.get('MODELS_DIR', './models')}/jina-reranker-v3/projector.safetensors"
     reranker_max_length: int = 2048
-    # CPU-only by default. Set to -1 (offload all layers) or N (offload N
-    # layers) when a CUDA-built llama-cpp-python wheel is installed AND the
-    # caller wants GPU offload. Matches vector.gpu_layers and BonsaiIngestor's
-    # n_gpu_layers defaults so the install is portable and never silently
-    # grabs a GPU. supergraph.gpu.setup() / SuperGraph(profile="pro") flip
-    # this on automatically when GPU bind succeeds.
     reranker_gpu_layers: int = 0
     cache_gc_threshold: int = 200
 
@@ -164,12 +136,7 @@ class ComputeConfig(msgspec.Struct, frozen=True):
 
 
 class IngestConfig(msgspec.Struct, frozen=True):
-    # NL->DSL ingestion backend. None disables NL ingest (explicit opt-in);
-    # "cloud" uses the litellm multi-provider CloudIngestor; "local" uses the
-    # GGUF BonsaiIngestor (requires a model; wire via SuperGraph(profile="pro")).
     nl_backend: str | None = None
-    # Candidate provider-prefixed model ids for the cloud chain. Empty list =
-    # use resolve.DEFAULT_FREE_FIRST_CHAIN.
     nl_models: list[str] = msgspec.field(default_factory=list)
     free_first: bool = True
     nl_max_tokens: int = 1000
@@ -193,7 +160,6 @@ class SuperGraphConfig(msgspec.Struct, frozen=True):
 _decoder = msgspec.json.Decoder(SuperGraphConfig)
 _encoder = msgspec.json.Encoder()
 
-# Section name -> (config class, field name -> type)
 _SECTION_MAP: dict[str, tuple[type, dict[str, type]]] = {
     "core": (CoreConfig, {f: type(getattr(CoreConfig(), f)) for f in CoreConfig.__struct_fields__}),
     "vector": (VectorConfig, {f: type(getattr(VectorConfig(), f)) for f in VectorConfig.__struct_fields__}),
@@ -208,7 +174,6 @@ _SECTION_MAP: dict[str, tuple[type, dict[str, type]]] = {
     "ingest": (IngestConfig, {f: type(getattr(IngestConfig(), f)) for f in IngestConfig.__struct_fields__}),
 }
 
-# Flat kwarg name -> (section, field) for constructor shortcuts
 _KWARG_SHORTCUTS: dict[str, tuple[str, str]] = {
     "ceiling_mb":           ("core", "ceiling_mb"),
     "initial_capacity":     ("core", "initial_capacity"),
@@ -252,7 +217,6 @@ _KWARG_SHORTCUTS: dict[str, tuple[str, str]] = {
 
 
 def _coerce(value: str, target_type: type):
-    """Coerce a string env var value to the target type."""
     if target_type is bool or target_type is type(True):
         return value.lower() in ("1", "true", "yes")
     if target_type is int:
@@ -267,12 +231,6 @@ def _coerce(value: str, target_type: type):
 
 
 def load_config(path: str | Path | None = None) -> SuperGraphConfig:
-    """Load config overrides from a JSON file and merge onto defaults.
-
-    The file is expected to be a partial dict - only sections/fields the user
-    changed. Missing sections and fields fall back to config.py defaults.
-    Returns full defaults if the file doesn't exist or is empty.
-    """
     if path is None:
         return SuperGraphConfig()
     p = Path(path)
@@ -292,11 +250,6 @@ def load_config(path: str | Path | None = None) -> SuperGraphConfig:
 
 
 def save_config(config: SuperGraphConfig, path: str | Path) -> None:
-    """Save config overrides to a JSON file.
-
-    Only writes values that differ from defaults. This keeps supergraph.json
-    minimal and ensures users benefit from future default improvements.
-    """
     defaults = SuperGraphConfig()
     current = msgspec.json.decode(msgspec.json.encode(config))
     default_data = msgspec.json.decode(msgspec.json.encode(defaults))
@@ -321,18 +274,6 @@ def save_config(config: SuperGraphConfig, path: str | Path) -> None:
 
 
 def apply_env_overrides(config: SuperGraphConfig) -> SuperGraphConfig:
-    """Override config fields from SUPERGRAPH_* environment variables.
-
-    Convention: SUPERGRAPH_{SECTION}_{FIELD} in uppercase.
-    Examples:
-        SUPERGRAPH_CORE_CEILING_MB=512
-        SUPERGRAPH_DSL_RECALL_DECAY=0.5
-        SUPERGRAPH_DSL_REMEMBER_WEIGHTS=0.40,0.30,0.15,0.10,0.05
-        SUPERGRAPH_VECTOR_SEARCH_OVERSAMPLE=10
-        SUPERGRAPH_VECTOR_SIMILARITY_THRESHOLD=0.80
-        SUPERGRAPH_SERVER_CORS_ORIGINS=http://localhost:3000,http://localhost:8080
-        SUPERGRAPH_SERVER_AUTH_TOKEN=secret123
-    """
     updates: dict[str, dict[str, object]] = {}
 
     for env_key, env_val in os.environ.items():
@@ -373,17 +314,6 @@ def apply_env_overrides(config: SuperGraphConfig) -> SuperGraphConfig:
 
 
 def merge_kwargs(config: SuperGraphConfig, **kwargs) -> SuperGraphConfig:
-    """Override config fields from SuperGraph(...) constructor kwargs.
-
-    Two shapes of kwargs are accepted:
-
-    1. Flat shortcuts for tuning knobs (see _KWARG_SHORTCUTS), e.g.
-       ceiling_mb, remember_weights, recall_decay, search_oversample.
-    2. Top-level convenience kwargs that map to multi-field config
-       updates: embedder, ingest_root, vault, retention (dict).
-       These are the primary public API - SuperGraph(embedder=...) is
-       how users construct the store.
-    """
     updates: dict[str, dict[str, object]] = {}
 
     for kwarg_name, (section, field) in _KWARG_SHORTCUTS.items():
@@ -423,13 +353,6 @@ def _rebuild_config(
     config: SuperGraphConfig,
     updates: dict[str, dict[str, object]],
 ) -> SuperGraphConfig:
-    """Rebuild a frozen config with section-level field overrides.
-
-    Unknown keys (e.g. fields from older supergraph versions that have
-    since been removed) are silently dropped + logged, so loading an old
-    tuned_config.json does not crash with ``TypeError: Unexpected
-    keyword argument``. Config forward-compat > config fidelity.
-    """
     sections = {}
     for section_name in SuperGraphConfig.__struct_fields__:
         current = getattr(config, section_name)

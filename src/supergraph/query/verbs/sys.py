@@ -1,9 +1,3 @@
-"""SYS verbs. Access via ``q.sys.*``.
-
-Covers every top-level SYS command in grammar.lark. Cron + evolve
-live in their own sub-namespaces (``q.sys.cron``, ``q.sys.evolve``)
-because they carry their own sub-verb trees.
-"""
 from __future__ import annotations
 
 
@@ -23,9 +17,6 @@ def _check_entity_type(entity: str) -> str:
         raise ValueError(f"entity must be 'NODE' or 'EDGE', got {entity!r}")
     return upper
 
-
-# ---------- STATS ---------------------------------------------------------
-# sys_stats: "STATS" STATS_TARGET?  (NODES|EDGES|MEMORY|WAL)
 
 _STATS_TARGETS = {"NODES", "EDGES", "MEMORY", "WAL"}
 
@@ -49,8 +40,6 @@ def _compile_stats(p: dict) -> str:
 register_compiler("sys_stats", _compile_stats)
 
 
-# ---------- KINDS / EDGE KINDS --------------------------------------------
-
 def kinds() -> Query:
     return Query(_verb="sys_kinds", _params={}, _kind="sys")
 
@@ -73,9 +62,6 @@ def _compile_edge_kinds(p: dict) -> str:
 register_compiler("sys_edge_kinds", _compile_edge_kinds)
 
 
-# ---------- DESCRIBE ------------------------------------------------------
-# sys_describe: "DESCRIBE" ENTITY_TYPE STRING
-
 def describe(entity: str, name: str) -> Query:
     upper = _check_entity_type(entity)
     return Query(_verb="sys_describe", _params={"entity": upper, "name": name}, _kind="sys")
@@ -87,8 +73,6 @@ def _compile_describe(p: dict) -> str:
 
 register_compiler("sys_describe", _compile_describe)
 
-
-# ---------- SLOW / FREQUENT / FAILED QUERIES ------------------------------
 
 def slow_queries(*, since: str | None = None, limit: int | None = None) -> Query:
     params: dict = {}
@@ -141,9 +125,6 @@ def _compile_failed(p: dict) -> str:
 register_compiler("sys_failed", _compile_failed)
 
 
-# ---------- EXPLAIN -------------------------------------------------------
-# sys_explain: "EXPLAIN" read_query
-
 def explain(query: Query) -> Query:
     if query._kind != "read":
         raise ValueError("explain() only accepts read queries")
@@ -156,10 +137,6 @@ def _compile_explain(p: dict) -> str:
 
 register_compiler("sys_explain", _compile_explain)
 
-
-# ---------- REGISTER / UNREGISTER -----------------------------------------
-# sys_register_node_kind: "REGISTER" "NODE" "KIND" STRING "REQUIRED" ident_list optional? embed?
-# sys_register_edge_kind: "REGISTER" "EDGE" "KIND" STRING "FROM" string_list "TO" string_list
 
 def register_node_kind(
     name: str,
@@ -233,8 +210,6 @@ def _compile_unregister(p: dict) -> str:
 register_compiler("sys_unregister", _compile_unregister)
 
 
-# ---------- Maintenance (CHECKPOINT / REBUILD / CLEAR / WAL) --------------
-
 def checkpoint() -> Query:
     return Query(_verb="sys_checkpoint", _params={}, _kind="sys")
 
@@ -275,8 +250,6 @@ def wal(action: str) -> Query:
 register_compiler("sys_wal", lambda p: f"SYS WAL {p['action']}")
 
 
-# ---------- EXPIRE / CONTRADICTIONS ---------------------------------------
-
 def expire(*, where: F | dict | None = None) -> Query:
     params: dict = {}
     if where is not None: params["where"] = where
@@ -305,8 +278,6 @@ def _compile_contradictions(p: dict) -> str:
 register_compiler("sys_contradictions", _compile_contradictions)
 
 
-# ---------- Snapshots -----------------------------------------------------
-
 def snapshot(name: str) -> Query:
     return Query(_verb="sys_snapshot", _params={"name": name}, _kind="sys")
 
@@ -327,8 +298,6 @@ def snapshots() -> Query:
 
 register_compiler("sys_snapshots", lambda p: "SYS SNAPSHOTS")
 
-
-# ---------- Graph ops -----------------------------------------------------
 
 def duplicates(*, where: F | dict | None = None, threshold: float | None = None) -> Query:
     params: dict = {}
@@ -455,10 +424,6 @@ def _compile_evict(p: dict) -> str:
 
 register_compiler("sys_evict", _compile_evict)
 
-
-# ---------- LOG -----------------------------------------------------------
-# sys_log: "LOG" log_filter? limit?
-# log_filter: "WHERE" expr | "SINCE" STRING | "TRACE" STRING
 
 def log(
     *,

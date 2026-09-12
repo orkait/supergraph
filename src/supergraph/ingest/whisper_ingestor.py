@@ -1,15 +1,3 @@
-"""Whisper ingestor: speech-to-text via faster-whisper (CTranslate2 backend).
-
-In-process. Unlike the vision pipeline which uses a sidecar because VLM
-inference is long and benefits from server-side batching, whisper calls are
-short enough that IPC overhead would dominate. One ``WhisperModel`` instance
-is cached per (model_size, device, compute_type) tuple so reloading is free.
-
-Outputs are a full transcript plus per-segment ``Chunk``s so downstream
-REMEMBER / RECALL queries can cite specific time ranges (``chunk.page`` is
-repurposed here as the chunk sequence number to stay within ``Chunk``'s
-schema; segment start/end seconds are preserved in ``chunk.metadata``).
-"""
 from __future__ import annotations
 
 import logging
@@ -42,7 +30,6 @@ def _get_model(model_size: str, device: str, compute_type: str):
 
 
 class WhisperIngestor(Ingestor):
-    """Audio -> markdown transcript via faster-whisper. Tier 4 for audio."""
 
     name = "whisper"
     supported_extensions = ["wav", "mp3", "ogg", "flac", "m4a", "opus", "webm"]

@@ -1,4 +1,3 @@
-"""SuperGraph - main entry point for the supergraph package."""
 
 import os
 import time
@@ -26,7 +25,6 @@ from supergraph.core.errors import OptimizationInProgress
 from supergraph.dsl.handlers import is_write_op
 from supergraph.config import SuperGraphConfig, load_config, merge_kwargs, apply_env_overrides
 
-# All system AST types
 _SYS_TYPES = tuple(
     getattr(ast_nodes, name)
     for name in dir(ast_nodes)
@@ -35,21 +33,6 @@ _SYS_TYPES = tuple(
 
 
 class SuperGraph:
-    """In-memory typed graph database with DSL interface.
-
-    Args:
-        path: Directory for supergraph.db persistence.
-              If None, in-memory only (no persistence, no WAL, no query log).
-        ceiling_mb: Hard memory limit in MB. Raises CeilingExceeded on breach.
-        embedder: Embedder instance, "default" for Model2Vec, or None to disable.
-        allow_system_queries: If False, SYS queries raise PermissionError.
-        queued: Install a single-worker submission queue in front of the write
-                path. Makes the instance safe to share across caller threads -
-                each execute() is serialized through one daemon worker (NOT
-                concurrent execution, the storage engine is single-writer).
-                Also starts the cron scheduler when a persistent path is set.
-                Default False = caller is responsible for single-threaded use.
-    """
 
     _UNSET = object()
 
@@ -109,10 +92,6 @@ class SuperGraph:
                  pro_strict: bool = True,
                  pro_cache_dir: str | None = None,
                  ):
-        # Profile resolution runs FIRST, before any config layer, so its
-        # validation can short-circuit the constructor. We re-validate
-        # inside _resolve_pro_profile and stash the resolved config on
-        # self._pro_resolved for later callers (gs.create_bonsai, etc.).
         self._pro_spec = None
         self._pro_resolved = None
         self._pro_cache_dir = Path(pro_cache_dir) if pro_cache_dir else None
@@ -123,7 +102,6 @@ class SuperGraph:
                 f"unknown profile {profile!r}; supported values: 'pro' or None"
             )
 
-        # Load config: explicit object > explicit path > env var > db dir > defaults
         if config is not None:
             self._config = config
         elif config_path is not None:
@@ -135,7 +113,6 @@ class SuperGraph:
         else:
             self._config = SuperGraphConfig()
 
-        # Layer 3: env var overrides (SUPERGRAPH_SECTION_FIELD)
         self._config = apply_env_overrides(self._config)
 
         from supergraph.core.compute_profile import configure as _configure_profile, describe_profile
@@ -151,10 +128,6 @@ class SuperGraph:
         )
         logger.info("supergraph compute: %s", describe_profile())
 
-        # Layer 4: constructor kwargs (highest priority). Every kwarg listed
-        # here must also appear in config._KWARG_SHORTCUTS or be one of the
-        # top-level convenience keys (embedder, ingest_root, vault, retention,
-        # auto_optimize, enable_wal) that merge_kwargs handles separately.
         _kwarg_names = (
             "ceiling_mb", "embedder", "ingest_root", "vault", "retention",
             "remember_weights", "recall_decay", "search_oversample",
@@ -183,24 +156,17 @@ class SuperGraph:
         self._allow_system = allow_system_queries
         self._ingest_root = cfg.server.ingest_root
 
-        # Cross-process single-owner lock. Prevents two processes racing on
-        # WAL replay / compact / checkpoint against the same path. In-memory
-        # stores skip the lock (no shared state on disk).
         self._path_lock = None
         if self._path is not None:
             from supergraph.core.path_lock import acquire_path_lock
             self._path_lock = acquire_path_lock(self._path)
 
-        # Initialize embedder (local; placed into RuntimeState below)
         _embedder = self._build_embedder(cfg, embedder)
 
-        # Wire model cache directory from config
         if cfg.vector.model_cache_dir:
             from supergraph.registry.installer import set_cache_dir
             set_cache_dir(cfg.vector.model_cache_dir)
 
-        # Ingestor registry - only constructed when custom ingestors passed.
-        # When None, the handler falls through to router.ingest_file() (preserves "direct" fast-path).
         self._ingestor_registry = None
         if ingestors:
             from supergraph.ingest.registry import IngestorRegistry
@@ -210,14 +176,11 @@ class SuperGraph:
                     inst.supported_extensions = [ext]
                 if not hasattr(inst, 'name') or not inst.name:
                     inst.name = f"custom_{ext}"
-                # Directly map the dict key extension - preserves user intent
                 self._ingestor_registry._instances[inst.name] = inst
                 self._ingestor_registry._ext_map[ext] = inst.name
 
-        # Custom chunker (None → handler uses chunk_by_heading from chunker.py)
         self._chunker = chunker
 
-        # Store / schema / conn / vector_store - local vars folded into RuntimeState below
         p = self._path
         _vector_store = None
         if p is not None:
@@ -235,7 +198,6 @@ class SuperGraph:
                                capacity=cfg.core.initial_capacity,
                                use_compression=cfg.core.use_compression)
             _schema = SchemaRegistry()
-        # DocumentStore: separate SQLite, always on disk
         from supergraph.document.store import DocumentStore
         if p is not None:
             doc_db = os.path.join(str(p), "documents.db")
@@ -259,14 +221,11 @@ class SuperGraph:
         self._embedder_dirty = False
         self._check_embedder_identity(_conn, _embedder)
 
-        # Create executors before WAL replay so _replay_wal can use them
         self._executor = Executor(self._runtime,
                                   ingest_root=self._ingest_root,
                                   ingestor_registry=self._ingestor_registry,
                                   chunker=self._chunker)
         self._executor._ensure_vector_store_cb = self._ensure_vector_store
-        # Reader LLM(s) for the ANSWER verb. Pluggable callables, not a
-        # config-layer setting - held as live references on the executor.
         if reader_timeout_seconds <= 0:
             raise ValueError(
                 f"reader_timeout_seconds must be > 0; got {reader_timeout_seconds!r}"
@@ -290,18 +249,12 @@ class SuperGraph:
         }
         self._sys_executor = SystemExecutor(self._runtime, retention=retention_dict)
         self._sys_executor._eviction_target_ratio = cfg.core.eviction_target_ratio
-        # SYS EXPLAIN REMEMBER (and future dry-run-of-user-query verbs) needs
-        # to reach the main Executor's handlers + configured state.
         self._sys_executor._executor = self._executor
-        # Evolution engine wired after engine is created (below)
 
-        # Cron scheduler (requires queued mode for background execution)
         self._cron: CronScheduler | None = None
 
-        # NL->DSL ingestor (built lazily from config.ingest.nl_backend)
         self._nl_ingestor = None
 
-        # WAL manager
         self._wal = WALManager(
             self._runtime, self._executor,
             wal_hard_limit=cfg.persistence.wal_hard_limit,
@@ -311,11 +264,9 @@ class SuperGraph:
         )
         self._sys_executor._wal_manager = self._wal
 
-        # Replay WAL (must happen after executor is created)
         if self._path and self._runtime.conn:
             self._wal.replay()
 
-        # Optimizer scheduler (evolution_engine wired after engine init below)
         self._optimizer = OptimizerScheduler(
             self._runtime,
             auto_optimize=cfg.dsl.auto_optimize,
@@ -325,7 +276,6 @@ class SuperGraph:
             cache_gc_threshold=cfg.dsl.cache_gc_threshold,
         )
 
-        # Vault: markdown note system
         vault_path = cfg.vault.path if cfg.vault.enabled else None
         if vault_path:
             from supergraph.vault.manager import VaultManager
@@ -366,51 +316,30 @@ class SuperGraph:
         self._start_time: float = time.time()
         self._last_evolution_events: list = []
 
-        # Evolution engine (Layer 5: metacognitive memory)
         from supergraph.core.evolve import EvolutionEngine
         self._evolution_engine = EvolutionEngine(self, self._runtime.conn, cfg.evolution)
-        # Wire into scheduler and sys_executor
         self._optimizer._evolution_engine = self._evolution_engine
         self._sys_executor._evolution_engine = self._evolution_engine
 
-        # Single-worker submission queue (not parallelism) - gives
-        # thread-safe caller side even though writes stay serialized.
         self._queued = queued
         self._queue = None
         if queued:
             from supergraph.core.queue import CommandQueue
             self._queue = CommandQueue(self._execute_internal)
 
-        # Start cron scheduler if queued and persistent
         if queued and self._conn is not None:
             self._cron = CronScheduler(self._conn, self.submit_background)
             self._cron.start()
             self._sys_executor._cron = self._cron
 
-        # Eagerly build the cloud NL ingestor so the ANSWER reader is wired
-        # before any ingest, and so a misconfiguration (missing provider key)
-        # surfaces as a startup warning instead of a confusing first-call
-        # failure. Best-effort: never let it abort construction.
         if self._config.ingest.nl_backend == "cloud":
             try:
                 self._get_nl_ingestor()
             except Exception as e:
                 logger.warning("cloud NL ingestion not ready: %s", e)
 
-    # --------------------------------------------------------------
-    # profile="pro" support
-    # --------------------------------------------------------------
 
     def _resolve_pro_profile(self, pro_spec, pro_strict: bool) -> None:
-        """Validate the pro spec against the host before any other init.
-
-        Raises ``ProExtraNotInstalled`` / ``ProUnsupportedHostError`` /
-        ``ProCalibrationMissing`` under ``pro_strict=True``; logs a
-        warning and continues otherwise. Result is stashed on
-        ``self._pro_spec`` and ``self._pro_resolved`` so downstream
-        helpers (``create_bonsai``, ``pro_resolved`` property) can
-        consume it.
-        """
         from supergraph.pro import (
             HostSnapshot, ProSpec, check_extras_installed, resolve,
             ProUnsupportedHostError, ProCalibrationMissing,
@@ -459,31 +388,13 @@ class SuperGraph:
 
     @property
     def pro_resolved(self):
-        """ResolvedConfig from ``profile='pro'`` resolution, or None."""
         return self._pro_resolved
 
     @property
     def pro_spec(self):
-        """The ProSpec the SuperGraph was instantiated with, or None."""
         return self._pro_spec
 
     def create_bonsai(self, **overrides):
-        """Build a calibrated BonsaiIngestor from the resolved pro config.
-
-        Requires ``profile='pro'`` to have been passed at construction,
-        and the spec must use ``ingest_mode='bonsai'``. Reads n_ctx /
-        n_batch / n_gpu_layers from the live calibration cache so the
-        ingestor matches what ``supergraph pro probe`` last measured.
-
-        Optional ``**overrides`` are passed through to
-        ``BonsaiIngestor.__init__`` and win over the resolved values -
-        useful when callers want a different ``temperature`` or
-        ``max_output_tokens`` without losing the calibrated knobs.
-
-        Raises ``RuntimeError`` if pro mode wasn't requested, the spec
-        excludes bonsai, or the GGUF can't be located. The latter is
-        usually fixed by ``supergraph pro setup``.
-        """
         if self._pro_spec is None or self._pro_resolved is None:
             raise RuntimeError(
                 "create_bonsai() requires SuperGraph(profile='pro'); "
@@ -510,9 +421,6 @@ class SuperGraph:
             else _DEFAULT_PROMPT_PATH
         )
         cfg = self._config
-        # entity_model_dir defaults to None (NER opt-in for general writes), but
-        # pro mode with ner="tinybert" explicitly opts in, so resolve a concrete
-        # model dir here even when the global default is unset.
         ner_dir = (
             (cfg.dsl.entity_model_dir
              or f"{os.environ.get('MODELS_DIR', './models')}/tinybert-ner")
@@ -528,7 +436,6 @@ class SuperGraph:
             ner_model_dir=ner_dir,
         )
         kwargs.update(overrides)
-        # Drop None values so BonsaiIngestor gets its own defaults.
         kwargs = {k: v for k, v in kwargs.items() if v is not None or k == "gs"}
         return BonsaiIngestor(**kwargs)
 
@@ -537,10 +444,6 @@ class SuperGraph:
         return resolve_bonsai_gguf(quant)
 
     def _build_embedder(self, cfg, embedder_arg):
-        """Resolve the embedder instance from kwarg + cfg. Explicit instance
-        wins over cfg.vector.embedder name. Returns None when embedder is
-        disabled or when an optional dependency is missing.
-        """
         if embedder_arg is not self._UNSET and embedder_arg is not None and not isinstance(embedder_arg, str):
             return embedder_arg
         emb_cfg = cfg.vector.embedder
@@ -574,10 +477,6 @@ class SuperGraph:
         return None
 
     def _wire_executor_from_cfg(self, executor, cfg) -> None:
-        """Push every DSL / document / vector tuning knob from cfg onto the
-        executor instance. Keeps __init__ readable by factoring out the ~40
-        attribute assignments.
-        """
         executor.cost_threshold = cfg.dsl.cost_threshold
         d = cfg.dsl
         doc = cfg.document
@@ -612,13 +511,6 @@ class SuperGraph:
         executor._vision_max_tokens = doc.vision_max_tokens
 
     def execute(self, query: str, *, namespace: str | None = None) -> Result:
-        """Execute a DSL query. Thread-safe if queued=True.
-
-        ``namespace`` scopes this single query to a supergraph namespace
-        (reads see only it; writes are tagged with it) WITHOUT leaving global
-        _active_namespace state set - safe to call concurrently against a
-        shared, queued server, unlike a separate ``BIND NAMESPACE`` statement.
-        """
         if self._queue is not None:
             return self._queue.submit(query, namespace=namespace)
         return self._execute_internal(query, namespace=namespace)
@@ -630,12 +522,6 @@ class SuperGraph:
         limit: int | None = None,
         using: str | None = None,
     ) -> Result:
-        """Requires a ``reader=`` callable configured at construction.
-
-        Question-shape routing across REMEMBER / SIMILAR / LEXICAL / RECALL /
-        PATH is not performed here - use ``write()`` with a Bonsai-style
-        ingestor for that.
-        """
         if not question or not question.strip():
             raise ValueError("ask requires a non-empty question")
         escaped_q = question.replace("\\", "\\\\").replace('"', '\\"')
@@ -656,13 +542,6 @@ class SuperGraph:
         role: str = "user",
         dry_run: bool = False,
     ) -> object:
-        """Requires ``ingestor=<callable>`` at construction.
-
-        The factory is invoked lazily on first call so the ingestor receives
-        a fully-initialised ``SuperGraph`` (avoids a chicken-and-egg between
-        ``BonsaiIngestor(gs=...)`` and the store still being under
-        construction).
-        """
         return self._get_ingestor().ingest(
             text,
             msg_id=msg_id,
@@ -686,7 +565,6 @@ class SuperGraph:
         return self._ingestor
 
     def _build_reranker(self, cfg):
-        """Build reranker from config. Returns None if not configured."""
         backend = (cfg.dsl.reranker or "").lower()
         if not backend:
             return None
@@ -709,13 +587,6 @@ class SuperGraph:
         return None
 
     def _execute_internal(self, query: str, *, namespace: str | None = None) -> Result:
-        """Execute a DSL query directly (no queue). Internal use only.
-
-        Runs on the single-writer worker thread when queued, so applying
-        ``namespace`` here (set on entry, restore on exit) is race-free: no
-        other query runs between set and restore, and global state never
-        leaks past this call.
-        """
         if namespace is None:
             return self._execute_internal_body(query)
         store = self._runtime.store
@@ -743,12 +614,10 @@ class SuperGraph:
             tag = infer_tag(ast)
             phase = infer_phase(tag)
 
-            # Route to correct executor
             if isinstance(ast, _SYS_TYPES):
                 if not self._allow_system:
                     raise PermissionError("System queries are disabled")
 
-                # Special handling for checkpoint
                 if isinstance(ast, ast_nodes.SysCheckpoint):
                     self.checkpoint()
                     result = Result(kind="ok", data=None, count=0)
@@ -765,9 +634,6 @@ class SuperGraph:
                 else:
                     result = self._sys_executor.execute(ast)
                     if isinstance(ast, ast_nodes.SysReembed):
-                        # Only declare all-clear if every embedder-produced vector
-                        # was actually re-encoded; otherwise stay dirty so reads
-                        # keep refusing rather than serve stale-space vectors.
                         data = result.data if isinstance(result.data, dict) else {}
                         if data.get("skipped", 0) == 0:
                             self._embedder_dirty = False
@@ -795,7 +661,6 @@ class SuperGraph:
                                  tag=tag, trace_id=trace_id, source=source, phase=phase)
 
             self._counters["execute_ok"] += 1
-            # Attach pending evolution events to result.meta and clear
             if self._last_evolution_events:
                 result.meta["evolution"] = list(self._last_evolution_events)
                 self._last_evolution_events.clear()
@@ -812,11 +677,9 @@ class SuperGraph:
             raise
 
     def execute_batch(self, queries: list[str]) -> list[Result]:
-        """Execute multiple queries. Each is independent (not transactional)."""
         return [self.execute(q) for q in queries]
 
     def _get_nl_ingestor(self):
-        """Build (once) and cache the NL ingestor selected by config.ingest.nl_backend."""
         if self._nl_ingestor is not None:
             return self._nl_ingestor
         backend = self._config.ingest.nl_backend
@@ -830,9 +693,6 @@ class SuperGraph:
                 max_tokens=ic.nl_max_tokens,
                 temperature=ic.nl_temperature,
             )
-            # Auto-wire the ANSWER reader from the same cloud chain when the
-            # caller didn't supply one. Without this, @ANSWER raises
-            # "ANSWER requires a configured reader". A user-passed reader= wins.
             if getattr(self._executor, "_reader", None) is None:
                 _runner = self._nl_ingestor._runner
 
@@ -858,12 +718,6 @@ class SuperGraph:
     def ingest_nl(self, text: str, *, msg_id: str | None = None,
                   session_id: str = "default", role: str = "user",
                   dry_run: bool = False):
-        """Ingest natural-language text as DSL via the configured LLM backend.
-
-        Returns an ingest IngestResult (statements / executed / rejected). A
-        msg_id is auto-generated when not supplied. Requires
-        config.ingest.nl_backend to be set.
-        """
         import uuid
         ingestor = self._get_nl_ingestor()
         mid = msg_id or f"msg:{uuid.uuid4().hex}"
@@ -872,11 +726,6 @@ class SuperGraph:
 
     def ingest_nl_stream(self, text: str, *, msg_id: str | None = None,
                          session_id: str = "default", role: str = "user"):
-        """Stream NL ingestion progress events. Cloud backend only.
-
-        Yields {"phase": "generating"|"synthesizing"|"executing"|"done", ...}.
-        Raises ValueError when nl_backend is not 'cloud'.
-        """
         import uuid
         if self._config.ingest.nl_backend != "cloud":
             raise ValueError(
@@ -889,28 +738,6 @@ class SuperGraph:
 
     @contextmanager
     def deferred_embeddings(self, batch_size: int = 64):
-        """Defer vector embeddings during CREATE NODE, flushing in batches.
-
-        While inside this context, write queries that would trigger embedding
-        (CREATE NODE with schema EMBED field, or with DOCUMENT clause) append
-        their (slot, text) pairs to a pending queue instead of calling the
-        embedder per-node. The queue is auto-flushed when `batch_size` is
-        reached, and any remaining pending pairs are flushed on context exit.
-
-        This is a ~4-10x speedup on transformer embedders (EmbeddingGemma,
-        Harrier, bge-*, etc.) where per-call overhead dominates. For static
-        embedders (model2vec) it's roughly neutral.
-
-        Example::
-
-            with gs.deferred_embeddings(batch_size=128):
-                for item in items:
-                    # Use DSL escaping to prevent injection from special chars
-                    safe_id = item.id.replace('"', '\\"')
-                    safe_text = item.text.replace('"', '\\"').replace("\\\\", "\\\\")
-                    gs.execute(f'CREATE NODE "{safe_id}" text = "{safe_text}" DOCUMENT "{safe_text}"')
-            # All embeddings flushed here.
-        """
         executor = self._executor
         prev_defer = executor._defer_embeddings
         prev_batch_size = executor._embed_batch_size
@@ -939,28 +766,22 @@ class SuperGraph:
             executor._embed_batch_size = prev_batch_size
 
     def submit_background(self, query: str) -> "Future":
-        """Submit a background query (low priority). Only available in queued mode.
-        Returns a Future that resolves to a Result."""
         if self._queue is None:
             raise RuntimeError("submit_background requires SuperGraph(queued=True)")
         return self._queue.submit_background(query)
 
     def checkpoint(self) -> None:
-        """Force persist to disk. No-op if path is None."""
         if self._conn is None:
             return
         self._wal.checkpoint(vector_store=self._vector_store)
 
     def bind_trace(self, trace_id: str) -> None:
-        """Set active trace ID for log correlation."""
         self._active_trace = trace_id
 
     def discard_trace(self) -> None:
-        """Clear active trace ID."""
         self._active_trace = None
 
     def set_script(self, script: str) -> None:
-        """Store a DSL script in metadata so the playground can load it."""
         conn = self._conn
         if conn is None:
             return
@@ -968,7 +789,6 @@ class SuperGraph:
         set_metadata(conn, "playground_script", script)
 
     def get_script(self) -> str | None:
-        """Retrieve the stored playground script, if any."""
         conn = self._conn
         if conn is None:
             return None
@@ -976,7 +796,6 @@ class SuperGraph:
         return get_metadata(conn, "playground_script")
 
     def close(self) -> None:
-        """Checkpoint + close sqlite connection. Idempotent."""
         if self._cron is not None:
             self._cron.stop()
             self._cron = None
@@ -991,14 +810,11 @@ class SuperGraph:
         if self._runtime.document_store is not None:
             self._runtime.document_store.close()
             self._runtime.document_store = None
-        # Release the cross-process path lock last so any concurrent opener
-        # sees a fully-released store.
         if getattr(self, "_path_lock", None) is not None:
             self._path_lock.release()
             self._path_lock = None
 
     def reset_memory(self) -> Result:
-        """Reset the in-memory graph (nodes, edges) to empty. SQLite is left alone."""
         if self._optimizer.optimizing:
             raise OptimizationInProgress()
 
@@ -1010,12 +826,6 @@ class SuperGraph:
         if self._runtime.vector_store is not None:
             from supergraph.vector.store import VectorStore
             vector_path = os.path.join(str(self._path), "vectors.usearch") if self._path else None
-            # VectorStore.__init__ does .view(path) on an existing file,
-            # which mmaps the OLD index with its keys. Without removing
-            # the file first, the "reset" graph still has every prior
-            # vector key live - subsequent CREATE NODE with a reused id
-            # then trips usearch with "Duplicate keys not allowed in
-            # high-level wrappers" and the whole batch rolls back.
             if vector_path and os.path.exists(vector_path):
                 try:
                     os.remove(vector_path)
@@ -1045,7 +855,6 @@ class SuperGraph:
         return Result(kind="ok", data={"reset": "memory"}, count=0)
 
     def reset_store(self, preserve_config: bool = True) -> Result:
-        """Gracefully drop and recreate SQLite internal tables, clear memory, restart store."""
         if self._conn:
             self.checkpoint()
             old_script = self.get_script()
@@ -1069,14 +878,10 @@ class SuperGraph:
                 doc_conn.commit()
 
         self.reset_memory()
-        # reset_memory creates a fresh CoreStore whose dirty flags start True;
-        # since we just wiped SQLite there is nothing to flush, so clear them
-        # now to avoid a no-op checkpoint write on the next close().
         self._store.reset_dirty_flags()
         return Result(kind="ok", data={"reset": "store"}, count=0)
         
     def reset_session(self) -> Result:
-        """Clears active context, trace IDs, and embedder-dirty flag."""
         if self._store:
             self._store._active_context = None
         self.discard_trace()
@@ -1086,13 +891,11 @@ class SuperGraph:
         return Result(kind="ok", data={"reset": "session"}, count=0)
 
     def get_runtime_config(self) -> Result:
-        """Return the running configuration as a dict."""
         import msgspec
         data = msgspec.json.decode(msgspec.json.encode(self._config))
         return Result(kind="config", data=data, count=1)
         
     def get_persisted_config(self) -> Result:
-        """Read the supergraph.json from disk."""
         if self._path is None:
             return Result(kind="config", data=None, count=0)
         from supergraph.config import load_config
@@ -1102,7 +905,6 @@ class SuperGraph:
         return Result(kind="config", data=data, count=1)
         
     def update_runtime_config(self, changes: dict) -> Result:
-        """Update live features."""
         from supergraph.config import merge_kwargs
         self._config = merge_kwargs(self._config, **changes)
         
@@ -1116,7 +918,6 @@ class SuperGraph:
         return Result(kind="ok", data={"updated": "runtime"}, count=1)
         
     def update_persisted_config(self, changes: dict) -> Result:
-        """Update supergraph.json on disk."""
         if self._path is None:
             return Result(kind="error", data={"message": "No persistence path set"}, count=0)
             
@@ -1141,16 +942,13 @@ class SuperGraph:
         return self._store.edge_count
 
     def get_all_nodes(self) -> list[dict]:
-        """Return all live nodes. Used by server /api/graph endpoint."""
         return self._store.get_all_nodes()
 
     def get_all_edges(self) -> list[dict]:
-        """Return all live edges. Used by server /api/graph endpoint."""
         return self._store.get_all_edges()
 
     @property
     def cost_threshold(self) -> int:
-        """DSL query cost threshold. Queries exceeding this are rejected."""
         return self._executor.cost_threshold
 
     @cost_threshold.setter
@@ -1159,7 +957,6 @@ class SuperGraph:
 
     @property
     def ceiling_mb(self) -> int:
-        """Memory ceiling in MB. Writes exceeding this raise CeilingExceeded."""
         return self._store._ceiling_bytes // 1_000_000
 
     @ceiling_mb.setter
@@ -1197,7 +994,6 @@ class SuperGraph:
         self.close()
 
     def _ensure_vector_store(self, dims: int):
-        """Lazily initialize vector store with given dimensionality."""
         vs = self._runtime.vector_store
         if vs is None:
             from supergraph.vector.store import VectorStore
@@ -1219,9 +1015,6 @@ class SuperGraph:
         return vs
 
     def _check_embedder_identity(self, conn, embedder):
-        """On open, verify current embedder matches what the database was built
-        with. Sets self._embedder_dirty on mismatch; SIMILAR/REMEMBER will refuse
-        until SYS REEMBED is run."""
         if conn is None or embedder is None:
             return
         from supergraph.persistence.database import get_metadata
@@ -1241,7 +1034,6 @@ class SuperGraph:
             self._embedder_dirty = True
 
     def _record_embedder_identity(self, dims: int):
-        """Store embedder name + dims in database metadata on first vector write."""
         conn = self._runtime.conn
         if conn is None:
             return
@@ -1254,7 +1046,6 @@ class SuperGraph:
         set_metadata(conn, "embedder_dims", str(dims))
 
     def _update_embedder_identity(self):
-        """Update stored embedder identity after SYS REEMBED."""
         conn = self._runtime.conn
         emb = self._runtime.embedder
         if conn is None or emb is None:
@@ -1262,7 +1053,5 @@ class SuperGraph:
         from supergraph.persistence.database import set_metadata
         set_metadata(conn, "embedder_name", emb.name)
         set_metadata(conn, "embedder_dims", str(emb.dims))
-
-
 
 

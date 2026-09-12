@@ -1,8 +1,3 @@
-"""Self-balancing optimizer: 6 operations that clean up accumulated pressure.
-
-All operations assume exclusive access (no concurrent reads/writes).
-The caller (SuperGraph.execute) enforces this via the _optimizing lock.
-"""
 
 from __future__ import annotations
 
@@ -26,7 +21,6 @@ from supergraph.core.strings import StringTable
 
 
 def health_check(store: CoreStore, vector_store=None, document_store=None) -> dict:
-    """Compute pressure metrics. Lightweight, no mutations."""
     n = store._next_slot
     tombstone_count = len(store.node_tombstones)
     tombstone_ratio = tombstone_count / max(n, 1)
@@ -79,12 +73,6 @@ def needs_optimization(health: dict, compact_threshold: float = 0.2,
 
 
 def compact_tombstones(store: CoreStore, vector_store=None, document_store=None) -> dict:
-    """Shift live slots down to eliminate tombstone gaps.
-
-    Renumbers all slot references: node_ids, node_kinds, columns,
-    edges, id_to_slot, vectors, DocumentStore, FTS5.
-    Uses numpy fancy indexing for bulk array operations.
-    """
     if not store.node_tombstones:
         return {"compacted": 0}
 
@@ -101,13 +89,11 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
 
     new_capacity = max(new_count * 2, store._capacity)
 
-    # Remap node arrays via fancy indexing
     new_ids = np.full(new_capacity, -1, dtype=np.int32)
     new_ids[:new_count] = store.node_ids[live_slots_arr]
     new_kinds = np.zeros(new_capacity, dtype=np.int32)
     new_kinds[:new_count] = store.node_kinds[live_slots_arr]
 
-    # Remap columns via fancy indexing (no Python loop over slots)
     for field in list(store.columns._columns.keys()):
         old_col = store.columns._columns[field]
         old_pres = store.columns._presence[field]
@@ -133,10 +119,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
         (s, t, k) for k, edges in store._edges_by_type.items() for s, t, _d in edges
     }
 
-    # Remap vectors. Vectorised: mask live_slots against _has_vector, then
-    # gather vectors + new-slot numbers via numpy. Pre-fix, every live slot
-    # triggered two per-slot method calls (has_vector + get_vector) plus a
-    # Python list build.
     if vector_store is not None:
         has_vec = vector_store._has_vector
         valid = live_slots_arr < len(has_vec)
@@ -144,7 +126,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
         keep = has_vec[live_clip]
         old_slots_arr = live_clip[keep]
 
-        # Reset the index + presence bitmap at the new capacity.
         vector_store._has_vector = np.zeros(new_capacity, dtype=bool)
         vector_store._capacity = new_capacity
         from usearch.index import Index
@@ -158,11 +139,9 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
             vector_store._index.add(new_slots, vecs)
             vector_store._has_vector[new_slots] = True
 
-    # Remap DocumentStore slot keys via temp-table batch (O(1) statements vs O(N))
     if document_store is not None:
         conn = document_store._conn
 
-        # Build live-slot temp table - used for both orphan deletion and remap.
         conn.execute(
             "CREATE TEMP TABLE _live_slots (slot INT PRIMARY KEY)"
         )
@@ -171,9 +150,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
             [(s,) for s in old_to_new_dict.keys()]
         )
 
-        # Delete tombstoned slot rows. Tombstoned slots are not in _live_slots
-        # but may still occupy rows in document tables; leaving them causes
-        # UNIQUE constraint violations when a live slot remaps onto that number.
         _ORPHAN_COLS = [
             ("documents", "slot"),
             ("summaries", "slot"),
@@ -187,7 +163,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
                 (n,),
             )
 
-        # Remap live slots that change position (old_slot != new_slot)
         remapped = [(old, new) for old, new in old_to_new_dict.items() if old != new]
         if remapped:
             conn.execute(
@@ -202,13 +177,11 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
                 ("images", "slot"),
                 ("doc_metadata", "doc_slot"),
             ]
-            # Pass 1: old slot → negative sentinel (avoids collision with valid new slots)
             for tbl, col in _REMAP_COLS:
                 conn.execute(
                     f"UPDATE {tbl} SET {col} = -(({col}) + 1)"  # noqa: S608
                     f" WHERE {col} IN (SELECT old_slot FROM _slot_remap)"
                 )
-            # Pass 2: negative sentinel → new slot
             for tbl, col in _REMAP_COLS:
                 conn.execute(
                     f"UPDATE {tbl} SET {col} = ("  # noqa: S608
@@ -220,14 +193,12 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
 
         conn.execute("DROP TABLE _live_slots")
 
-        # Rebuild FTS from remapped summaries
         conn.execute("DELETE FROM doc_fts")
         rows = conn.execute("SELECT slot, summary FROM summaries").fetchall()
         for slot, summary in rows:
             conn.execute("INSERT INTO doc_fts (rowid, summary) VALUES (?, ?)", (slot, summary))
         conn.commit()
 
-    # Apply to store
     store.node_ids = new_ids
     store.node_kinds = new_kinds
     store._capacity = new_capacity
@@ -241,7 +212,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
     store._edges_dirty = True
     store._ensure_edges_built()
 
-    # Rebuild secondary indices
     for field in list(store._indexed_fields):
         store.add_index(field)
 
@@ -249,11 +219,6 @@ def compact_tombstones(store: CoreStore, vector_store=None, document_store=None)
 
 
 def gc_strings(store: CoreStore) -> dict:
-    """Rebuild string table with only referenced strings.
-
-    Shell over supergraph.algos.string_gc: collects referenced ids,
-    builds remap plan, applies in-place remap to store arrays.
-    """
     from supergraph.algos.string_gc import (
         collect_referenced_ids,
         build_remap_plan,
@@ -331,7 +296,6 @@ def gc_strings(store: CoreStore) -> dict:
 
 
 def defrag_edges(store: CoreStore) -> dict:
-    """Rebuild edge keys set and CSR matrices from clean edge lists."""
     store._edge_keys = {
         (s, t, k) for k, edges in store._edges_by_type.items() for s, t, _d in edges
     }
@@ -341,7 +305,6 @@ def defrag_edges(store: CoreStore) -> dict:
 
 
 def cleanup_vectors(store: CoreStore, vector_store) -> dict:
-    """Remove HNSW entries for tombstoned/retracted slots."""
     if vector_store is None:
         return {"removed": 0}
 
@@ -358,7 +321,6 @@ def cleanup_vectors(store: CoreStore, vector_store) -> dict:
 
 
 def sweep_orphans(store: CoreStore, document_store) -> dict:
-    """Delete DocumentStore rows not referenced by live slots."""
     if document_store is None:
         return {"cleaned": 0}
 
@@ -369,7 +331,6 @@ def sweep_orphans(store: CoreStore, document_store) -> dict:
 
 
 def clear_caches(store: CoreStore) -> dict:
-    """Clear plan cache and edge combination/transpose caches."""
     from supergraph.core import plan_cache as _plan_cache_hook
     _plan_cache_hook.clear()
     store.edge_matrices._cache.clear()
@@ -384,11 +345,6 @@ def compact_tombstones_safe(
     vector_store=None,
     document_store=None,
 ) -> dict:
-    """Crash-safe compact_tombstones using an atomic ATTACH transaction.
-    
-    Eliminates the double-checkpoint IO trap. If a crash occurs, SQLite 
-    rolls back both the blobs and the documents DB automatically.
-    """
     if conn is None:
         return compact_tombstones(store, vector_store, document_store)
     if not store.node_tombstones:
@@ -408,7 +364,6 @@ def compact_tombstones_safe(
 
     attached = False
     if document_store is not None and not document_store._temp:
-        # Flush any pending transactions in DocumentStore before attaching
         document_store._conn.commit()
         safe_doc_path = document_store._path.replace("'", "''")
         conn.execute(f"ATTACH DATABASE '{safe_doc_path}' AS docs")
@@ -417,7 +372,6 @@ def compact_tombstones_safe(
     try:
         conn.execute("BEGIN IMMEDIATE")
 
-        # 1. Atomic Document Remapping via ATTACH
         if attached:
             conn.execute("CREATE TEMP TABLE _live_slots (slot INT PRIMARY KEY)")
             conn.executemany("INSERT INTO _live_slots VALUES (?)", [(s,) for s in old_to_new_dict.keys()])
@@ -460,7 +414,6 @@ def compact_tombstones_safe(
             for slot, summary in rows:
                 conn.execute("INSERT INTO docs.doc_fts (rowid, summary) VALUES (?, ?)", (slot, summary))
 
-        # 2. In-Memory Array Remapping
         new_capacity = max(new_count * 2, store._capacity)
         new_ids = np.full(new_capacity, -1, dtype=np.int32)
         new_ids[:new_count] = store.node_ids[live_slots_arr]
@@ -486,7 +439,6 @@ def compact_tombstones_safe(
             if remapped_edges:
                 new_edges[etype] = remapped_edges
 
-        # Vector Remapping
         if vector_store is not None:
             old_slots = []
             vecs = []
@@ -505,7 +457,6 @@ def compact_tombstones_safe(
                 vector_store._index.add(new_slots, np.vstack(vecs))
                 vector_store._has_vector[new_slots] = True
 
-        # 3. Apply to Store Pointers
         store.node_ids = new_ids
         store.node_kinds = new_kinds
         store._capacity = new_capacity
@@ -535,7 +486,6 @@ def compact_tombstones_safe(
         store._dirty_edges = True
         store._dirty_strings = True
 
-        # 4. Atomic Flush of SuperGraph Blobs
         _checkpoint(store, schema, conn, force=True)
 
     except Exception as e:
@@ -555,12 +505,6 @@ def optimize_all(
     schema=None,
     conn=None,
 ) -> dict:
-    """Run all 6 optimization operations in safe order.
-
-    Short-circuits on the first failure; returns results so far plus
-    {"error": "..."}. When schema and conn are both provided the compact
-    step routes through compact_tombstones_safe.
-    """
     if conn is not None and schema is not None:
         compact_step = lambda: compact_tombstones_safe(
             store, schema, conn, vector_store, document_store
@@ -589,7 +533,6 @@ def optimize_all(
 
 
 def _get_evictable_slots_sorted(store: CoreStore, protected_kinds: set) -> list[int]:
-    """Shell: resolve store column arrays, delegate to algos.eviction."""
     n = store._next_slot
     if n == 0:
         return []
@@ -617,7 +560,6 @@ def _get_evictable_slots_sorted(store: CoreStore, protected_kinds: set) -> list[
 
 
 def _evict_nodes(store: CoreStore, slots_to_evict: list[int], vector_store=None, document_store=None) -> int:
-    """Helper: actually evict the given slots."""
     if not slots_to_evict:
         return 0
 
@@ -639,7 +581,6 @@ def _evict_nodes(store: CoreStore, slots_to_evict: list[int], vector_store=None,
             except Exception as err:
                 logger.debug("document_store.delete_document(%s) failed during eviction: %s", slot, err)
 
-        # Tombstone
         store.columns.clear(slot)
         store.node_tombstones.add(slot)
         if str_id in store.id_to_slot:
@@ -647,7 +588,6 @@ def _evict_nodes(store: CoreStore, slots_to_evict: list[int], vector_store=None,
         store._count -= 1
         evicted += 1
 
-    # Cascade edge cleanup for all evicted slots
     if evicted > 0:
         store._edge_keys = {
             (s, t, k)
@@ -669,7 +609,6 @@ def _evict_nodes(store: CoreStore, slots_to_evict: list[int], vector_store=None,
 
 
 def evict_oldest(store: CoreStore, target_bytes: int, vector_store=None, document_store=None, protected_kinds: set | None = None) -> dict:
-    """Evict oldest non-protected nodes until memory usage is at or below target_bytes."""
     from supergraph.core.memory import measure
     
     PROTECTED_KINDS = protected_kinds if protected_kinds is not None else {"schema", "config", "system"}
@@ -684,7 +623,6 @@ def evict_oldest(store: CoreStore, target_bytes: int, vector_store=None, documen
     to_evict = []
     for slot in candidates:
         to_evict.append(slot)
-        # Check if we're under target periodically to avoid measuring every node
         if len(to_evict) % 100 == 0:
             _evict_nodes(store, to_evict, vector_store, document_store)
             evicted += len(to_evict)
@@ -703,7 +641,6 @@ def evict_oldest(store: CoreStore, target_bytes: int, vector_store=None, documen
 
 
 def evict_by_count(store: CoreStore, limit: int, vector_store=None, document_store=None, protected_kinds: set | None = None) -> dict:
-    """Evict exactly limit number of oldest non-protected nodes."""
     from supergraph.core.memory import measure
     
     if limit <= 0:

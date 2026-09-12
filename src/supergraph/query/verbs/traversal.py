@@ -1,11 +1,3 @@
-"""Traversal + remaining read verbs (PR 2).
-
-Covers: TRAVERSE, SUBGRAPH, PATH, PATHS, SHORTEST PATH, DISTANCE,
-WEIGHTED SHORTEST PATH, WEIGHTED DISTANCE, ANCESTORS, DESCENDANTS,
-COMMON NEIGHBORS, MATCH, WHAT IF RETRACT (counterfactual), AGGREGATE.
-
-Clause order matches grammar.lark exactly (see per-verb doc-blocks).
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -24,9 +16,6 @@ def _require_depth(depth: Any, label: str) -> None:
     if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
         raise ValueError(f"{label} depth must be a non-negative int, got {depth!r}")
 
-
-# ---------- TRAVERSE ------------------------------------------------------
-# traverse_q: "TRAVERSE" "FROM" STRING "DEPTH" NUMBER where_clause? limit_clause?
 
 def traverse(from_id: str, *, depth: int, where: F | dict | None = None, limit: int | None = None) -> Query:
     _require_depth(depth, "traverse()")
@@ -47,9 +36,6 @@ def _compile_traverse(p: dict) -> str:
 register_compiler("traverse", _compile_traverse)
 
 
-# ---------- SUBGRAPH ------------------------------------------------------
-# subgraph_q: "SUBGRAPH" "FROM" STRING "DEPTH" NUMBER
-
 def subgraph(from_id: str, *, depth: int) -> Query:
     _require_depth(depth, "subgraph()")
     return Query(_verb="subgraph", _params={"from_id": from_id, "depth": depth}, _kind="read")
@@ -61,9 +47,6 @@ def _compile_subgraph(p: dict) -> str:
 
 register_compiler("subgraph", _compile_subgraph)
 
-
-# ---------- PATH ----------------------------------------------------------
-# path_q: "PATH" "FROM" STRING "TO" STRING "MAX_DEPTH" NUMBER where_clause?
 
 def path(a: str, b: str, *, max_depth: int, where: F | dict | None = None) -> Query:
     _require_depth(max_depth, "path()")
@@ -81,9 +64,6 @@ def _compile_path(p: dict) -> str:
 register_compiler("path", _compile_path)
 
 
-# ---------- PATHS ---------------------------------------------------------
-# paths_q: "PATHS" "FROM" STRING "TO" STRING "MAX_DEPTH" NUMBER where_clause?
-
 def paths(a: str, b: str, *, max_depth: int, where: F | dict | None = None) -> Query:
     _require_depth(max_depth, "paths()")
     params: dict = {"a": a, "b": b, "max_depth": max_depth}
@@ -99,9 +79,6 @@ def _compile_paths(p: dict) -> str:
 
 register_compiler("paths", _compile_paths)
 
-
-# ---------- SHORTEST PATH -------------------------------------------------
-# shortest_q: "SHORTEST" "PATH" "FROM" STRING "TO" STRING max_depth_clause? where_clause?
 
 def shortest_path(a: str, b: str, *, max_depth: int | None = None, where: F | dict | None = None) -> Query:
     if max_depth is not None:
@@ -123,9 +100,6 @@ def _compile_shortest_path(p: dict) -> str:
 register_compiler("shortest_path", _compile_shortest_path)
 
 
-# ---------- DISTANCE ------------------------------------------------------
-# distance_q: "DISTANCE" "FROM" STRING "TO" STRING "MAX_DEPTH" NUMBER
-
 def distance(a: str, b: str, *, max_depth: int) -> Query:
     _require_depth(max_depth, "distance()")
     return Query(_verb="distance", _params={"a": a, "b": b, "max_depth": max_depth}, _kind="read")
@@ -137,9 +111,6 @@ def _compile_distance(p: dict) -> str:
 
 register_compiler("distance", _compile_distance)
 
-
-# ---------- WEIGHTED SHORTEST PATH ----------------------------------------
-# weighted_sp_q: "WEIGHTED" "SHORTEST" "PATH" "FROM" STRING "TO" STRING max_depth? where?
 
 def weighted_shortest_path(a: str, b: str, *, max_depth: int | None = None, where: F | dict | None = None) -> Query:
     if max_depth is not None:
@@ -161,9 +132,6 @@ def _compile_weighted_shortest_path(p: dict) -> str:
 register_compiler("weighted_shortest_path", _compile_weighted_shortest_path)
 
 
-# ---------- WEIGHTED DISTANCE ---------------------------------------------
-# weighted_dist_q: "WEIGHTED" "DISTANCE" "FROM" STRING "TO" STRING max_depth?
-
 def weighted_distance(a: str, b: str, *, max_depth: int | None = None) -> Query:
     if max_depth is not None:
         _require_depth(max_depth, "weighted_distance()")
@@ -181,10 +149,6 @@ def _compile_weighted_distance(p: dict) -> str:
 
 register_compiler("weighted_distance", _compile_weighted_distance)
 
-
-# ---------- ANCESTORS / DESCENDANTS ---------------------------------------
-# ancestors_q: "ANCESTORS" "OF" STRING "DEPTH" NUMBER where?
-# descendants_q: "DESCENDANTS" "OF" STRING "DEPTH" NUMBER where?
 
 def ancestors(id: str, *, depth: int, where: F | dict | None = None) -> Query:
     _require_depth(depth, "ancestors()")
@@ -218,9 +182,6 @@ def _compile_descendants(p: dict) -> str:
 register_compiler("descendants", _compile_descendants)
 
 
-# ---------- COMMON NEIGHBORS ----------------------------------------------
-# common_q: "COMMON" "NEIGHBORS" "OF" STRING "AND" STRING where?
-
 def common_neighbors(a: str, b: str, *, where: F | dict | None = None) -> Query:
     params: dict = {"a": a, "b": b}
     if where is not None: params["where"] = where
@@ -236,16 +197,7 @@ def _compile_common_neighbors(p: dict) -> str:
 register_compiler("common_neighbors", _compile_common_neighbors)
 
 
-# ---------- MATCH ---------------------------------------------------------
-# match_q: "MATCH" pattern limit?
-# pattern is raw; users pass the string directly.
-
 def match(pattern, *, limit: int | None = None) -> Query:
-    """Accepts a typed Pattern object OR a raw string.
-
-    Grammar requires at least one arrow (``pattern: match_step (arrow
-    match_step)+``); single-step patterns are rejected at build time.
-    """
     from supergraph.query.pattern import Pattern
     if isinstance(pattern, Pattern):
         if len(pattern.steps) < 2:
@@ -275,9 +227,6 @@ def _compile_match(p: dict) -> str:
 register_compiler("match", _compile_match)
 
 
-# ---------- WHAT IF RETRACT (counterfactual) ------------------------------
-# counterfactual: "WHAT" "IF" "RETRACT" STRING
-
 def what_if_retract(id: str) -> Query:
     return Query(_verb="what_if_retract", _params={"id": id}, _kind="read")
 
@@ -289,16 +238,6 @@ def _compile_what_if_retract(p: dict) -> str:
 register_compiler("what_if_retract", _compile_what_if_retract)
 
 
-# ---------- AGGREGATE NODES -----------------------------------------------
-# aggregate_q: "AGGREGATE" "NODES" where? group_clause? select_clause having? order? limit?
-# group_clause:  "GROUP" "BY" IDENTIFIER ("," IDENTIFIER)*
-# select_clause: "SELECT" agg_func ("," agg_func)*      [REQUIRED]
-# having_clause: "HAVING" agg_func OP value
-# order_agg:     "ORDER" "BY" agg_func_ref ASC|DESC?
-#
-# We accept ``select`` as a list of strings, each one a valid agg_func text
-# like "COUNT()", "AVG(importance)", "MIN(x)". Users write these literally.
-
 def aggregate_nodes(
     *,
     select,
@@ -309,7 +248,6 @@ def aggregate_nodes(
     order_dir: str | None = None,
     limit: int | None = None,
 ) -> Query:
-    """Accepts typed ``agg.count()`` etc. or raw strings in select/having/order_by."""
     from supergraph.query.agg import AggFunc, HavingExpr
     if not isinstance(select, (list, tuple)) or not select:
         raise ValueError("aggregate_nodes() requires select=[...] non-empty list")
@@ -328,7 +266,6 @@ def aggregate_nodes(
             dsl_identifier(g)
     if order_dir is not None and order_dir.upper() not in ("ASC", "DESC"):
         raise ValueError("aggregate_nodes() order_dir must be 'ASC' or 'DESC'")
-    # Normalise having + order_by (accept typed)
     if isinstance(having, HavingExpr):
         having = having.to_dsl()
     if isinstance(order_by, AggFunc):
@@ -362,10 +299,6 @@ def _compile_aggregate_nodes(p: dict) -> str:
 
 register_compiler("aggregate_nodes", _compile_aggregate_nodes)
 
-
-# ---------- COUNT EDGES (extends count from reads) ------------------------
-# count_q: "COUNT" count_target where_clause?
-# count_target: "NODES" | "EDGES"
 
 def count_edges(*, where: F | dict | None = None) -> Query:
     params: dict = {}

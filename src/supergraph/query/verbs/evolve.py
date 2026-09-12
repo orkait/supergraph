@@ -1,23 +1,3 @@
-"""SYS EVOLVE sub-namespace. Access via ``q.sys.evolve.*``.
-
-Grammar:
-  sys_evolve: "EVOLVE" evolve_command
-  evolve_rule: "RULE" STRING evolve_when_clause evolve_then_clause+ cooldown? priority?
-  evolve_when_clause: "WHEN" cond ("AND" cond)*
-  evolve_condition: IDENTIFIER OP NUMBER
-  evolve_then_clause: "THEN" action
-  evolve_action:
-    | "SET" IDENT "=" NUMBER | "[" NUMBER+ "]"
-    | "ADJUST" IDENT "BY" NUMBER "UNTIL" NUMBER
-    | "ADJUST" IDENT "BY" NUMBER
-    | "ADD" IDENT STRING
-    | "REMOVE" IDENT STRING
-    | "RUN" IDENT+
-  EVOLVE_OP: ">= | <= | == | != | > | <"
-
-Action + condition shapes are power-user; we accept raw DSL strings for
-them and render verbatim. Users compose ``when=`` and ``then=`` lists.
-"""
 from __future__ import annotations
 
 from supergraph.query.escape import dsl_literal
@@ -32,7 +12,6 @@ def rule(
     cooldown: int | None = None,
     priority: int | None = None,
 ) -> Query:
-    """Accepts typed ``EvolveCondition`` / ``EvolveAction`` or raw strings."""
     from supergraph.query.evolve_expr import EvolveCondition, EvolveAction
     if not isinstance(when, (list, tuple)) or not when:
         raise ValueError("evolve.rule() requires when=[...] non-empty list")

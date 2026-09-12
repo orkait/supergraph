@@ -1,20 +1,3 @@
-"""Host-aware compute profile for auto-tuning thread pools and batch sizes.
-
-Detects cores, RAM, and GPU availability (cgroup/containerization aware on
-Linux) and exposes a single profile object that the ONNX session builders
-and ingest paths consult.
-
-Selection order (highest priority first):
-  1. ``configure(...)`` config overrides - hard limits, skip dynamic scaling
-  2. env ``SUPERGRAPH_PROFILE`` / ``SUPERGRAPH_<kind>_THREADS`` vars
-  3. dynamic tier + battery + load scaling
-
-Computed once per process (cache invalidated when configure() is called).
-
-Module import also sets process-wide BLAS/OpenMP env vars so numpy, scipy,
-OpenBLAS, MKL, and Rust/Rayon thread pools cap themselves on first use.
-Users can set ``SUPERGRAPH_BLAS_CAP`` before import to override (lower only).
-"""
 from __future__ import annotations
 
 import os
@@ -25,14 +8,8 @@ import psutil
 
 
 def _apply_blas_env_cap() -> None:
-    """Cap BLAS/OpenMP/Rayon env vars at import time so thread pools are
-    small on first use. Respects user-supplied values (setdefault)."""
     cap = os.environ.get("SUPERGRAPH_BLAS_CAP")
     if cap is None:
-        # Heuristic: logical_cores // 4, clamped to [1, 2]. Deliberately
-        # conservative: the default scenario is a user running supergraph
-        # alongside other work. For heavy batch throughput, explicitly
-        # raise with SUPERGRAPH_BLAS_CAP=N.
         try:
             n = os.cpu_count() or 2
         except Exception:
@@ -96,10 +73,6 @@ def configure(
     disable_load_scaling: bool = False,
     disable_battery_scaling: bool = False,
 ) -> None:
-    """Install config-level overrides. Any explicitly-set value becomes a hard
-    limit that is NOT adjusted by battery or load scaling. Safe to call
-    multiple times; each call invalidates the cached profile.
-    """
     global _overrides, _last_env_fingerprint
     _overrides = {
         "profile": profile,
@@ -116,26 +89,24 @@ def configure(
 
 @dataclass(frozen=True)
 class ComputeProfile:
-    name: str            # tiny | laptop | desktop | gpu
-    cores: int           # usable physical cores (affinity-aware on Linux)
+    name: str
+    cores: int
     logical_cores: int
-    ram_gb: float        # total RAM
+    ram_gb: float
     has_gpu: bool
     gpu_provider: str | None
-    on_battery: bool     # laptop on battery -> be gentler on CPU
-    load_pct: float      # host CPU utilization % at detection time
+    on_battery: bool
+    load_pct: float
 
     ner_threads: int
     embed_threads: int
     rerank_threads: int
 
-    embed_batch_size: int    # sentence/doc batch when auto-batching
-    defer_embeddings: bool   # whether to auto-enable deferred-embedding context
+    embed_batch_size: int
+    defer_embeddings: bool
 
 
 def _detect_cores() -> tuple[int, int]:
-    """Return (physical_cores, logical_cores). Respects cgroup/affinity on Linux."""
-    # Affinity-aware logical count (cgroup-limited containers respect this).
     try:
         affinity = len(os.sched_getaffinity(0))
     except (AttributeError, OSError):
@@ -144,7 +115,6 @@ def _detect_cores() -> tuple[int, int]:
     physical = psutil.cpu_count(logical=False) or affinity
     logical = psutil.cpu_count(logical=True) or affinity
 
-    # If container has restricted us, clamp both to affinity count.
     physical = min(physical, affinity) if affinity else physical
     logical = min(logical, affinity) if affinity else logical
     return max(1, physical), max(1, logical)
@@ -166,13 +136,6 @@ def _detect_battery() -> bool:
 
 
 def _detect_gpu() -> tuple[bool, str | None]:
-    """Detect usable GPU provider.
-
-    Provider listed by onnxruntime is NOT proof it is functional: CUDA can be
-    listed while cuDNN/cublasLt are missing, so session creation would fail.
-    Require explicit ``SUPERGRAPH_GPU=1`` opt-in (matches embedder convention)
-    to avoid false-positive gpu classification.
-    """
     if os.environ.get("SUPERGRAPH_GPU") != "1":
         return False, None
     try:
@@ -204,39 +167,27 @@ def _classify(cores: int, ram_gb: float, has_gpu: bool, on_battery: bool) -> str
         return "gpu"
     if cores <= 2 or (ram_gb and ram_gb < 4.0):
         return "tiny"
-    # Battery-powered machine with 4-6 cores: treat as laptop even if close to desktop boundary.
     if cores <= 6 or (ram_gb and ram_gb < 16.0) or on_battery:
         return "laptop"
     return "desktop"
 
 
 def _base_profile(name: str, physical_cores: int) -> tuple[int, int, int, int, bool]:
-    """Fraction-of-cores sizing with reserve for user's other apps.
-
-    (ner_threads, embed_threads, rerank_threads, embed_batch, defer)
-    NER stays small (2) since batching amortizes launch overhead. Embed/rerank
-    scale with cores but leave 25-50% headroom so supergraph does not steal
-    the whole machine from IDE/browser/compiler/etc.
-    """
     if name == "tiny":
         return (1, 1, 1, 16, False)
     if name == "laptop":
-        # ~50% of cores, min 2, cap 4.
         t = max(2, min(4, physical_cores // 2))
         return (2, t, t, 32, False)
     if name == "desktop":
-        # ~60% of cores, min 2, cap 8.
         t = max(2, min(8, physical_cores * 6 // 10))
         return (2, t, t, 64, True)
     if name == "gpu":
-        # ~75% of cores for CPU-side ops (GPU does heavy lifting).
         t = max(2, min(12, physical_cores * 3 // 4))
         return (2, t, t, 128, True)
     return (2, 4, 4, 32, False)
 
 
 def _detect_load_pct() -> float:
-    """Current CPU utilization % over a short sample. 0.0 on failure."""
     try:
         return float(psutil.cpu_percent(interval=0.1))
     except Exception:
@@ -259,21 +210,16 @@ def _compute_profile() -> ComputeProfile:
 
     ner_t, embed_t, rerank_t, batch, defer = _base_profile(name, physical)
 
-    # Hard-limit path: explicit config override wins. Skip dynamic scaling for
-    # those fields so benchmarks get reproducible thread counts across runs.
     ner_locked = ov["ner_threads"] is not None
     embed_locked = ov["embed_threads"] is not None
     rerank_locked = ov["rerank_threads"] is not None
 
-    # Battery degrades threads one notch - skip for locked fields or when
-    # user explicitly disabled battery scaling.
     if on_battery and name != "tiny" and not ov["disable_battery_scaling"]:
         if not embed_locked:
             embed_t = max(1, embed_t - 1)
         if not rerank_locked:
             rerank_t = max(1, rerank_t - 1)
 
-    # Load-aware halving - same treatment.
     load_pct = _detect_load_pct()
     if load_pct > 40.0 and name != "tiny" and not ov["disable_load_scaling"]:
         if not embed_locked:
@@ -281,7 +227,6 @@ def _compute_profile() -> ComputeProfile:
         if not rerank_locked:
             rerank_t = max(1, rerank_t // 2)
 
-    # Override precedence: config > env > scaled base.
     final_ner = ov["ner_threads"] if ner_locked else _env_int("SUPERGRAPH_NER_THREADS", ner_t)
     final_embed = ov["embed_threads"] if embed_locked else _env_int("SUPERGRAPH_EMBED_THREADS", embed_t)
     final_rerank = ov["rerank_threads"] if rerank_locked else _env_int("SUPERGRAPH_RERANK_THREADS", rerank_t)
@@ -302,10 +247,6 @@ def _compute_profile() -> ComputeProfile:
         embed_batch_size=max(1, final_batch),
         defer_embeddings=defer,
     )
-    # Apply BLAS/OpenMP thread cap to match profile. ComputeProfile caps ONNX
-    # session threads but numpy/scipy use a separate BLAS thread pool that
-    # ignores those options. threadpoolctl sets the cap at the library level,
-    # covering scipy_openblas, OpenBLAS, MKL, and Rayon (tokenizers).
     blas_cap = max(1, max(profile.embed_threads, profile.ner_threads, profile.rerank_threads))
     try:
         from threadpoolctl import threadpool_limits
@@ -324,7 +265,6 @@ def get_profile() -> ComputeProfile:
     return _compute_profile()
 
 
-# Backwards-compatible attribute: some tests call get_profile.cache_clear()
 get_profile.cache_clear = _compute_profile.cache_clear  # type: ignore[attr-defined]
 
 
@@ -342,7 +282,6 @@ def describe_profile() -> str:
 
 
 def reset_profile_cache() -> None:
-    """For tests that mutate env and want a fresh detection."""
     global _last_env_fingerprint
     _last_env_fingerprint = None
     _compute_profile.cache_clear()

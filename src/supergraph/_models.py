@@ -1,8 +1,3 @@
-"""Resolve optional model weights through the standard HuggingFace cache.
-
-The HF cache location follows ``$HF_HOME`` / ``$HUGGINGFACE_HUB_CACHE``; we
-do not introduce a parallel cache directory.
-"""
 from __future__ import annotations
 import os
 from pathlib import Path
@@ -38,17 +33,6 @@ def resolve_bonsai_gguf(
     *,
     auto_download: bool = True,
 ) -> Path:
-    """Return the local path to the Bonsai GGUF for ``quant``.
-
-    Resolution order:
-      1. Scan the HuggingFace cache for a matching file (fast, offline).
-      2. If absent and ``auto_download`` is true, fetch from HuggingFace.
-      3. Otherwise raise ``RuntimeError`` with actionable guidance.
-
-    ``quant`` defaults to ``$SUPERGRAPH_BONSAI_QUANT`` or ``TQ1_0``. The HF
-    cache location follows ``$HF_HOME`` / ``$HUGGINGFACE_HUB_CACHE`` per the
-    library's own convention - we do not introduce a parallel cache.
-    """
     q = (quant or _default_quant()).upper()
 
     cached = _scan_cache_for_gguf(q)

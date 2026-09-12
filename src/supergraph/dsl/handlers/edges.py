@@ -1,4 +1,3 @@
-"""Edge query + CRUD handlers."""
 
 from supergraph.dsl.handlers._registry import handles
 from supergraph.dsl.ast_nodes import (
@@ -39,12 +38,6 @@ class EdgeHandlers:
 
     @handles(UpdateEdge, write=True)
     def _update_edge(self, q: UpdateEdge) -> Result:
-        # Look up source/target string IDs without interning. Pre-fix,
-        # interning happened inside the edge-type loop on every iteration
-        # AND happened before checking whether the endpoints exist —
-        # calling ``UPDATE EDGE`` against two nonexistent nodes leaked
-        # two string entries per call (bug #41). Short-circuit when either
-        # endpoint is unknown.
         if q.source not in self.store.string_table:
             return Result(kind="ok", data={"source": q.source, "target": q.target, "updated": 0}, count=0)
         if q.target not in self.store.string_table:
@@ -79,10 +72,6 @@ class EdgeHandlers:
         if kind:
             self.store.delete_edge(q.source, q.target, kind)
         else:
-            # Drop matching edges across every known kind in one CSR
-            # rebuild. Pre-fix this loop called delete_edge() per type,
-            # each triggering a full edge rebuild — O(E * T) where T is
-            # the number of edge types (bug #42).
             pairs = [(q.source, q.target, etype) for etype in list(self.store._edges_by_type.keys())]
             self.store.delete_edges_bulk(pairs)
         return Result(kind="ok", data=None, count=1)

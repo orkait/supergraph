@@ -1,4 +1,3 @@
-"""Generic HuggingFace ONNX embedder using tokenizers + onnxruntime."""
 
 import ctypes
 import os
@@ -13,8 +12,6 @@ from supergraph.embedding.postprocess import l2_normalize, truncate_dims
 
 _CU12_PRELOADED = False
 
-# cu12-family sonames ORT's CUDA provider .so looks up at session creation.
-# Ordered so dependents load after their dependencies (cudart first).
 _CU12_SONAMES = (
     "libcudart.so.12",
     "libnvrtc.so.12",
@@ -26,9 +23,6 @@ _CU12_SONAMES = (
     "libcudnn.so.9",
 )
 
-# Map soname → (nvidia wheel subdir, wheel lib filename).
-# We look these up inside $site-packages/nvidia/<sub>/lib when the
-# filesystem probe can't find the libs in a system path.
 _WHEEL_LAYOUT: dict[str, str] = {
     "libcudart.so.12": "cuda_runtime/lib",
     "libnvrtc.so.12": "cuda_nvrtc/lib",
@@ -42,17 +36,6 @@ _WHEEL_LAYOUT: dict[str, str] = {
 
 
 def _userns_restrict_active() -> tuple[bool, str | None]:
-    """Probe `/proc/sys/kernel/apparmor_restrict_unprivileged_userns`.
-
-    Returns (active, raw_value). The sysctl exists on kernels that ship
-    apparmor userns hardening (introduced in Linux 6.7, default-on in some
-    distro builds). When set to 1, cudaGetDeviceCount() returns error 304
-    from any venv-isolated process. We do not assume which distro / version
-    the user runs - we only report what the sysctl says.
-
-    Inside a Docker container (detected via /.dockerenv), skip: GPU access
-    comes through CDI device injection, not the userns path.
-    """
     if os.path.exists("/.dockerenv"):
         return False, None
     path = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
@@ -65,13 +48,6 @@ def _userns_restrict_active() -> tuple[bool, str | None]:
 
 
 def _system_cuda_libs_present() -> bool:
-    """Filesystem-only probe: are all required cu12 sonames in a path
-    the dynamic linker will search?
-
-    No dlopen - dlopen caches by soname and would pollute later fallback
-    attempts with partial loads if one lib is missing. We only check
-    existence on disk.
-    """
     search: list[str] = []
     for env in ("CUDA_HOME", "CUDA_PATH"):
         value = os.environ.get(env)
@@ -91,35 +67,12 @@ def _system_cuda_libs_present() -> bool:
 
 
 def _preload_cu12_libs() -> None:
-    """Make CUDA 12 runtime libs findable by onnxruntime-gpu.
-
-    Strategy:
-        1. Non-Linux: no-op. cu12 wheels are Linux x86_64 only.
-        2. Kernel apparmor userns restriction active (sysctl
-           kernel.apparmor_restrict_unprivileged_userns=1): raise a
-           targeted error pointing at the sysctl - otherwise the user
-           would hit an opaque "CUDA failure 304" at session creation.
-           No assumption on distro / version: we only check the sysctl.
-        3. System already has the libs in a standard search path:
-           skip preload. ORT's own dlopen will find them.
-        4. nvidia-*-cu12 pip wheels installed alongside onnxruntime-gpu:
-           dlopen each lib from the wheel location so subsequent
-           ORT provider loads resolve the same soname to our wheel.
-        5. None of the above: do nothing - ORT will raise a clear
-           "libcublasLt.so.12 not found" at session creation which
-           points users at ``pip install supergraph[gpu]``.
-
-    Idempotent.
-    """
     global _CU12_PRELOADED
     if _CU12_PRELOADED or sys.platform != "linux":
         return
 
     userns_blocked, userns_raw = _userns_restrict_active()
     if userns_blocked:
-        # Report only what was observed. No claims about which distro,
-        # version, or release ships this kernel sysctl - it varies. The
-        # observation is precise; the fix is well-known and documented.
         raise RuntimeError(
             "CUDA initialization is likely blocked on this host:\n"
             "  /proc/sys/kernel/apparmor_restrict_unprivileged_userns "
@@ -175,18 +128,6 @@ def _preload_cu12_libs() -> None:
 
 
 def _resolve_providers(providers: list[str] | str | None) -> list[str]:
-    """Pick onnxruntime execution providers with sensible fallbacks.
-
-    Resolution order:
-        1. Explicit ``providers`` argument (list or comma string)
-        2. ``SUPERGRAPH_ORT_PROVIDERS`` env var (comma string)
-        3. ``SUPERGRAPH_GPU=1`` env var → try CUDA/Tensorrt first
-        4. Default → CPU only
-
-    Unavailable providers are silently dropped - if CUDA is requested
-    but the installed onnxruntime wheel is CPU-only, we fall back to
-    CPU rather than erroring.
-    """
     wanted: list[str] = []
     if providers is not None:
         if isinstance(providers, str):
@@ -202,20 +143,12 @@ def _resolve_providers(providers: list[str] | str | None) -> list[str]:
         else:
             wanted = ["CPUExecutionProvider"]
 
-    # Preload CUDA 12 shared libs from nvidia-*-cu12 pip wheels before
-    # onnxruntime probes its provider plugins - otherwise get_available_providers
-    # may silently drop CUDAExecutionProvider because the cuda provider .so
-    # fails its dlopen of libcublasLt.so.12 / libcudnn.so.9 / libcudart.so.12.
     if any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in wanted):
         _preload_cu12_libs()
 
-    # Result is intentionally discarded: this call is what makes onnxruntime
-    # dlopen its provider plugins, so it validates the preload above. We do not
-    # filter on it - see the next comment.
     import onnxruntime as ort
     ort.get_available_providers()
 
-    # Do not drop providers here. Keep everything wanted.
     resolved = list(wanted)
     
     if "CPUExecutionProvider" not in resolved:
@@ -228,13 +161,11 @@ def _cuda_requested(providers: list[str]) -> bool:
 
 
 def _create_inference_session(ort, model_source, sess_kwargs: dict):
-    """Create ORT session, enforcing GPU if requested."""
     session = ort.InferenceSession(model_source, **sess_kwargs)
     requested = sess_kwargs.get("providers", [])
     if any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in requested):
         active = list(session.get_providers())
         if not any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in active):
-            # Try one more time (sometimes works after initial fail)
             session = ort.InferenceSession(model_source, **sess_kwargs)
             active = list(session.get_providers())
             if not any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in active):
@@ -246,18 +177,6 @@ def _create_inference_session(ort, model_source, sess_kwargs: dict):
 
 
 def _patch_gqa_for_cuda(onnx_path: str | Path) -> bytes | None:
-    """Patch GroupQueryAttention nodes for CUDA compatibility.
-
-    The onnx-community exports of decoder-based embedding models (Harrier,
-    Qwen3-Embedding) use an 11-input GQA variant with position_ids (input 9)
-    and attention_bias (input 10). ORT's CUDA kernel only supports the
-    9-input form (github.com/microsoft/onnxruntime/issues/24043, open since
-    March 2025). We strip the 2 unsupported inputs at load time so the
-    original export works on GPU without a manual re-export.
-
-    Returns serialized model bytes if patching was needed, None otherwise.
-    Requires the ``onnx`` package (36 MB, no torch).
-    """
     try:
         import onnx
     except ImportError:
@@ -283,18 +202,6 @@ def _patch_gqa_for_cuda(onnx_path: str | Path) -> bytes | None:
 
 
 class OnnxHFEmbedder(Embedder):
-    """HuggingFace ONNX model embedder. No torch required.
-
-    Uses `tokenizers` for tokenization and `onnxruntime` for inference.
-    Supports asymmetric query/document prefixes, Matryoshka truncation,
-    and both mean and last-token pooling (for encoder vs decoder models).
-
-    GPU: set ``SUPERGRAPH_GPU=1`` or pass explicit providers. Install
-    ``supergraph[gpu]`` (bundles cu12 wheels) or ``supergraph[gpu-ort]``
-    (bring your own CUDA 12). Decoder models with GroupQueryAttention
-    are auto-patched at load time for CUDA compatibility - no manual
-    re-export needed.
-    """
 
     def __init__(
         self,
@@ -329,7 +236,6 @@ class OnnxHFEmbedder(Embedder):
         self._max_length = max_length
         self._pooling_mode = pooling_mode
 
-        # Load tokenizer
         tok_path = model_dir / "tokenizer.json"
         if not tok_path.exists():
             raise FileNotFoundError(f"tokenizer.json not found in {model_dir}")
@@ -338,7 +244,6 @@ class OnnxHFEmbedder(Embedder):
         self._tokenizer.enable_padding(pad_id=0, pad_to_multiple_of=128)
         self._tokenizer.enable_truncation(max_length=self._max_length)
 
-        # Load ONNX model - prefer explicit file from manifest if provided.
         if onnx_file:
             candidate = model_dir / onnx_file
             if not candidate.exists():
@@ -362,7 +267,6 @@ class OnnxHFEmbedder(Embedder):
 
         provider_options = None
         if gpu_mem_limit and uses_gpu:
-            # Treat gpu_mem_limit as GB and convert to bytes for onnxruntime
             limit_bytes = int(gpu_mem_limit) * 1024 * 1024 * 1024
             provider_options = [
                 {"gpu_mem_limit": str(limit_bytes)}
@@ -374,8 +278,6 @@ class OnnxHFEmbedder(Embedder):
         sess_options = ort.SessionOptions()
         sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
-        # Disable MatMulNBits on CUDA - it has a known 1.2GB pre-allocation bug
-        # that triggers OOM on 12-16GB cards during prefill.
         if uses_gpu:
             sess_options.add_session_config_entry("session.disable_matmul_nbits", "1")
         else:
@@ -399,9 +301,6 @@ class OnnxHFEmbedder(Embedder):
         self._needs_token_type_ids = "token_type_ids" in self._input_names
         self._needs_position_ids = "position_ids" in self._input_names
 
-        # Decoder-style exports (Qwen3, Llama, Mistral) expose past_key_values
-        # inputs and require a prefill pass with empty KV cache. Cache the
-        # per-layer shape spec so _encode can build zero tensors on demand.
         self._kv_cache_specs: list = []
         for inp in self._session.get_inputs():
             if inp.name.startswith("past_key_values."):
@@ -411,10 +310,6 @@ class OnnxHFEmbedder(Embedder):
                 dtype = np.float16 if inp.type == "tensor(float16)" else np.float32
                 self._kv_cache_specs.append((inp.name, num_heads, head_dim, dtype))
 
-        # Output selection priority:
-        #   1. sentence_embedding - SBERT-style exports with pooling baked in
-        #   2. last_hidden_state / anything containing "hidden" - raw 3D hidden states
-        #   3. first output - fallback
         outputs = self._session.get_outputs()
         self._hidden_output_idx = 0
         for i, out in enumerate(outputs):
@@ -467,30 +362,14 @@ class OnnxHFEmbedder(Embedder):
         return self._encode(prefixed)
 
     def _encode(self, texts: list[str]) -> np.ndarray:
-        # Reject zero-length inputs up front. An empty string tokenizes to
-        # an all-zero attention mask; mean-pooling then divides by
-        # ``mask.sum() == 0`` which produces a NaN-filled vector. l2_normalize
-        # preserves NaN, which then poisons the HNSW index and corrupts all
-        # downstream SIMILAR/REMEMBER results for the affected slot (bug #70).
-        # Substitute a single-space placeholder so the tokenizer produces at
-        # least one real token; the resulting embedding is meaningless but
-        # finite, and the caller that fed us an empty string explicitly asked
-        # for an embedding rather than an exception.
         safe_texts = [t if (t and not t.isspace()) else " " for t in texts]
 
-        # Process in a single batch to maximize GPU/CPU utilization.
-        # Higher-level SuperGraph layer already handles outer batching via 
-        # deferred_embeddings(batch_size=...).
         encoded = self._tokenizer.encode_batch(safe_texts)
         input_ids = np.array([e.ids for e in encoded], dtype=np.int64)
         attention_mask = np.array([e.attention_mask for e in encoded], dtype=np.int64)
 
         embeddings = self._encode_feed_dict(input_ids, attention_mask)
 
-        # Some ONNX exports (e.g. Harrier fp16) bake the SentenceTransformer
-        # pooling head into the graph and return (batch, hidden_dim) directly.
-        # Others return raw (batch, seq_len, hidden_dim) and expect the caller
-        # to pool. Handle both.
         if embeddings.ndim == 2:
             pooled = embeddings
         elif self._pooling_mode == "last_token":
@@ -501,7 +380,6 @@ class OnnxHFEmbedder(Embedder):
             mask_expanded = attention_mask[:, :, np.newaxis].astype(np.float32)
             pooled = (embeddings * mask_expanded).sum(axis=1) / mask_expanded.sum(axis=1)
 
-        # Matryoshka truncation + renormalize
         if self._output_dims < pooled.shape[1]:
             pooled = truncate_dims(pooled, self._output_dims)
         else:

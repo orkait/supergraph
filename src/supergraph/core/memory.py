@@ -1,8 +1,3 @@
-"""Memory accounting: real component measurement + ceiling enforcement.
-
-Math lives in supergraph.algos.measure. This module adapts it to the
-supergraph store/vector/document types.
-"""
 
 import logging
 import sys
@@ -17,7 +12,7 @@ from supergraph.algos.measure import (
     BYTES_PER_EDGE_DEFAULT,
 )
 
-DEFAULT_CEILING_BYTES = 256 * 1_000_000  # 256MB
+DEFAULT_CEILING_BYTES = 256 * 1_000_000
 
 BYTES_PER_NODE_ESTIMATE = BYTES_PER_NODE_DEFAULT
 BYTES_PER_EDGE_ESTIMATE = BYTES_PER_EDGE_DEFAULT
@@ -27,17 +22,10 @@ BYTES_PER_EDGE = BYTES_PER_EDGE_ESTIMATE
 
 
 def estimate(node_count: int, edge_count: int) -> int:
-    """Quick estimate for backwards compat. Prefer measure() for accuracy."""
     return _algo_estimate_bytes(node_count, edge_count)
 
 
 def measure(store, vector_store=None, document_store=None, skip_csr: bool = False) -> dict:
-    """Measure actual memory usage of all components. Returns detailed breakdown.
-
-    Args:
-        skip_csr: If True, skip CSR matrix measurement to avoid triggering an
-                  expensive rebuild.  Use this on the hot calibration path.
-    """
     st = store.string_table
     node_arrays_bytes = store.node_ids.nbytes + store.node_kinds.nbytes
 
@@ -99,7 +87,6 @@ def check_ceiling(
     bytes_per_node: int | None = None,
     bytes_per_edge: int | None = None,
 ) -> None:
-    """Check if adding nodes/edges would exceed memory ceiling."""
     bpn = bytes_per_node if bytes_per_node is not None else BYTES_PER_NODE_ESTIMATE
     bpe = bytes_per_edge if bytes_per_edge is not None else BYTES_PER_EDGE_ESTIMATE
     exceeds, current_mb = _algo_will_exceed(
@@ -120,6 +107,5 @@ def check_ceiling(
 
 
 def check_ceiling_accurate(store, vector_store, ceiling_bytes: int) -> bool:
-    """Accurate ceiling check. Returns True if over ceiling."""
     report = measure(store, vector_store)
     return report["total"] > ceiling_bytes

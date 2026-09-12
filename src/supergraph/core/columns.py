@@ -1,8 +1,3 @@
-"""Columnar storage layer for node properties.
-
-Manages typed numpy arrays indexed by slot, providing vectorized
-filtering. This is the sole source of truth for node field data.
-"""
 
 from __future__ import annotations
 
@@ -21,7 +16,6 @@ from supergraph.algos.column_ops import (
 
 
 class ColumnStore:
-    """Typed numpy arrays indexed by slot for fast vectorized filtering."""
 
     INT64_SENTINEL = INT64_SENTINEL
     STR_SENTINEL = STR_SENTINEL
@@ -36,7 +30,6 @@ class ColumnStore:
         self.dirty: bool = False
 
     def set(self, slot: int, data: dict) -> None:
-        """Write field values to columns. Auto-infers types for new fields."""
         for field, value in data.items():
             if field not in self._dtypes:
                 dtype_str = self._infer_dtype(value)
@@ -69,16 +62,9 @@ class ColumnStore:
         self.dirty = True
 
     def clear(self, slot: int) -> None:
-        """Clear all column values at slot (node deletion)."""
         self.clear_slots((slot,))
 
     def clear_slots(self, slots) -> None:
-        """Batch-clear column values. Accepts iterable or numpy index array.
-
-        Single numpy assignment per column instead of one write per slot
-        per column - roughly columns * len(slots) Python ops collapse to
-        columns vectorised writes.
-        """
         if not len(slots) if hasattr(slots, "__len__") else slots is None:
             return
         idx = np.asarray(list(slots), dtype=np.int64) if not isinstance(slots, np.ndarray) else slots
@@ -96,7 +82,6 @@ class ColumnStore:
         self.dirty = True
 
     def grow(self, new_capacity: int) -> None:
-        """Extend all arrays to new_capacity."""
         for field in list(self._columns):
             old_col = self._columns[field]
             new_col = self._make_sentinel_array(self._dtypes[field], new_capacity)
@@ -111,7 +96,6 @@ class ColumnStore:
         self.dirty = True
 
     def get_mask(self, field: str, op: str, value: Any, n: int) -> np.ndarray | None:
-        """Return boolean mask for a comparison, or None if field not columnarized."""
         if field not in self._columns:
             return None
         return eval_mask(
@@ -126,7 +110,6 @@ class ColumnStore:
         )
 
     def get_mask_in(self, field: str, values: list, n: int) -> np.ndarray | None:
-        """Return mask for IN operator."""
         if field not in self._columns:
             return None
         return eval_mask_in(
@@ -140,33 +123,27 @@ class ColumnStore:
         )
 
     def get_presence(self, field: str, n: int) -> np.ndarray | None:
-        """Return presence bitmask for a field, or None if not columnarized."""
         if field not in self._presence:
             return None
         return self._presence[field][:n]
 
     def has_column(self, field: str) -> bool:
-        """Check if a column exists for this field."""
         return field in self._columns
 
     def get_column(self, field: str, n: int) -> tuple[np.ndarray, np.ndarray, str] | None:
-        """Return (data[:n], presence[:n], dtype_str) for a column, or None."""
         if field not in self._columns:
             return None
         return self._columns[field][:n], self._presence[field][:n], self._dtypes[field]
 
     def declare_column(self, field: str, dtype_str: str) -> None:
-        """Pre-create a typed column. No-op if column already exists."""
         if field not in self._dtypes:
             self._create_column(field, dtype_str)
             self.dirty = True
 
     def _ensure_column(self, field: str, dtype_str: str) -> None:
-        """Create column if it doesn't exist. No-op if it already exists."""
         self.declare_column(field, dtype_str)
 
     def set_reserved(self, slot: int, field: str, value) -> None:
-        """Set a system-managed column value. Auto-interns strings."""
         if isinstance(value, str):
             self._ensure_column(field, "int32_interned")
             self._columns[field][slot] = self._string_table.intern(value)
@@ -180,14 +157,9 @@ class ColumnStore:
         self.dirty = True
 
     def set_field(self, slot: int, field: str, value) -> None:
-        """Set a single field value at a slot. Auto-infers type like set()."""
         self.set(slot, {field: value})
 
     def snapshot_arrays(self) -> dict[str, tuple]:
-        """Return deep copies of all column arrays for snapshot/rollback.
-
-        Returns dict mapping field -> (column_copy, presence_copy, dtype_str).
-        """
         snap: dict[str, tuple] = {}
         for field in self._columns:
             snap[field] = (
@@ -198,7 +170,6 @@ class ColumnStore:
         return snap
 
     def restore_arrays(self, snap: dict[str, tuple]) -> None:
-        """Restore column arrays from a snapshot created by snapshot_arrays()."""
         self._columns.clear()
         self._presence.clear()
         self._dtypes.clear()
@@ -210,14 +181,12 @@ class ColumnStore:
 
     @property
     def memory_bytes(self) -> int:
-        """Total memory used by column arrays."""
         total = 0
         for field in self._columns:
             total += self._columns[field].nbytes
             total += self._presence[field].nbytes
         return total
 
-    # -- internal helpers ---
 
     def _infer_dtype(self, value) -> str | None:
         if isinstance(value, bool):

@@ -1,4 +1,3 @@
-"""Write-verb builders. Clause ordering matches grammar.lark exactly."""
 from __future__ import annotations
 
 import re
@@ -8,21 +7,11 @@ from supergraph.query.escape import dsl_identifier, dsl_literal, dsl_node_id, ds
 from supergraph.query.runtime import Query, register_compiler
 
 
-# No ``_RESERVED`` guard dict here: Python kwarg binding already enforces
-# that a named parameter (kind, event_at, expires_in, expires_at,
-# document, vector) cannot collide with a key inside ``**fields``. A
-# collision like ``create_node(..., kind="x", **{"kind": "y"})`` raises
-# ``TypeError`` at the call site before the function body runs. Removing
-# the previously-unreachable overlap check; kept here as a comment so
-# future refactors that change the signature remember to re-check.
-
-
 def _format_field(name: str, value: Any) -> str:
     return f"{dsl_identifier(name)} = {dsl_literal(value)}"
 
 
 def _parse_expires_in(spec: str) -> tuple[int, str]:
-    """Parse "1h" / "30s" / "7d" -> (1, "h"). Grammar: NUMBER TIME_UNIT."""
     if not isinstance(spec, str):
         raise ValueError(f"expires_in must be a str like '1h', got {spec!r}")
     m = re.match(r"^(\d+)\s*([smhd])$", spec.strip())
@@ -30,9 +19,6 @@ def _parse_expires_in(spec: str) -> tuple[int, str]:
         raise ValueError(f"expires_in must match <NUMBER><smhd>, got {spec!r}")
     return int(m.group(1)), m.group(2)
 
-
-# ---------- CREATE NODE ---------------------------------------------------
-# create_node: "CREATE" "NODE" STRING field_pairs vector_clause? expires_clause? event_clause? document_clause?
 
 def create_node(
     id: str,
@@ -84,9 +70,6 @@ def _compile_create_node(p: dict) -> str:
 register_compiler("create_node", _compile_create_node)
 
 
-# ---------- CREATE NODE AUTO ----------------------------------------------
-# create_node_auto: "CREATE" "NODE" "AUTO" field_pairs vector? expires? event? document?
-
 def create_node_auto(
     *,
     kind: str,
@@ -97,7 +80,6 @@ def create_node_auto(
     vector: list[float] | None = None,
     **fields: Any,
 ) -> Query:
-    """``CREATE NODE AUTO ...`` - supergraph generates the node id."""
     if not isinstance(kind, str) or not kind:
         raise ValueError("create_node_auto() requires kind= as a non-empty str")
     if expires_in is not None and expires_at is not None:
@@ -133,9 +115,6 @@ def _compile_create_node_auto(p: dict) -> str:
 register_compiler("create_node_auto", _compile_create_node_auto)
 
 
-# ---------- CREATE EDGE ---------------------------------------------------
-# create_edge: "CREATE" "EDGE" node_ref "->" node_ref field_pairs
-
 def create_edge(
     src: str,
     tgt: str,
@@ -163,9 +142,6 @@ def _compile_create_edge(p: dict) -> str:
 register_compiler("create_edge", _compile_create_edge)
 
 
-# ---------- DELETE NODE ---------------------------------------------------
-# delete_node: "DELETE" "NODE" STRING
-
 def delete_node(id: str) -> Query:
     return Query(_verb="delete_node", _params={"id": id}, _kind="write")
 
@@ -176,9 +152,6 @@ def _compile_delete_node(p: dict) -> str:
 
 register_compiler("delete_node", _compile_delete_node)
 
-
-# ---------- UPDATE NODE ---------------------------------------------------
-# update_node: "UPDATE" "NODE" STRING "SET" field_pairs
 
 def update_node(id: str, **set_fields: Any) -> Query:
     if not set_fields:
@@ -197,12 +170,6 @@ def _compile_update_node(p: dict) -> str:
 
 
 register_compiler("update_node", _compile_update_node)
-
-
-# ---------- UPSERT NODE ---------------------------------------------------
-# upsert_node: "UPSERT" "NODE" STRING field_pairs vector? expires? event_at?
-
-# No ``_UPSERT_RESERVED`` guard: see comment above _CREATE_NODE_RESERVED.
 
 
 def upsert_node(
@@ -248,9 +215,6 @@ def _compile_upsert_node(p: dict) -> str:
 register_compiler("upsert_node", _compile_upsert_node)
 
 
-# ---------- DELETE NODES --------------------------------------------------
-# delete_nodes: "DELETE" "NODES" where_clause
-
 from supergraph.query.filters import compile_where
 
 
@@ -269,9 +233,6 @@ def _compile_delete_nodes(p: dict) -> str:
 
 register_compiler("delete_nodes", _compile_delete_nodes)
 
-
-# ---------- UPDATE NODES --------------------------------------------------
-# update_nodes: "UPDATE" "NODES" where "SET" field_pairs
 
 def update_nodes(*, where, set: dict) -> Query:
     if where is None:
@@ -295,9 +256,6 @@ def _compile_update_nodes(p: dict) -> str:
 register_compiler("update_nodes", _compile_update_nodes)
 
 
-# ---------- UPDATE EDGE ---------------------------------------------------
-# update_edge: "UPDATE" "EDGE" STRING "->" STRING "SET" field_pairs where?
-
 def update_edge(src: str, tgt: str, *, set: dict, where=None) -> Query:
     if not isinstance(set, dict) or not set:
         raise ValueError("update_edge() requires set={field: value, ...} non-empty dict")
@@ -318,9 +276,6 @@ def _compile_update_edge(p: dict) -> str:
 register_compiler("update_edge", _compile_update_edge)
 
 
-# ---------- DELETE EDGE ---------------------------------------------------
-# delete_edge: "DELETE" "EDGE" STRING "->" STRING where?
-
 def delete_edge(src: str, tgt: str, *, where=None) -> Query:
     params: dict = {"src": src, "tgt": tgt}
     if where is not None: params["where"] = where
@@ -337,9 +292,6 @@ def _compile_delete_edge(p: dict) -> str:
 
 register_compiler("delete_edge", _compile_delete_edge)
 
-
-# ---------- DELETE EDGES (bulk) -------------------------------------------
-# delete_edges: "DELETE" "EDGES" direction STRING where?
 
 def delete_edges(node: str, *, direction: str = "FROM", where=None) -> Query:
     if direction not in ("FROM", "TO"):
@@ -360,9 +312,6 @@ def _compile_delete_edges(p: dict) -> str:
 register_compiler("delete_edges", _compile_delete_edges)
 
 
-# ---------- INCREMENT -----------------------------------------------------
-# increment: "INCREMENT" "NODE" STRING IDENTIFIER "BY" NUMBER
-
 def increment(id: str, field_name: str, *, by: int | float) -> Query:
     dsl_identifier(field_name)
     if not isinstance(by, (int, float)) or isinstance(by, bool):
@@ -379,12 +328,6 @@ def _compile_increment(p: dict) -> str:
 
 
 register_compiler("increment", _compile_increment)
-
-
-# ---------- ASSERT --------------------------------------------------------
-# assert_stmt: "ASSERT" STRING field_pairs confidence? source? event_at?
-
-# No ``_ASSERT_RESERVED`` guard: see _CREATE_NODE_RESERVED note above.
 
 
 def assert_(
@@ -426,9 +369,6 @@ def _compile_assert(p: dict) -> str:
 register_compiler("assert_", _compile_assert)
 
 
-# ---------- RETRACT -------------------------------------------------------
-# retract_stmt: "RETRACT" STRING reason?
-
 def retract(id: str, *, reason: str | None = None) -> Query:
     params: dict = {"id": id}
     if reason is not None: params["reason"] = reason
@@ -445,9 +385,6 @@ def _compile_retract(p: dict) -> str:
 register_compiler("retract", _compile_retract)
 
 
-# ---------- MERGE ---------------------------------------------------------
-# merge_stmt: "MERGE" "NODE" STRING "INTO" STRING
-
 def merge(old: str, into: str) -> Query:
     return Query(_verb="merge", _params={"old": old, "into": into}, _kind="write")
 
@@ -458,9 +395,6 @@ def _compile_merge(p: dict) -> str:
 
 register_compiler("merge", _compile_merge)
 
-
-# ---------- PROPAGATE -----------------------------------------------------
-# propagate_stmt: "PROPAGATE" STRING "FIELD" IDENTIFIER "DEPTH" NUMBER
 
 def propagate(id: str, *, field: str, depth: int) -> Query:
     dsl_identifier(field)
@@ -479,9 +413,6 @@ def _compile_propagate(p: dict) -> str:
 
 register_compiler("propagate", _compile_propagate)
 
-
-# ---------- BIND / DISCARD CONTEXT ----------------------------------------
-# bind_context / discard_context
 
 def bind_context(name: str) -> Query:
     return Query(_verb="bind_context", _params={"name": name}, _kind="control")
@@ -505,9 +436,6 @@ def _compile_discard_context(p: dict) -> str:
 register_compiler("discard_context", _compile_discard_context)
 
 
-# ---------- FORGET --------------------------------------------------------
-# forget_node: "FORGET" "NODE" STRING
-
 def forget(id: str) -> Query:
     return Query(_verb="forget", _params={"id": id}, _kind="write")
 
@@ -518,9 +446,6 @@ def _compile_forget(p: dict) -> str:
 
 register_compiler("forget", _compile_forget)
 
-
-# ---------- CONNECT NODE --------------------------------------------------
-# connect_node: "CONNECT" "NODE" STRING threshold?
 
 def connect_node(id: str, *, threshold: float | None = None) -> Query:
     params: dict = {"id": id}
@@ -538,12 +463,6 @@ def _compile_connect_node(p: dict) -> str:
 
 register_compiler("connect_node", _compile_connect_node)
 
-
-# ---------- INGEST --------------------------------------------------------
-# ingest_stmt: "INGEST" STRING ingest_as? ingest_kind? ingest_using?
-# ingest_using: vision_clause | using_clause
-# vision_clause: "USING" "VISION" STRING
-# using_clause:  "USING" IDENTIFIER
 
 _KNOWN_USING = {"markitdown", "pymupdf4llm", "docling", "direct", "whisper", "vision"}
 
@@ -587,28 +506,15 @@ def _compile_ingest(p: dict) -> str:
 register_compiler("ingest", _compile_ingest)
 
 
-# ---------- BATCH WRAPPERS ------------------------------------------------
-# batch: "BEGIN" _NL (_batch_stmt _NL)* "COMMIT"
-#
-# User constructs a batch by composing statements with ``|`` and wrapping
-# with q.begin() ... q.commit(). The runtime Query.__or__ already joins
-# DSL fragments with newlines.
-
 def begin() -> Query:
-    """Open a BEGIN...COMMIT block. Compose with ``|``."""
     return Query(_verb="raw", _params={"text": "BEGIN"}, _kind="control")
 
 
 def commit() -> Query:
-    """Close a BEGIN...COMMIT block."""
     return Query(_verb="raw", _params={"text": "COMMIT"}, _kind="control")
 
 
 def batch(*statements: Query) -> Query:
-    """Wrap a sequence of statements in BEGIN...COMMIT.
-
-    Shorthand for ``q.begin() | stmt1 | stmt2 | ... | q.commit()``.
-    """
     if not statements:
         raise ValueError("batch() requires at least one statement")
     body = "\n".join(s.dsl() for s in statements)
@@ -619,25 +525,7 @@ def batch(*statements: Query) -> Query:
     )
 
 
-# ---------- VAR ASSIGN ----------------------------------------------------
-# var_assign: VARIABLE "=" write_query    (only inside BEGIN..COMMIT)
-
 def var(name: str, inner: Query) -> Query:
-    """``$name = <write_query>`` - batch variable assignment.
-
-    Only valid inside a BEGIN..COMMIT block. ``inner`` must be a write
-    query (CREATE NODE/EDGE, UPDATE, etc.). Emit the resulting Query into
-    a batch alongside other statements; later statements reference the
-    variable via ``"$name"`` in node-id slots.
-
-    Usage:
-
-        batch = q.batch(
-            q.var("x", q.create_node("n1", kind="memory", document="a")),
-            q.var("y", q.create_node("n2", kind="memory", document="b")),
-            q.create_edge("$x", "$y", kind="next"),
-        )
-    """
     if inner._kind not in ("write",):
         raise ValueError(f"q.var() inner must be a write Query, got {inner._kind!r}")
     var_tok = dsl_variable(name)

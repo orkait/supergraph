@@ -1,4 +1,3 @@
-"""VaultExecutor: handles VAULT * DSL commands."""
 from supergraph.core.types import Result
 from supergraph.core.errors import SuperGraphError
 from supergraph.dsl.ast_nodes import (
@@ -49,10 +48,6 @@ class VaultExecutor:
         handler = handlers.get(type(ast))
         if handler is None:
             raise SuperGraphError(f"Unknown vault command: {type(ast).__name__}")
-        # Translate ValueError (raised by VaultManager when a title/slug fails
-        # path-safety validation) into SuperGraphError so clients catching the
-        # common DSL error surface handle it gracefully. ValueError is preserved
-        # as the ``__cause__`` chain for debugging.
         try:
             return handler(ast)
         except ValueError as e:
@@ -91,7 +86,6 @@ class VaultExecutor:
 
     def _search(self, q) -> Result:
         if not self._embedder or not self._vector_store:
-            # Fallback: text search on summary column
             results = []
             for slug in self._manager.list_files():
                 node_id = f"note:{slug}"
@@ -101,12 +95,10 @@ class VaultExecutor:
             limit = q.limit.value if q.limit else 10
             return Result(kind="nodes", data=results[:limit], count=min(len(results), limit))
 
-        # Vector search
         import numpy as np
         query_vec = self._embedder.encode_queries([q.query])[0]
         n = self._store._next_slot
         mask = self._store.compute_live_mask(n)
-        # Filter to note nodes only
         kind_mask = self._store.columns.get_mask("kind", "=", "note", n)
         if kind_mask is not None:
             mask = mask & kind_mask
@@ -139,7 +131,6 @@ class VaultExecutor:
         return Result(kind="edges", data=edges, count=len(edges))
 
     def _list(self, q) -> Result:
-        # Get all note nodes, apply WHERE/ORDER/LIMIT
         nodes = self._store.get_all_nodes(kind="note")
 
         if q.where:

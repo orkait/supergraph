@@ -1,8 +1,3 @@
-"""DSL executor: auto-dispatch via handler registry.
-
-Combines all domain handler mixins via multiple inheritance.
-New commands self-register via @handles decorator - no manual dispatch dict.
-"""
 
 from supergraph.dsl.ast_nodes import (
     VaultNew, VaultRead, VaultWrite, VaultAppend,
@@ -46,7 +41,6 @@ class Executor(
     IngestHandlers,
     ExecutorBase,
 ):
-    """Full executor combining all domain handlers via auto-dispatch registry."""
 
     _vault_executor = None
 

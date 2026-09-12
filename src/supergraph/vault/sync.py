@@ -1,4 +1,3 @@
-"""VaultSync: sync vault directory to supergraph graph."""
 import logging
 
 logger = logging.getLogger(__name__)
@@ -10,7 +9,6 @@ from supergraph.vault.manager import VaultManager
 
 
 class VaultSync:
-    """Syncs vault markdown files to supergraph nodes + edges."""
 
     def __init__(self, manager: VaultManager, runtime,
                  summary_max_length: int = 200):
@@ -39,11 +37,6 @@ class VaultSync:
         return self._runtime.document_store
 
     def sync_all(self) -> dict:
-        """Walk vault dir, sync all notes to graph. Returns {synced, skipped, errors}.
-
-        Two-pass approach: first upsert all nodes, then recreate edges.
-        This ensures wikilink targets exist before edges are created.
-        """
         synced = 0
         skipped = 0
         errors = 0
@@ -51,11 +44,9 @@ class VaultSync:
         slugs = self._manager.list_files()
         synced_slugs = []
 
-        # Pass 1: upsert nodes
         for slug in slugs:
             try:
                 node_id = f"note:{slug}"
-                # Check if already in graph and up to date
                 str_id = (self._store.string_table.intern(node_id)
                           if node_id in self._store.string_table else None)
                 if str_id is not None:
@@ -74,25 +65,12 @@ class VaultSync:
                 logger.debug("vault node sync failed for %r: %s", slug, e, exc_info=True)
                 errors += 1
 
-        # Pass 2: recreate edges for all synced notes. A note whose body
-        # changed might have added or removed wikilinks, so its outgoing
-        # edges need to be fully rebuilt.
         for slug in synced_slugs:
             try:
                 self._sync_edges(slug)
             except Exception as e:
                 logger.debug("vault edge sync failed for %r: %s", slug, e, exc_info=True)
 
-        # Pass 3: re-sync edges for notes whose targets were
-        # created/deleted during this sync. Pre-fix, note A with a
-        # ``[[B]]`` link would have its target resolve to "nothing" if B
-        # didn't exist at the time A was first synced; after B is later
-        # added in the same sync_all call, A's edge to B would never
-        # materialize until A's mtime changed (bug #58).
-        #
-        # We detect this by rechecking synced_slugs against wikilinks they
-        # emit: if a target exists now that didn't exist during Pass 1,
-        # re-sync the referring note's edges once.
         newly_created_nodes = set()
         for slug in synced_slugs:
             node_id = f"note:{slug}"
@@ -102,7 +80,7 @@ class VaultSync:
             all_slugs = self._manager.list_files()
             for slug in all_slugs:
                 if slug in synced_slugs:
-                    continue  # already resynced in pass 2
+                    continue
                 try:
                     content = self._manager.read(slug)
                     wikilinks = set(extract_wikilinks(content))
@@ -117,13 +95,11 @@ class VaultSync:
         return {"synced": synced, "skipped": skipped, "errors": errors}
 
     def sync_file(self, slug: str) -> str:
-        """Parse + upsert node + recreate edges for one note. Returns node_id."""
         self._sync_node(slug)
         self._sync_edges(slug)
         return f"note:{slug}"
 
     def _read_file_mtime(self, slot: int) -> float:
-        """Read __file_mtime__ directly from ColumnStore (reserved field, hidden from get_node)."""
         cols = self._store.columns
         field = "__file_mtime__"
         if not cols.has_column(field):
@@ -133,14 +109,12 @@ class VaultSync:
         return float(cols._columns[field][slot])
 
     def _sync_node(self, slug: str) -> int:
-        """Upsert the node for a note file. Returns slot."""
         content = self._manager.read(slug)
         fm = parse_frontmatter(content)
         sections = parse_sections(content)
 
         node_id = f"note:{slug}"
 
-        # Build node fields
         fields = {
             "note_kind": fm.get("kind", "memory"),
             "status": fm.get("status", "active"),
@@ -157,15 +131,12 @@ class VaultSync:
         if fm.get("agent"):
             fields["agent"] = fm["agent"]
 
-        # Store summary for columnar search
         summary = sections.get("summary", "")
         if summary:
             fields["summary"] = summary[:self._summary_max_length]
 
-        # Upsert node
         self._store.upsert_node(node_id, "note", fields)
 
-        # Store file mtime as a reserved column for sync detection
         str_id = self._store.string_table.intern(node_id)
         slot = self._store.id_to_slot.get(str_id)
 
@@ -173,14 +144,12 @@ class VaultSync:
             file_mtime = self._manager.get_mtime(slug)
             self._store.columns.set_reserved(slot, "__file_mtime__", file_mtime)
 
-        # Store full content in DocumentStore
         if self._document_store and slot is not None:
             self._document_store.put_document(slot, content.encode("utf-8"), "text/markdown")
             if summary:
                 self._document_store.put_summary(slot, summary[:self._summary_max_length], heading=None,
                                                   page=None, chunk_index=0, doc_slot=slot)
 
-        # Embed summary
         if self._embedder and self._vector_store and slot is not None:
             body = sections.get("body", "")
             embed_text = f"{slug}: {summary} {body}" if summary else body
@@ -189,7 +158,6 @@ class VaultSync:
                 if self._vector_store is not None:
                     self._vector_store.add(slot, vec)
 
-        # Fact kind: auto-ASSERT into supergraph belief store
         if fm.get("kind") == "fact" and slot is not None:
             confidence = fm.get("confidence", 1.0)
             source = fm.get("source", "vault")
@@ -201,7 +169,6 @@ class VaultSync:
         return slot
 
     def _sync_edges(self, slug: str) -> None:
-        """Recreate wikilink edges for a note."""
         content = self._manager.read(slug)
         wikilinks = extract_wikilinks(content)
 
@@ -209,10 +176,6 @@ class VaultSync:
         if node_id not in self._store.string_table:
             return
 
-        # Delete old link edges from this node in a single pass so the
-        # CSR matrix gets rebuilt once instead of N times (bug #57). For a
-        # note with 20 outgoing wikilinks, this drops sync from ~20 full
-        # edge rebuilds to 1.
         existing_link_edges = self._store.get_edges_from(node_id, kind="links")
         if existing_link_edges:
             try:
@@ -223,7 +186,6 @@ class VaultSync:
             except Exception as e:
                 logger.debug("vault link edge bulk-delete failed: %s", e, exc_info=True)
 
-        # Create new link edges
         for target_slug in wikilinks:
             target_id = f"note:{target_slug}"
             if target_id in self._store.string_table:

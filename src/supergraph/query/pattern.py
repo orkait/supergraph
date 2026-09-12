@@ -1,23 +1,3 @@
-"""MATCH pattern builder (typed).
-
-Grammar:
-  pattern:       match_step (arrow match_step)+
-  match_step:    "(" STRING ")"                      -> bound_step
-               | "(" IDENTIFIER step_where? ")"      -> var_step
-  step_where:    "WHERE" expr
-  arrow:         "-[" expr? "]->"
-
-Typed API:
-
-  P.node("fn_main")                                  # ("fn_main")
-  P.var("callee")                                    # (callee)
-  P.var("callee", where=F.eq("kind", "fn"))          # (callee WHERE kind = "fn")
-
-  pattern = P.node("fn_main").to(P.var("callee"), edge=F.eq("kind", "calls"))
-  #   ("fn_main") -[kind = "calls"]-> (callee)
-
-  q.match(pattern, limit=10)
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,10 +9,9 @@ from supergraph.query.filters import F, compile_where
 
 @dataclass(frozen=True, slots=True)
 class _Step:
-    """One node in the pattern. Either bound (quoted id) or var (identifier)."""
-    bound_id: Optional[str]      # set -> bound_step; None -> var_step
-    var_name: Optional[str]      # set only for var_step
-    where: Optional[F]           # step_where, var_step only
+    bound_id: Optional[str]
+    var_name: Optional[str]
+    where: Optional[F]
 
     def to_dsl(self) -> str:
         if self.bound_id is not None:
@@ -49,9 +28,8 @@ class _Step:
 
 @dataclass(frozen=True, slots=True)
 class Pattern:
-    """Immutable pattern. Extend via ``.to(step, edge=)``."""
     steps: tuple[_Step, ...]
-    edges: tuple[Optional[F], ...]   # one fewer than steps; per-arrow filter
+    edges: tuple[Optional[F], ...]
 
     def to(self, step: "Pattern | _Step", *, edge: F | dict | None = None) -> "Pattern":
         if isinstance(step, Pattern):
@@ -86,14 +64,12 @@ class Pattern:
 class _P:
     @staticmethod
     def node(id: str) -> Pattern:
-        """``("id")`` - bound step with a specific node id."""
         if not isinstance(id, str) or not id:
             raise ValueError("P.node() requires a non-empty id")
         return Pattern(steps=(_Step(bound_id=id, var_name=None, where=None),), edges=())
 
     @staticmethod
     def var(name: str, *, where: F | dict | None = None) -> Pattern:
-        """``(var)`` - variable step, optionally filtered with WHERE."""
         dsl_identifier(name)
         if isinstance(where, dict):
             where = F.from_dict(where)

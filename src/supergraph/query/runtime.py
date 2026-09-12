@@ -1,13 +1,3 @@
-"""Query builder runtime: the ``Query`` class + compose + execute.
-
-Design: ``Query`` stores a ``_verb`` tag and a ``_params`` dict. The
-``.dsl()`` method dispatches to a per-verb compiler that knows the
-grammar-correct clause order (different per verb - REMEMBER wants
-AT/TOKENS/LIMIT/WHERE, NODES wants WHERE/ORDER/LIMIT, etc.).
-
-Modifiers return a new ``Query`` with updated params; input is never
-mutated.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
@@ -22,28 +12,23 @@ if TYPE_CHECKING:
 QueryKind = Literal["read", "write", "sys", "vault", "batch", "raw", "control"]
 
 
-# Per-verb DSL compiler registry. Populated by verb modules at import time.
 _COMPILERS: dict[str, Callable[[dict], str]] = {}
 
 
 def register_compiler(verb: str, fn: Callable[[dict], str]) -> None:
-    """Verb modules register their compiler so ``Query.dsl()`` can dispatch."""
     _COMPILERS[verb] = fn
 
 
-# Modifier -> read verbs that accept it. Others raise on mutate.
 _READ_MODIFIERS: set[str] = {"where", "limit", "tokens", "at", "order_by"}
 
 
 @dataclass(frozen=True, slots=True)
 class Query:
-    """Immutable DSL query. Compile via ``.dsl()``, run via ``.execute(gs)``."""
 
     _verb: str
     _params: dict
     _kind: QueryKind = "read"
 
-    # -- Terminal operations -------------------------------------------
 
     def dsl(self) -> str:
         compiler = _COMPILERS.get(self._verb)
@@ -59,7 +44,6 @@ class Query:
             raise TypeError("Query.execute() requires a SuperGraph instance, got None")
         return gs.execute(self.dsl())
 
-    # -- Modifiers (read only) -----------------------------------------
 
     def _require_read(self, op: str) -> None:
         if self._kind != "read":
@@ -97,7 +81,6 @@ class Query:
         return self._with_param("order_by", expr)
 
     def where(self, predicate: F | dict | None) -> "Query":
-        """AND-combine a predicate with the existing WHERE."""
         self._require_read("where")
         if predicate is None:
             return self
@@ -110,7 +93,6 @@ class Query:
         return self._with_param("where", combined)
 
     def with_(self, **kw: Any) -> "Query":
-        """Replace any named read-modifier. Unknown kwargs raise."""
         self._require_read("with_")
         unknown = set(kw) - _READ_MODIFIERS
         if unknown:
@@ -136,7 +118,6 @@ class Query:
                 out = out.order_by(val)
         return out
 
-    # -- Functional composition ----------------------------------------
 
     def pipe(self, fn: Callable[..., "Query"], *args: Any, **kwargs: Any) -> "Query":
         out = fn(self, *args, **kwargs)
@@ -144,7 +125,6 @@ class Query:
             raise TypeError(f"pipe() function must return a Query, got {type(out).__name__}")
         return out
 
-    # -- Batch compose -------------------------------------------------
 
     def __or__(self, other: "Query") -> "Query":
         if not isinstance(other, Query):
@@ -166,8 +146,6 @@ class Query:
     def __str__(self) -> str:
         return self.dsl()
 
-
-# -- Batch compiler (always available) -------------------------------------
 
 def _compile_batch(params: dict) -> str:
     return params["text"]

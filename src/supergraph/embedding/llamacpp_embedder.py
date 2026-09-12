@@ -1,4 +1,3 @@
-"""llama.cpp embedder via llama-cpp-python - GGUF models, fine-grained quant."""
 
 import numpy as np
 
@@ -7,12 +6,6 @@ from supergraph.embedding.postprocess import l2_normalize, truncate_dims
 
 
 class LlamaCppEmbedder(Embedder):
-    """GGUF model embedder via llama-cpp-python.
-
-    Handles encoder and decoder embedding models. GPU via n_gpu_layers=-1
-    (native CUDA/Metal, no onnxruntime, no cu12 wheels).
-    Supports Q2 through Q8 and FP16 GGUF quantization tiers.
-    """
 
     def __init__(
         self,

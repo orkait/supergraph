@@ -1,4 +1,3 @@
-"""Read-verb builders. Clause order in compilers matches grammar.lark."""
 from __future__ import annotations
 
 
@@ -7,15 +6,10 @@ from supergraph.query.filters import F, compile_where
 from supergraph.query.runtime import Query, register_compiler
 
 
-# ---------- Shared WHERE compile helper -----------------------------------
-
 def _where_clause(params: dict) -> str:
     w = compile_where(params.get("where"))
     return f" WHERE {w}" if w else ""
 
-
-# ---------- NODE ----------------------------------------------------------
-# node_q: "NODE" STRING with_doc?
 
 def node(id: str, *, with_document: bool = False) -> Query:
     return Query(_verb="node", _params={"id": id, "with_document": with_document}, _kind="read")
@@ -31,9 +25,6 @@ def _compile_node(p: dict) -> str:
 register_compiler("node", _compile_node)
 
 
-# ---------- NODES ---------------------------------------------------------
-# nodes_q: "NODES" where_clause? order_clause? limit_clause? offset_clause?
-
 def nodes(
     *,
     kind: str | None = None,
@@ -42,7 +33,6 @@ def nodes(
     offset: int | None = None,
     order_by: str | None = None,
 ) -> Query:
-    # Merge kind=... into where
     if kind is not None:
         kind_f = F.eq("kind", kind)
         if where is None:
@@ -77,9 +67,6 @@ def _compile_nodes(p: dict) -> str:
 register_compiler("nodes", _compile_nodes)
 
 
-# ---------- REMEMBER ------------------------------------------------------
-# remember_q: "REMEMBER" STRING at_clause? tokens_clause? limit_clause? where_clause?
-
 def remember(
     text: str,
     *,
@@ -113,9 +100,6 @@ def _compile_remember(p: dict) -> str:
 register_compiler("remember", _compile_remember)
 
 
-# ---------- ANSWER --------------------------------------------------------
-# answer_q: "ANSWER" STRING at_clause? tokens_clause? limit_clause? where_clause? using_reader?
-
 def answer(
     text: str,
     *,
@@ -125,20 +109,6 @@ def answer(
     where: F | dict | None = None,
     using: str | None = None,
 ) -> Query:
-    """ANSWER verb: retrieval-augmented answer via a configured reader LLM.
-
-    Emits ``ANSWER "text" [AT ...] [TOKENS n] [LIMIT n] [WHERE ...] [USING "reader"]``.
-
-    The reader is resolved at the SuperGraph level:
-        SuperGraph(reader=callable)                   - default reader
-        SuperGraph(readers={"name": callable})        - named reader registry
-        q.answer("...", using="name")                 - pick a named reader
-
-    Returns a Query that, when executed, produces
-        Result(kind="answer", data={"answer": str, "cited_slots": [id],
-                                    "candidates": [node], "reader": str|None},
-               meta=<REMEMBER signals>)
-    """
     if not isinstance(text, str) or not text:
         raise ValueError("answer() requires a non-empty query text")
     params: dict = {"text": text}
@@ -167,9 +137,6 @@ def _compile_answer(p: dict) -> str:
 register_compiler("answer", _compile_answer)
 
 
-# ---------- RECALL --------------------------------------------------------
-# recall_q: "RECALL" "FROM" STRING "DEPTH" NUMBER limit_clause? where_clause?
-
 def recall(from_id: str, *, depth: int, limit: int | None = None, where: F | dict | None = None) -> Query:
     if not isinstance(depth, int) or depth < 0:
         raise ValueError(f"recall() depth must be a non-negative int, got {depth!r}")
@@ -189,9 +156,6 @@ def _compile_recall(p: dict) -> str:
 
 register_compiler("recall", _compile_recall)
 
-
-# ---------- SIMILAR -------------------------------------------------------
-# similar_q: "SIMILAR" "TO" similar_target limit_clause? where_clause?
 
 def similar(
     *,
@@ -230,9 +194,6 @@ def _compile_similar(p: dict) -> str:
 register_compiler("similar", _compile_similar)
 
 
-# ---------- LEXICAL -------------------------------------------------------
-# lexical_q: "LEXICAL" "SEARCH" STRING limit_clause? where_clause?
-
 def lexical(text: str, *, limit: int | None = None, where: F | dict | None = None) -> Query:
     if not isinstance(text, str) or not text:
         raise ValueError("lexical() requires a non-empty query text")
@@ -252,10 +213,6 @@ def _compile_lexical(p: dict) -> str:
 
 register_compiler("lexical", _compile_lexical)
 
-
-# ---------- EDGES ---------------------------------------------------------
-# edges_q: "EDGES" direction STRING where_clause? limit_clause?
-# direction: FROM | TO
 
 def edges(
     node: str,
@@ -282,9 +239,6 @@ def _compile_edges(p: dict) -> str:
 
 register_compiler("edges", _compile_edges)
 
-
-# ---------- COUNT NODES ---------------------------------------------------
-# count_q: "COUNT" count_target where_clause?
 
 def count_nodes(*, where: F | dict | None = None) -> Query:
     params: dict = {}

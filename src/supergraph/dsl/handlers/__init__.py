@@ -1,7 +1,3 @@
-"""Handler registry and domain-specific handler mixins.
-
-Importing this package triggers @handles registration for all handlers.
-"""
 
 from supergraph.dsl.handlers._registry import DISPATCH, WRITE_OPS, is_write_op
 from supergraph.dsl.handlers.nodes import NodeHandlers

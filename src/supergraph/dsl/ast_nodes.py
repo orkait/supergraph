@@ -2,12 +2,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-# --- Filter expressions ---
 @dataclass(slots=True)
 class Condition:
     field: str
-    op: str      # "=", "!=", ">", "<", ">=", "<="
-    value: Any   # str, int, float, or None (for NULL)
+    op: str
+    value: Any
 
 @dataclass(slots=True)
 class ContainsCondition:
@@ -17,7 +16,7 @@ class ContainsCondition:
 @dataclass(slots=True)
 class LikeCondition:
     field: str
-    pattern: str  # SQL-like: % = any, _ = single char
+    pattern: str
     _compiled_re: Any = field(default=None, compare=False, repr=False, hash=False)
 
 @dataclass(slots=True)
@@ -29,12 +28,12 @@ class InCondition:
 class SimilarCondition:
     query: str
     threshold: float
-    field: str = "id"  # Usually similarity is on the node content, but we reference the node identifier
+    field: str = "id"
 
 @dataclass(slots=True)
 class DegreeCondition:
-    degree_type: str   # "INDEGREE" or "OUTDEGREE"
-    edge_kind: str | None  # optional edge kind filter
+    degree_type: str
+    edge_kind: str | None
     op: str
     value: int | float
 
@@ -64,24 +63,17 @@ class OffsetClause:
 
 @dataclass(slots=True)
 class MaxDepthClause:
-    """Optional MAX_DEPTH N clause on SHORTEST PATH / WEIGHTED variants.
-
-    A sentinel container the transformer emits when the grammar's optional
-    ``max_depth_clause?`` branch matches, letting query-site helpers pluck
-    the value from ``args`` the same way they pluck WhereClause/LimitClause
-    instead of positional index arithmetic.
-    """
     value: int
 
 @dataclass(slots=True)
 class OrderClause:
     field: str
-    direction: str = "ASC"  # "ASC" or "DESC"
+    direction: str = "ASC"
 
 @dataclass(slots=True)
 class AggFunc:
-    func: str       # "COUNT", "COUNT_DISTINCT", "SUM", "AVG", "MIN", "MAX"
-    field: str | None  # None for COUNT()
+    func: str
+    field: str | None
 
     def label(self) -> str:
         if self.field is None:
@@ -98,7 +90,6 @@ class AggregateQuery:
     order_desc: bool = False
     limit: LimitClause | None = None
 
-# --- Read queries ---
 @dataclass(slots=True)
 class NodeQuery:
     id: str
@@ -113,14 +104,14 @@ class NodesQuery:
 
 @dataclass(slots=True)
 class EdgesQuery:
-    direction: str   # "FROM" or "TO"
+    direction: str
     node_id: str
     where: WhereClause | None = None
     limit: LimitClause | None = None
 
 @dataclass(slots=True)
 class CountQuery:
-    target: str  # "NODES" or "EDGES"
+    target: str
     where: WhereClause | None = None
 
 @dataclass(slots=True)
@@ -154,9 +145,6 @@ class ShortestPathQuery:
     from_id: str
     to_id: str
     where: WhereClause | None = None
-    # Optional per-direction expansion cap. None means unbounded. Prior
-    # behavior was a hardcoded 10 inside algos.graph.bidirectional_bfs which
-    # silently truncated long paths — see bug #40.
     max_depth: int | None = None
 
 @dataclass(slots=True)
@@ -170,8 +158,6 @@ class WeightedShortestPathQuery:
     from_id: str
     to_id: str
     where: WhereClause | None = None
-    # Optional cap passed to Dijkstra's early-termination check. None means
-    # unbounded; caller gets whatever Dijkstra finds or None if unreachable.
     max_depth: int | None = None
 
 @dataclass(slots=True)
@@ -198,22 +184,18 @@ class CommonNeighborsQuery:
     node_b: str
     where: WhereClause | None = None
 
-# --- Pattern matching ---
 @dataclass(slots=True)
 class PatternStep:
-    """A step in a MATCH pattern - either a bound ID or a variable with optional filter."""
-    bound_id: str | None = None      # if this is a literal string ID
-    variable: str | None = None      # if this is a variable binding
-    where: Any | None = None         # optional filter for variable steps
+    bound_id: str | None = None
+    variable: str | None = None
+    where: Any | None = None
 
 @dataclass(slots=True)
 class PatternArrow:
-    """An edge constraint in a MATCH pattern."""
-    expr: Any   # filter expression (typically kind = "something")
+    expr: Any
 
 @dataclass(slots=True)
 class MatchPattern:
-    """A full MATCH pattern: step (arrow step)+"""
     steps: list[PatternStep]
     arrows: list[PatternArrow]
 
@@ -222,7 +204,6 @@ class MatchQuery:
     pattern: MatchPattern
     limit: LimitClause | None = None
 
-# --- Write queries ---
 @dataclass(slots=True)
 class FieldPair:
     name: str
@@ -230,19 +211,19 @@ class FieldPair:
 
 @dataclass(slots=True)
 class CreateNode:
-    id: str | None  # None for AUTO ID
+    id: str | None
     fields: list[FieldPair]
     auto_id: bool = False
-    expires_in: tuple[int, str] | None = None   # (amount, unit) e.g. (30, "m")
-    expires_at: str | None = None                # ISO-8601 string
-    event_at: str | int | None = None            # ISO-8601 string or epoch ms
+    expires_in: tuple[int, str] | None = None
+    expires_at: str | None = None
+    event_at: str | int | None = None
     vector: list[float] | None = None
     document: str | None = None
 
 @dataclass(slots=True)
 class VarAssign:
-    variable: str  # e.g. "$fn1"
-    statement: Any  # the write query that produces an ID
+    variable: str
+    statement: Any
 
 @dataclass(slots=True)
 class UpdateNode:
@@ -268,8 +249,8 @@ class DeleteNodes:
 
 @dataclass(slots=True)
 class CreateEdge:
-    source: str  # literal ID or "$variable"
-    target: str  # literal ID or "$variable"
+    source: str
+    target: str
     fields: list[FieldPair]
 
 @dataclass(slots=True)
@@ -287,7 +268,7 @@ class DeleteEdge:
 
 @dataclass(slots=True)
 class DeleteEdges:
-    direction: str  # "FROM" or "TO"
+    direction: str
     node_id: str
     where: WhereClause | None = None
 
@@ -299,7 +280,7 @@ class Increment:
 
 @dataclass(slots=True)
 class Batch:
-    statements: list  # list of write queries
+    statements: list
 
 @dataclass(slots=True)
 class AssertStmt:
@@ -354,7 +335,6 @@ class IngestStmt:
     using: str | None = None
     vision_model: str | None = None
 
-# --- Read queries (intelligence) ---
 
 @dataclass(slots=True)
 class RecallQuery:
@@ -375,10 +355,9 @@ class SimilarQuery:
     limit: LimitClause | None = None
     where: WhereClause | None = None
 
-# --- System queries ---
 @dataclass(slots=True)
 class SysStats:
-    target: str | None = None  # "NODES", "EDGES", "MEMORY", "WAL", or None for all
+    target: str | None = None
 
 @dataclass(slots=True)
 class SysKinds:
@@ -390,7 +369,7 @@ class SysEdgeKinds:
 
 @dataclass(slots=True)
 class SysDescribe:
-    entity_type: str  # "NODE" or "EDGE"
+    entity_type: str
     name: str
 
 @dataclass(slots=True)
@@ -408,12 +387,12 @@ class SysFailedQueries:
 
 @dataclass(slots=True)
 class SysExplain:
-    query: Any  # the read query to explain
+    query: Any
 
 @dataclass(slots=True)
 class SysRegisterNodeKind:
     kind: str
-    required: list[tuple[str, str | None]]  # [(field_name, type_name_or_none), ...]
+    required: list[tuple[str, str | None]]
     optional: list[tuple[str, str | None]]
     embed_field: str | None = None
 
@@ -425,7 +404,7 @@ class SysRegisterEdgeKind:
 
 @dataclass(slots=True)
 class SysUnregister:
-    entity_type: str  # "NODE" or "EDGE"
+    entity_type: str
     kind: str
 
 @dataclass(slots=True)
@@ -438,11 +417,11 @@ class SysRebuild:
 
 @dataclass(slots=True)
 class SysClear:
-    target: str  # "LOG" or "CACHE"
+    target: str
 
 @dataclass(slots=True)
 class SysWal:
-    action: str  # "STATUS" or "REPLAY"
+    action: str
 
 @dataclass(slots=True)
 class SysExpire:
@@ -498,12 +477,11 @@ class SysReembed:
 class SysStatus:
     pass
 
-# --- Vault queries ---
 @dataclass(slots=True)
 class VaultNew:
     title: str
     kind: str = "memory"
-    tags: str | None = None  # comma-separated
+    tags: str | None = None
 
 @dataclass(slots=True)
 class VaultRead:
@@ -549,7 +527,6 @@ class VaultDaily:
 class VaultArchive:
     title: str
 
-# --- Lexical search ---
 @dataclass(slots=True)
 class LexicalSearchQuery:
     query: str
@@ -562,48 +539,37 @@ class RememberQuery:
     limit: LimitClause | None = None
     where: WhereClause | None = None
     tokens: int | None = None
-    at: int | None = None  # epoch ms anchor for temporal scoring
+    at: int | None = None
     at_range: tuple[int, int] | None = None
 
 
 @dataclass(slots=True)
 class AnswerQuery:
-    """ANSWER: REMEMBER + reader-LLM synthesis.
-
-    Runs the same retrieval pipeline as REMEMBER internally, then hands the
-    retrieved passages + the question to a configured reader callable. The
-    reader produces free-form answer text; supergraph returns that answer
-    alongside the citing slot ids and the usual ``meta["signals"]`` block.
-    """
     query: str
     limit: LimitClause | None = None
     where: WhereClause | None = None
     tokens: int | None = None
     at: int | None = None
     at_range: tuple[int, int] | None = None
-    using: str | None = None  # named reader from the SuperGraph reader registry
+    using: str | None = None
 
 
-# --- Forget (hard delete blob + memory) ---
 @dataclass(slots=True)
 class ForgetNode:
     id: str
 
-# --- Retention policy scan ---
 @dataclass(slots=True)
 class SysRetain:
     pass
 
-# --- Self-balancing ---
 @dataclass(slots=True)
 class SysHealth:
     pass
 
 @dataclass(slots=True)
 class SysOptimize:
-    target: str | None = None  # None=all, or "COMPACT","STRINGS","EDGES","VECTORS","BLOBS","CACHE"
+    target: str | None = None
 
-# --- Log queries ---
 @dataclass(slots=True)
 class SysLog:
     where: WhereClause | None = None
@@ -611,12 +577,10 @@ class SysLog:
     trace_id: str | None = None
     limit: LimitClause | None = None
 
-# --- Emergency eviction ---
 @dataclass(slots=True)
 class SysEvict:
     limit: LimitClause | None = None
 
-# --- Cron management ---
 @dataclass(slots=True)
 class SysCronAdd:
     name: str
@@ -644,13 +608,11 @@ class SysCronRun:
     name: str
 
 
-# --- Evolution rule management (Layer 5: metacognitive memory) ---
 @dataclass(slots=True)
 class SysEvolveRule:
-    """SYS EVOLVE RULE "name" WHEN ... THEN ... COOLDOWN n PRIORITY n"""
     name: str
-    conditions: list   # list of Condition-like dicts
-    actions: list      # list of Action-like dicts
+    conditions: list
+    actions: list
     cooldown: int = 60
     priority: int = 5
 

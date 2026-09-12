@@ -1,4 +1,3 @@
-"""IngestorRegistry - pluggable extension-to-ingestor routing."""
 from pathlib import Path
 from supergraph.ingest.base import Ingestor
 
@@ -32,7 +31,6 @@ def _build_builtin_ext_map() -> dict[str, str]:
 
 
 def _make_builtin_ingestor(name: str) -> Ingestor:
-    """Lazily construct a built-in ingestor by name."""
     if name == "markitdown":
         from supergraph.ingest.markitdown_ingestor import MarkItDownIngestor
         return MarkItDownIngestor()
@@ -43,12 +41,6 @@ def _make_builtin_ingestor(name: str) -> Ingestor:
         from supergraph.ingest.docling_ingestor import DoclingIngestor
         return DoclingIngestor()
     if name == "audio":
-        # The built-in extension map routes wav/mp3/ogg/flac to "audio" so
-        # users see these formats as "supported" in the registry listing.
-        # Audio ingestion is actually handled by docling[asr], which is an
-        # optional extra. Pre-fix, a user with docling installed but without
-        # the ASR extra got "Unknown built-in ingestor: 'audio'" (bug #65).
-        # Raise a clear install hint instead.
         raise ValueError(
             "Audio ingestion requires docling with the ASR extra. "
             "Install with: pip install 'supergraph[ingest]' 'docling[asr]'"
@@ -57,24 +49,17 @@ def _make_builtin_ingestor(name: str) -> Ingestor:
 
 
 class IngestorRegistry:
-    """Registry that maps file extensions to Ingestor instances.
-
-    Built-in ingestors are loaded lazily. Custom ingestors registered via
-    ``register()`` override built-ins for every extension they declare.
-    """
 
     def __init__(self) -> None:
         self._ext_map: dict[str, str] = _build_builtin_ext_map()
         self._instances: dict[str, Ingestor] = {}
 
     def register(self, ingestor: Ingestor) -> None:
-        """Register a custom ingestor. Overrides built-ins for all its extensions."""
         self._instances[ingestor.name] = ingestor
         for ext in ingestor.supported_extensions:
             self._ext_map[ext] = ingestor.name
 
     def resolve(self, file_path: str, using: str | None = None) -> Ingestor:
-        """Return the ingestor for *file_path*, or the one named *using*."""
         if using:
             name = using
         else:
@@ -91,7 +76,6 @@ class IngestorRegistry:
         return self._instances[name]
 
     def list(self) -> list[dict]:
-        """Return all registered ingestors as dicts."""
         seen: dict[str, list[str]] = {}
         for ext, name in self._ext_map.items():
             seen.setdefault(name, []).append(ext)

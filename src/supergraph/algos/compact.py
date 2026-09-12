@@ -1,8 +1,3 @@
-"""Slot compaction primitives.
-
-Pure numpy helpers that compute slot remap plans without touching stores.
-The caller (core/optimizer.py) applies the plan to mutable state.
-"""
 
 import numpy as np
 
@@ -14,7 +9,6 @@ __all__ = [
 
 
 def build_live_mask(node_ids: np.ndarray, tombstones: set[int], n: int) -> np.ndarray:
-    """Bool mask of slots that are live (valid id, not tombstoned)."""
     mask = node_ids[:n] >= 0
     if tombstones:
         tomb_arr = np.fromiter(tombstones, dtype=np.int32)
@@ -26,13 +20,6 @@ def build_live_mask(node_ids: np.ndarray, tombstones: set[int], n: int) -> np.nd
 
 
 def slot_remap_plan(live_mask: np.ndarray) -> tuple[np.ndarray, int]:
-    """Build old_to_new lookup array and new live count.
-
-    Returns:
-        old_to_new: int32 array of length len(live_mask); old_to_new[i] = new
-                    slot index if live, -1 if tombstoned/invalid.
-        new_count: number of live slots (== nonzero entries in live_mask)
-    """
     n = len(live_mask)
     live_slots_arr = np.nonzero(live_mask)[0]
     new_count = int(live_slots_arr.size)
@@ -46,7 +33,6 @@ def apply_slot_remap_to_edges(
     old_to_new: np.ndarray,
     n: int,
 ) -> list[tuple[int, int, dict]]:
-    """Remap edge endpoints via old_to_new. Drops edges touching dead slots."""
     if not edge_list:
         return []
     old_map = old_to_new.tolist()

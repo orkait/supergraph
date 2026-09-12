@@ -1,8 +1,3 @@
-"""Pure text chunking primitives for ingestion.
-
-Splits markdown / plaintext into Chunk records. No supergraph imports,
-no I/O. Takes a string, returns a list of Chunks.
-"""
 
 import re
 from dataclasses import dataclass
@@ -43,13 +38,6 @@ def chunk_fixed(
     overlap: int = 50,
     summary_max_len: int = 200,
 ) -> list[Chunk]:
-    """Fixed-size sliding window chunks with overlap."""
-    # Guard against infinite loops. ``pos += chunk_size - overlap`` never
-    # advances when chunk_size == overlap (step of 0) and regresses when
-    # overlap > chunk_size (negative step), making the outer while-loop
-    # infinite on any non-empty input. Pre-fix, a caller with a bad config
-    # (e.g. chunk_max_size=50, chunk_overlap=50 from a misconfigured JSON)
-    # could wedge ingest indefinitely — bug #83. Reject at entry.
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     if overlap < 0:
@@ -83,17 +71,9 @@ def chunk_by_paragraph(
     max_chunk_size: int = 1000,
     summary_max_len: int = 200,
 ) -> list[Chunk]:
-    """Split on double newlines, packing paragraphs up to max_chunk_size."""
     paragraphs = _PARA_SPLIT_RE.split(text)
     chunks: list[Chunk] = []
     current = ""
-    # Track where the current chunk starts in the ORIGINAL text, not where
-    # the accumulator thinks it is. Pre-fix, start_char advanced by
-    # len(current) which excluded the whitespace eaten by _PARA_SPLIT_RE
-    # and the .strip() calls, drifting a few characters per chunk (bug
-    # #84). We use str.find() from the previous chunk's end so the offset
-    # is always the real byte position of the chunk's first non-whitespace
-    # character.
     search_pos = 0
     current_start: int | None = None
     for para in paragraphs:
@@ -101,7 +81,6 @@ def chunk_by_paragraph(
         if not para_stripped:
             continue
         if current_start is None:
-            # Locate the start of this paragraph in the original text.
             loc = text.find(para_stripped, search_pos)
             current_start = loc if loc >= 0 else search_pos
         if current and (
@@ -116,12 +95,8 @@ def chunk_by_paragraph(
                     start_char=current_start,
                 )
             )
-            # Advance search_pos so the next find() starts after the chunk
-            # we just emitted, and reset current_start so the next iteration
-            # locates the new chunk's real start.
             search_pos = current_start + len(current.strip())
             current = ""
-            # Locate THIS paragraph's start for the new chunk.
             loc = text.find(para_stripped, search_pos)
             current_start = loc if loc >= 0 else search_pos
         current += para_stripped + "\n\n"
@@ -152,7 +127,6 @@ def chunk_by_heading(
     summary_max_len: int = 200,
     overlap: int = 50,
 ) -> list[Chunk]:
-    """Split on markdown headings; fall back to paragraph split if none found."""
     matches = list(_HEADING_RE.finditer(text))
     if not matches:
         return chunk_by_paragraph(text, max_chunk_size, summary_max_len=summary_max_len)

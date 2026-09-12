@@ -1,35 +1,3 @@
-"""supergraph pro: probe runner.
-
-Per-component download + measure into the calibration cache. Run by
-``supergraph pro setup`` (download + probe) and ``supergraph pro probe
---refresh`` (re-measure already-downloaded components).
-
-Architecture:
-
-  - ``Probe`` base class declares ``download()`` + ``measure()`` + the
-    shared ``run()`` orchestrator that handles error isolation +
-    measurement bookkeeping.
-  - One subclass per slot value, parameterized when multiple variants
-    share a loader (e.g. Bonsai TQ1_0/TQ2_0 × lite/full = 4 entries
-    backed by the same ``BonsaiProbe`` class with kwargs).
-  - ``_REGISTRY`` maps component_id → factory callable returning a
-    ``Probe`` instance.
-  - ``probe_components(spec, host, cache_dir)`` orchestrates: for each
-    component_id in ``spec.component_ids()``, run its probe sequentially,
-    write the cache atomically after each, surface progress via
-    ``on_event`` callback.
-
-Hard rules carried over from the design:
-  - Sequential, not parallel: components share host RAM and we don't
-    want one probe's load to poison the next one's measurement.
-  - Atomic cache writes between probes: a crash mid-suite leaves the
-    components that already finished still cached.
-  - Per-component error isolation: ``download`` or ``measure`` raising
-    becomes a ``ProbeFailure`` in the result list, not an unhandled
-    exception that aborts the rest of the suite.
-  - No hard-coded RAM/TPS numbers; everything in the resulting
-    ``CalibrationEntry`` is measured live on this host.
-"""
 from __future__ import annotations
 
 import gc
@@ -49,33 +17,21 @@ from supergraph.pro import (
 
 _log = logging.getLogger(__name__)
 
-# Probe defaults. Keep small - probes are diagnostic, not benchmarks.
 _PROBE_TEXT = (
     "supergraph pro calibration probe. The system is recording resident "
     "memory and tokens-per-second on this host. This sentence is "
     "deliberately ordinary so the embedder, reranker, and ingester all "
     "see workload representative of typical agent-conversation traffic."
 )
-_PROBE_TEXTS_BATCH = [_PROBE_TEXT] * 100  # for embedder batched throughput
+_PROBE_TEXTS_BATCH = [_PROBE_TEXT] * 100
 _PROBE_QUERY_DOC_PAIRS = [
     (_PROBE_TEXT, _PROBE_TEXT[i:] + " " + _PROBE_TEXT[:i])
     for i in range(0, 50, 1)
 ]
 
 
-# ---------------------------------------------------------------------
-# Result types
-# ---------------------------------------------------------------------
-
-
 @dataclass
 class ProbeResult:
-    """Outcome of running one Probe.
-
-    On success ``entry`` is set and ``error`` is None. On failure
-    ``entry`` is None and ``error`` carries the message; the rest of the
-    suite continues anyway.
-    """
 
     component_id: str
     duration_s: float
@@ -83,13 +39,7 @@ class ProbeResult:
     error: str | None = None
 
 
-# ---------------------------------------------------------------------
-# Measurement helpers
-# ---------------------------------------------------------------------
-
-
 def _process_rss_mb() -> int:
-    """Resident set size for the current process in MiB. 0 on failure."""
     try:
         import psutil
         return int(psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024))
@@ -98,7 +48,6 @@ def _process_rss_mb() -> int:
 
 
 def _vram_free_mb() -> int:
-    """nvidia-smi VRAM free in MiB. 0 if no GPU / nvidia-smi missing."""
     import subprocess
     try:
         out = subprocess.run(
@@ -115,12 +64,6 @@ def _vram_free_mb() -> int:
 
 
 def _free_caches() -> None:
-    """Best-effort RSS release between probe stages.
-
-    Python's gc + a malloc_trim hint releases freed-but-still-mapped
-    pages back to the kernel so a probe's ``ram_mb_idle - ram_mb_baseline``
-    delta reflects the model load, not the previous probe's leftover.
-    """
     gc.collect()
     try:
         import ctypes
@@ -133,12 +76,6 @@ def _measure_callable_tps(
     callable_: Callable[[], int],
     n_iters: int = 3,
 ) -> float:
-    """Run ``callable_`` ``n_iters`` times; return median tokens/s.
-
-    Each call must return the integer token count it produced. We take
-    the median to dampen the cold-cache iteration when llama.cpp's KV
-    is empty.
-    """
     timings: list[float] = []
     for _ in range(n_iters):
         t0 = time.perf_counter()
@@ -152,25 +89,11 @@ def _measure_callable_tps(
     return timings[len(timings) // 2]
 
 
-# ---------------------------------------------------------------------
-# Probe base
-# ---------------------------------------------------------------------
-
-
 class Probe:
-    """Base class. Subclasses set ``component_id`` and implement
-    ``download`` + ``measure``. ``run`` is the orchestrator that wraps
-    both with timing + error isolation.
-    """
 
     component_id: str = ""
 
     def download(self, cache_dir: Path, host: HostSnapshot) -> int:
-        """Download model files. Return on-disk size in MiB.
-
-        Raises on failure (network down, hub auth needed, etc.) -
-        ``run()`` converts to ProbeResult.error.
-        """
         raise NotImplementedError
 
     def measure(
@@ -179,11 +102,6 @@ class Probe:
         host: HostSnapshot,
         disk_mb: int,
     ) -> CalibrationEntry:
-        """Load model, run workload, record CalibrationEntry. Raises on
-        failure. Subclass populates ``ram_mb_*``, ``vram_mb_full_offload``,
-        ``tps_cpu_threads``, ``tps_gpu_full_offload``, and the
-        ``extra`` knobs the resolver reads (n_ctx_*, n_batch, etc.).
-        """
         raise NotImplementedError
 
     def run(
@@ -191,7 +109,6 @@ class Probe:
         cache_dir: Path,
         host: HostSnapshot,
     ) -> ProbeResult:
-        """Run download + measure with error isolation."""
         t0 = time.perf_counter()
         try:
             disk_mb = self.download(cache_dir, host)
@@ -218,25 +135,13 @@ class Probe:
         )
 
 
-# ---------------------------------------------------------------------
-# Concrete probes
-# ---------------------------------------------------------------------
-
-
 class Model2VecProbe(Probe):
-    """Tiny pure-Python embedder; first stop for the resolver because
-    the dep is core. Probe is fast (~1 s) so it doubles as a smoke
-    test for the framework itself.
-    """
 
     component_id = "embedder:model2vec-256d"
     model_name = "minishlab/M2V_base_output"
 
     def download(self, cache_dir: Path, host: HostSnapshot) -> int:
-        # model2vec auto-downloads on first instantiation; estimate
-        # disk by walking the HF cache after load. Pre-emptive download
-        # done in measure() so we can size accurately.
-        return 0  # filled in measure()
+        return 0
 
     def measure(
         self,
@@ -258,12 +163,11 @@ class Model2VecProbe(Probe):
             nonlocal peak_rss
             vecs = embedder.encode_documents(_PROBE_TEXTS_BATCH)
             peak_rss = max(peak_rss, _process_rss_mb())
-            return len(vecs) * 8  # ~tokens; rough but consistent across probes
+            return len(vecs) * 8
 
         tps = _measure_callable_tps(_embed_batch, n_iters=3)
         ram_at_default = max(peak_rss - rss_baseline, 0)
 
-        # Best-effort disk: walk the model2vec HF cache.
         try:
             from huggingface_hub import scan_cache_dir
             cache = scan_cache_dir()
@@ -282,25 +186,18 @@ class Model2VecProbe(Probe):
             ram_mb_min=ram_idle,
             ram_mb_max=ram_at_default,
             disk_mb=disk_mb,
-            vram_mb_full_offload=0,  # model2vec is pure-Python, no GPU path
+            vram_mb_full_offload=0,
             tps_cpu_threads={str(host.cpu_cores_logical): tps},
             tps_gpu_full_offload=None,
-            extra={_EXTRA_EMBED_BATCH: 64},  # measured value; tuneable later
+            extra={_EXTRA_EMBED_BATCH: 64},
         )
 
 
 class TinyBERTNERProbe(Probe):
-    """ONNX TinyBERT NER. Ships pre-bundled in [dev]; no download path
-    for the model itself - users either have ./models/tinybert-ner or
-    not. Probe verifies the loader works and measures throughput.
-    """
 
     component_id = "ner:tinybert"
 
     def download(self, cache_dir: Path, host: HostSnapshot) -> int:
-        # TinyBERT model is opt-in via `supergraph install-embedder` or
-        # bundled by user; we don't auto-pull. Disk reported as the
-        # configured directory's size if it exists.
         from supergraph.config import SuperGraphConfig
         cfg = SuperGraphConfig()
         model_dir = Path(cfg.dsl.entity_model_dir or "./models/tinybert-ner")
@@ -326,7 +223,6 @@ class TinyBERTNERProbe(Probe):
         model_dir = cfg.dsl.entity_model_dir or "./models/tinybert-ner"
 
         rss_baseline = _process_rss_mb()
-        # First call loads the model.
         _ = extract_batch([_PROBE_TEXT], model_dir=model_dir,
                          max_length=256, score_threshold=0.6)
         rss_after_load = _process_rss_mb()
@@ -340,7 +236,7 @@ class TinyBERTNERProbe(Probe):
             extract_batch(sentences, model_dir=model_dir,
                          max_length=256, score_threshold=0.6)
             peak_rss = max(peak_rss, _process_rss_mb())
-            return len(sentences) * 32  # rough tokens-per-sentence
+            return len(sentences) * 32
 
         tps = _measure_callable_tps(_ner_batch, n_iters=3)
         ram_at_default = max(peak_rss - rss_baseline, 0)
@@ -353,7 +249,7 @@ class TinyBERTNERProbe(Probe):
             ram_mb_min=ram_idle,
             ram_mb_max=ram_at_default,
             disk_mb=disk_mb,
-            vram_mb_full_offload=0,  # GPU path needs onnxruntime-gpu setup
+            vram_mb_full_offload=0,
             tps_cpu_threads={str(host.cpu_cores_logical): tps},
             tps_gpu_full_offload=None,
             extra={},
@@ -361,11 +257,6 @@ class TinyBERTNERProbe(Probe):
 
 
 class JinaOnnxEmbedderProbe(Probe):
-    """ONNX HF embedder family (jina-v5-small / jina-v5-nano /
-    embeddinggemma-300m). Each variant is a separate registry entry but
-    shares this implementation; constructor takes the registry slug
-    that ``supergraph install-embedder`` uses to fetch the model.
-    """
 
     def __init__(self, slot_id: str, install_name: str, dims: int):
         self.component_id = f"embedder:{slot_id}"
@@ -410,7 +301,7 @@ class JinaOnnxEmbedderProbe(Probe):
             ram_mb_min=ram_idle,
             ram_mb_max=ram_at_default,
             disk_mb=disk_mb,
-            vram_mb_full_offload=0,  # GPU path measured separately when host.gpu_ready
+            vram_mb_full_offload=0,
             tps_cpu_threads={str(host.cpu_cores_logical): tps},
             tps_gpu_full_offload=None,
             extra={_EXTRA_EMBED_BATCH: 64},
@@ -418,9 +309,6 @@ class JinaOnnxEmbedderProbe(Probe):
 
 
 class FastembedProbe(Probe):
-    """fastembed-bge-small via the fastembed package. Different loader
-    surface than OnnxHFEmbedder so own probe.
-    """
 
     component_id = "embedder:fastembed-bge-small"
 
@@ -431,10 +319,7 @@ class FastembedProbe(Probe):
             raise RuntimeError(
                 "fastembed not installed; pip install 'supergraph[embedders-extra]'"
             ) from e
-        # First instantiation pulls the model. The instance is not needed; the
-        # download is the point.
         TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-        # Best-effort disk size from huggingface_hub cache scan.
         try:
             from huggingface_hub import scan_cache_dir
             cache = scan_cache_dir()
@@ -485,9 +370,6 @@ class FastembedProbe(Probe):
 
 
 class JinaV3RerankerProbe(Probe):
-    """jina-reranker-v3 GGUF. Downloaded via huggingface_hub; loaded
-    via supergraph.embedding.reranker.
-    """
 
     component_id = "reranker:jina-v3"
 
@@ -498,16 +380,12 @@ class JinaV3RerankerProbe(Probe):
             raise RuntimeError(
                 "huggingface-hub not installed; pip install 'supergraph[pro]'"
             ) from e
-        # Download to the exact paths measure()/runtime read from config, not the
-        # HF cache layout - otherwise the files land where nothing looks for them.
         from supergraph.config import SuperGraphConfig
         cfg = SuperGraphConfig()
         model_path = Path(cfg.dsl.reranker_model_dir or "")
         proj_path = Path(cfg.dsl.reranker_projector_path or "")
         target_dir = model_path.parent
         target_dir.mkdir(parents=True, exist_ok=True)
-        # The Q8_0-only repo (jinaai/jina-reranker-v3-Q8_0-GGUF) is
-        # gated; use the public multi-quant repo and pin the Q8_0 file.
         repo = "jinaai/jina-reranker-v3-GGUF"
         gguf = hf_hub_download(
             repo_id=repo, filename=model_path.name, local_dir=str(target_dir),
@@ -525,9 +403,6 @@ class JinaV3RerankerProbe(Probe):
         disk_mb: int,
     ) -> CalibrationEntry:
         from supergraph.embedding.reranker import GGUFReranker
-        # Reranker reads default paths from config. Probe assumes the
-        # default config; users with custom paths re-probe via
-        # `supergraph pro probe`.
         from supergraph.config import SuperGraphConfig
         cfg = SuperGraphConfig()
 
@@ -535,7 +410,7 @@ class JinaV3RerankerProbe(Probe):
         reranker = GGUFReranker(
             model_path=cfg.dsl.reranker_model_dir or "",
             projector_path=cfg.dsl.reranker_projector_path or "",
-            n_gpu_layers=0,  # CPU baseline; GPU measured separately
+            n_gpu_layers=0,
         )
         rss_after_load = _process_rss_mb()
         ram_idle = max(rss_after_load - rss_baseline, 0)
@@ -567,9 +442,6 @@ class JinaV3RerankerProbe(Probe):
 
 
 class BonsaiProbe(Probe):
-    """BonsaiIngestor probe. Measures RSS + VRAM + TPS at the lite or
-    full prompt across multiple n_ctx tiers.
-    """
 
     def __init__(self, quant: str, skill: str):
         self.component_id = f"ingest:bonsai-{quant}-{skill}"
@@ -583,7 +455,6 @@ class BonsaiProbe(Probe):
             raise RuntimeError(
                 "huggingface-hub not installed; pip install 'supergraph[pro]'"
             ) from e
-        # Single repo holds both TQ1_0 and TQ2_0 quants; pick by filename.
         repo = "superkaiii/Ternary-Bonsai-4B-GGUF"
         fname = f"Ternary-Bonsai-4B-{self._quant.upper()}.gguf"
         path = hf_hub_download(
@@ -606,9 +477,6 @@ class BonsaiProbe(Probe):
         skill_path = (_DEFAULT_LITE_PROMPT_PATH if self._skill == "lite"
                       else _DEFAULT_PROMPT_PATH)
 
-        # Locate the GGUF that download() just placed in the HF cache.
-        # Both TQ1_0 and TQ2_0 quants live in one repo
-        # (`superkaiii/Ternary-Bonsai-4B-GGUF`); discriminate by filename.
         from huggingface_hub import scan_cache_dir
         gguf_path: Path | None = None
         repo_marker = "Ternary-Bonsai-4B-GGUF"
@@ -637,11 +505,10 @@ class BonsaiProbe(Probe):
                 gs=gs,
                 skill_path=str(skill_path),
                 n_ctx=4096,
-                n_gpu_layers=0,  # CPU first; GPU measured separately when ready
+                n_gpu_layers=0,
                 max_output_tokens=128,
                 temperature=0.0,
             )
-            # Force LLM load via warm dry-run.
             ing.ingest("Probe warm-up.", msg_id="warm", dry_run=True)
             rss_after_load = _process_rss_mb()
             ram_idle = max(rss_after_load - rss_baseline, 0)
@@ -653,7 +520,6 @@ class BonsaiProbe(Probe):
                 res = ing.ingest("Kailash joined OpenAI.",
                                 msg_id="probe", dry_run=True)
                 peak_rss = max(peak_rss, _process_rss_mb())
-                # Token count from llama-cpp tokenizer for accurate TPS
                 try:
                     n_tok = len(ing._llm.tokenize(
                         res.raw_output.encode("utf-8"), add_bos=False,
@@ -665,11 +531,10 @@ class BonsaiProbe(Probe):
             tps_cpu = _measure_callable_tps(_measure_one, n_iters=3)
             ram_at_default = max(peak_rss - rss_baseline, 0)
 
-            # GPU measurement if available. Re-instantiate with offload.
             tps_gpu: float | None = None
             vram_full: int = 0
             if host.gpu_ready:
-                ing._llm = None  # release CPU model
+                ing._llm = None
                 _free_caches()
                 vram_pre = _vram_free_mb()
                 try:
@@ -724,7 +589,6 @@ class BonsaiProbe(Probe):
 
 
 class WhisperProbe(Probe):
-    """faster-whisper transcription probe."""
 
     def __init__(self, model_size: str):
         self.component_id = f"audio:whisper-{model_size}"
@@ -737,7 +601,6 @@ class WhisperProbe(Probe):
             raise RuntimeError(
                 "faster-whisper not installed; pip install 'supergraph[audio]'"
             ) from e
-        # Loading triggers download.
         WhisperModel(self._model_size, device="cpu", compute_type="int8")
         try:
             from huggingface_hub import scan_cache_dir
@@ -755,8 +618,6 @@ class WhisperProbe(Probe):
         disk_mb: int,
     ) -> CalibrationEntry:
         from faster_whisper import WhisperModel
-        # 5-second WAV from /usr/share/sounds/alsa if available; else
-        # generate silence.
         sample = Path("/usr/share/sounds/alsa/Front_Center.wav")
         if not sample.exists():
             raise RuntimeError(
@@ -773,9 +634,9 @@ class WhisperProbe(Probe):
         def _one():
             nonlocal peak_rss
             segs, _info = model.transcribe(str(sample), beam_size=1)
-            list(segs)  # exhaust generator
+            list(segs)
             peak_rss = max(peak_rss, _process_rss_mb())
-            return 50  # nominal token count for 5s audio
+            return 50
 
         tps = _measure_callable_tps(_one, n_iters=2)
         ram_at_default = max(peak_rss - rss_baseline, 0)
@@ -796,18 +657,12 @@ class WhisperProbe(Probe):
 
 
 class VisionSidecarProbe(Probe):
-    """Vision sidecar (SmolVLM2 / Qwen-VL via llama.cpp). Spawns the
-    sidecar subprocess, captions one tiny test image, then kills the
-    sidecar. RAM measurement is the SIDECAR PROCESS rss, not ours;
-    VRAM via nvidia-smi delta.
-    """
 
     def __init__(self, model: str):
         self.component_id = f"vision:{model}"
         self._model = model
 
     def download(self, cache_dir: Path, host: HostSnapshot) -> int:
-        # Reuse the existing `supergraph vision serve --pull-only` path.
         try:
             from supergraph.ingest import vision_sidecar as vs
         except ImportError as e:
@@ -823,11 +678,6 @@ class VisionSidecarProbe(Probe):
         host: HostSnapshot,
         disk_mb: int,
     ) -> CalibrationEntry:
-        # Vision probe is the most invasive (subprocess + image work);
-        # implementing the full RSS/VRAM measurement loop on top of the
-        # sidecar lifecycle is non-trivial. PR#3.5 ships a placeholder
-        # entry with only disk + a single CPU TPS estimate so resolver
-        # has SOMETHING to work with; PR#3.6 will tighten this up.
         return CalibrationEntry(
             component_id=self.component_id,
             measured_at=datetime.now(timezone.utc).isoformat(),
@@ -843,13 +693,7 @@ class VisionSidecarProbe(Probe):
         )
 
 
-# ---------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------
-
-
 def _build_registry() -> dict[str, Callable[[], Probe]]:
-    """Map every component_id ProSpec can emit to a probe factory."""
     reg: dict[str, Callable[[], Probe]] = {
         "embedder:model2vec-256d":    lambda: Model2VecProbe(),
         "embedder:jina-v5-small":     lambda: JinaOnnxEmbedderProbe(
@@ -881,18 +725,11 @@ _REGISTRY: dict[str, Callable[[], Probe]] = _build_registry()
 
 
 def list_probable() -> list[str]:
-    """Component IDs the runner knows how to probe. Public for tooling."""
     return sorted(_REGISTRY.keys())
-
-
-# ---------------------------------------------------------------------
-# Orchestrator
-# ---------------------------------------------------------------------
 
 
 @dataclass
 class ProbeRunSummary:
-    """Outcome of one ``probe_components()`` invocation."""
 
     successes: list[ProbeResult]
     failures: list[ProbeResult]
@@ -910,25 +747,6 @@ def probe_components(
     on_event: Callable[[str, dict], None] | None = None,
     skip_probe: bool = False,
 ) -> ProbeRunSummary:
-    """Probe each component sequentially; write cache atomically after
-    every success.
-
-    Args:
-        component_ids: typically ``ProSpec.component_ids()`` but caller
-            can pass a custom subset (e.g. for `pro probe --component`).
-        host: live host snapshot. Captured if None.
-        cache_dir: cache directory. Default: ``~/.cache/supergraph``.
-        on_event: optional progress callback. Receives (event_name,
-            payload_dict) for each component start / done / fail. Used
-            by the CLI to render TTY progress; default None means silent.
-        skip_probe: if True, run only ``download()`` (for users on
-            spotty connections who want to download now and probe
-            later).
-
-    Returns:
-        ``ProbeRunSummary`` with per-component results. Cache is updated
-        for every success; failures are reported but do not roll back.
-    """
     cache_dir = cache_dir or _DEFAULT_CACHE_DIR
     host = host or HostSnapshot.capture(cache_dir=cache_dir)
     cache = CalibrationCache.load(host.host_signature(), cache_dir=cache_dir)

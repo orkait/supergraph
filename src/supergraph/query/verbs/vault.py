@@ -1,17 +1,3 @@
-"""VAULT verbs. Access via ``q.vault.*``.
-
-Grammar:
-  vault_new:       "VAULT" "NEW" STRING vault_kind? vault_tags?
-  vault_read:      "VAULT" "READ" STRING
-  vault_write:     "VAULT" "WRITE" STRING "SECTION" STRING "CONTENT" STRING
-  vault_append:    "VAULT" "APPEND" STRING "SECTION" STRING "CONTENT" STRING
-  vault_search:    "VAULT" "SEARCH" STRING limit? where?
-  vault_backlinks: "VAULT" "BACKLINKS" STRING
-  vault_list:      "VAULT" "LIST" where? order? limit?
-  vault_sync:      "VAULT" "SYNC"
-  vault_daily:     "VAULT" "DAILY"
-  vault_archive:   "VAULT" "ARCHIVE" STRING
-"""
 from __future__ import annotations
 
 from supergraph.query.escape import dsl_literal

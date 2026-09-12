@@ -1,4 +1,3 @@
-"""CLI entry point for supergraph."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ from pathlib import Path
 
 
 def _open_browser(url: str) -> None:
-    """Open browser after a short delay to let the server start."""
     import time
 
     time.sleep(1)
@@ -18,7 +16,6 @@ def _open_browser(url: str) -> None:
 
 
 def cmd_install_embedder(args: argparse.Namespace) -> None:
-    """Download and install an embedder model."""
     from supergraph.registry.installer import install_embedder
 
     try:
@@ -29,7 +26,6 @@ def cmd_install_embedder(args: argparse.Namespace) -> None:
 
 
 def cmd_list_embedders(args: argparse.Namespace) -> None:
-    """List available and installed embedder models."""
     from supergraph.registry.models import list_models
     from supergraph.registry.installer import is_installed
 
@@ -42,31 +38,21 @@ def cmd_list_embedders(args: argparse.Namespace) -> None:
 
 
 def cmd_uninstall_embedder(args: argparse.Namespace) -> None:
-    """Remove an installed embedder model."""
     from supergraph.registry.installer import uninstall_embedder
 
     uninstall_embedder(args.name)
 
 
 def _is_loopback_host(host: str) -> bool:
-    """Return True iff the given bind host is a loopback-only address.
-
-    Accepts the common forms: ``127.0.0.1``, ``localhost``, ``::1``. Anything
-    else (``0.0.0.0``, ``::``, an explicit LAN IP, or a DNS name) is treated
-    as "potentially exposed to the network" and requires an auth token.
-    """
     if not host:
         return False
     lo = host.strip().lower()
-    # IPv4 loopback: strict match. Technically 127.0.0.0/8 is all loopback,
-    # but we only accept the canonical form to keep the check conservative.
     if lo in ("127.0.0.1", "localhost", "::1", "[::1]"):
         return True
     return False
 
 
 def cmd_playground(args: argparse.Namespace) -> None:
-    """Run the playground web UI."""
     try:
         import uvicorn
     except ImportError:
@@ -79,12 +65,6 @@ def cmd_playground(args: argparse.Namespace) -> None:
 
     import os
 
-    # Refuse to start without auth when binding to anything other than
-    # loopback. The playground execute endpoint accepts arbitrary DSL
-    # including VAULT READ, INGEST, and SYS *; exposing that to a LAN or the
-    # internet without a token is a remote-execute vulnerability.
-    # Escape hatch: SUPERGRAPH_ALLOW_UNAUTH_BIND=1 for users who know what
-    # they are doing (e.g. a segregated network).
     auth_token_set = bool(os.environ.get("SUPERGRAPH_AUTH_TOKEN"))
     allow_unauth = os.environ.get("SUPERGRAPH_ALLOW_UNAUTH_BIND") == "1"
     if not _is_loopback_host(args.host) and not auth_token_set and not allow_unauth:
@@ -111,16 +91,10 @@ def cmd_playground(args: argparse.Namespace) -> None:
 
     from supergraph.server import app, mount_static
 
-    # Locate the bundled UI: try dev paths first (repo checkout, both
-    # legacy `playground/dist` and current `apps/playground/dist`),
-    # then the installed-package path.
     here = Path(__file__).resolve()
     candidates = [
-        # Current repo layout post-`refactor: consolidate repo layout`.
         here.parent.parent.parent / "apps" / "playground" / "dist",
-        # Legacy pre-refactor layout, kept for older checkouts.
         here.parent.parent / "playground" / "dist",
-        # Wheel install path.
         here.parent / "playground_dist",
     ]
     for d in candidates:
@@ -139,7 +113,6 @@ def cmd_playground(args: argparse.Namespace) -> None:
 
 
 def cmd_vision(args: argparse.Namespace) -> None:
-    """Manage the local vision sidecar (start/stop/status/logs/pull)."""
     try:
         from supergraph.ingest import vision_sidecar as vs
     except ImportError:
@@ -217,7 +190,6 @@ def cmd_vision(args: argparse.Namespace) -> None:
 
 
 def cmd_config(args: argparse.Namespace) -> None:
-    """Show config schema, defaults, or resolved values."""
     import json
     import msgspec
     from supergraph.config import SuperGraphConfig, load_config
@@ -238,19 +210,12 @@ def cmd_config(args: argparse.Namespace) -> None:
 
 
 def cmd_pro(args: argparse.Namespace) -> None:
-    """`supergraph pro {check,setup,probe,status}` - profile orchestrator.
-
-    PR#3 ships read-only commands fully (`check`, `status`); `setup` and
-    `probe` are stubs that explain the manual install path until the
-    probe runner ships in PR#3.5.
-    """
     import json
     from supergraph import pro
 
     sub = args.pro_command
     cache_dir = Path(args.cache_dir).expanduser() if args.cache_dir else None
 
-    # Build the spec from per-slot CLI flags. Unset → ProSpec default.
     spec_kwargs: dict = {}
     for slot in ("embedder", "reranker", "ingest_mode", "bonsai_quant",
                  "bonsai_skill", "vision", "audio", "ner"):
@@ -314,9 +279,7 @@ def cmd_pro(args: argparse.Namespace) -> None:
                     print(f"[pro] FAIL {payload['component']}: "
                           f"{payload['error']}", flush=True)
 
-        # `pro setup` runs full probe; `pro probe` is also full but
-        # leaves disk untouched (download is no-op when cache hits).
-        skip_probe = False  # both commands run probe in this PR
+        skip_probe = False
         summary = pro_probe.probe_components(
             component_ids,
             host=host,
@@ -353,7 +316,6 @@ def cmd_pro(args: argparse.Namespace) -> None:
 
 
 def _pro_resolved_to_json(rc) -> dict:
-    """Serialize ResolvedConfig to a JSON-safe dict for `--json`."""
     return {
         "fits": rc.fits,
         "spec": {f: getattr(rc.spec, f) for f in rc.spec.__struct_fields__},
@@ -387,7 +349,6 @@ def _pro_resolved_to_json(rc) -> dict:
 
 
 def _print_pro_resolved(rc, host) -> None:
-    """Pretty text rendering of ResolvedConfig for `pro check / status`."""
     print()
     print("Host")
     print(f"  CPU         {host.cpu_cores_physical} physical / "
@@ -473,7 +434,6 @@ def main(argv: list[str] | None = None) -> None:
     )
     pg.set_defaults(func=cmd_playground)
 
-    # install-embedder subcommand
     ie = sub.add_parser("install-embedder", help="Download and install an embedder model")
     ie.add_argument("name", help="Model name (e.g. embeddinggemma-300m)")
     ie.add_argument(
@@ -483,16 +443,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     ie.set_defaults(func=cmd_install_embedder)
 
-    # list-embedders subcommand
     le = sub.add_parser("list-embedders", help="List available and installed embedder models")
     le.set_defaults(func=cmd_list_embedders)
 
-    # uninstall-embedder subcommand
     ue = sub.add_parser("uninstall-embedder", help="Remove an installed embedder model")
     ue.add_argument("name", help="Model name to uninstall")
     ue.set_defaults(func=cmd_uninstall_embedder)
 
-    # vision subcommand: local VLM sidecar (SmolVLM-500M by default)
     vis = sub.add_parser("vision", help="Manage the local vision sidecar (serve/stop/status/logs)")
     vis_sub = vis.add_subparsers(dest="vision_command", required=True)
     vis_serve = vis_sub.add_parser("serve", help="Start the sidecar (downloads weights on first run)")
@@ -513,7 +470,6 @@ def main(argv: list[str] | None = None) -> None:
     vis_sub.add_parser("models", help="List built-in VLM presets")
     vis.set_defaults(func=cmd_vision)
 
-    # pro subcommand: profile orchestrator (slotted spec + calibration)
     pro = sub.add_parser(
         "pro",
         help="Pro mode: spec + host fit check, calibration, status (PR#3+)",
@@ -531,7 +487,6 @@ def main(argv: list[str] | None = None) -> None:
         sp.add_argument("--cache-dir", default=None,
                         help="Calibration cache directory "
                              "(default: ~/.cache/supergraph)")
-        # Slot overrides; defaults None so ProSpec defaults stand.
         sp.add_argument("--embedder", default=None,
                         choices=["jina-v5-small", "jina-v5-nano",
                                  "model2vec-256d", "embeddinggemma-300m",
@@ -553,7 +508,6 @@ def main(argv: list[str] | None = None) -> None:
                         choices=["tinybert", "none"])
     pro.set_defaults(func=cmd_pro)
 
-    # config subcommand
     cfg = sub.add_parser("config", help="Show config defaults, schema, or current values")
     cfg.add_argument("--schema", action="store_true", help="Output JSON Schema for supergraph.json")
     cfg.add_argument("--defaults", action="store_true", help="Output all default values as JSON")

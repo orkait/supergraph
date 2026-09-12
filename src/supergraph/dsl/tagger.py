@@ -1,4 +1,3 @@
-"""Auto-tag inference from AST node types for the intelligent log layer."""
 
 from supergraph.dsl import ast_nodes
 
@@ -70,10 +69,8 @@ PHASE_MAP = {
 
 
 def infer_tag(ast) -> str:
-    """Infer semantic tag from AST node type."""
     return TAG_MAP.get(type(ast), "system")
 
 
 def infer_phase(tag: str) -> str:
-    """Infer execution phase from tag."""
     return PHASE_MAP.get(tag, "system")

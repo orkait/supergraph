@@ -1,4 +1,3 @@
-"""Belief handlers: ASSERT, RETRACT, PROPAGATE."""
 
 import time
 
@@ -15,7 +14,6 @@ class BeliefHandlers:
 
     @handles(AssertStmt, write=True)
     def _assert(self, q: AssertStmt) -> Result:
-        """ASSERT: upsert with reserved __confidence__, __source__, __retracted__=0."""
         data = {fp.name: fp.value for fp in q.fields}
         kind = data.pop("kind", "default")
         self.schema.validate_node(kind, data)
@@ -38,11 +36,6 @@ class BeliefHandlers:
 
     @handles(RetractStmt, write=True)
     def _retract(self, q: RetractStmt) -> Result:
-        """RETRACT: mark node as retracted (invisible via live_mask).
-
-        If the retracted node is kind='document', also retract all outgoing
-        chunk and image nodes.
-        """
         if q.id not in self.store.string_table:
             raise NodeNotFound(q.id)
         str_id = self.store.string_table.intern(q.id)
@@ -71,7 +64,6 @@ class BeliefHandlers:
 
     @handles(PropagateStmt, write=True)
     def _propagate(self, q: PropagateStmt) -> Result:
-        """PROPAGATE: BFS forward belief chaining via algos.graph.propagate_values."""
         from supergraph.algos.graph import propagate_values
 
         src_slot = self._resolve_slot(q.node_id)

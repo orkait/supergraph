@@ -1,4 +1,3 @@
-"""VectorStore: HNSW vector index for semantic similarity search."""
 
 from pathlib import Path
 import numpy as np
@@ -6,12 +5,6 @@ from usearch.index import Index
 
 
 class VectorStore:
-    """HNSW vector index backed by usearch.
-    
-    Supports:
-    - Binary Quantization (1-bit) for 32x RAM reduction.
-    - Memory-Mapped (mmap) views for zero-RAM search on large datasets.
-    """
 
     def __init__(self, dims: int, capacity: int = 1024, quantize_binary: bool = False, path: str | None = None):
         self._dims = dims
@@ -25,8 +18,6 @@ class VectorStore:
             self._index = Index(ndim=dims, metric="cos", dtype="f32")
 
         if path and Path(path).exists():
-            # Memory-mapped view for zero-RAM search. On first write,
-            # we switch to an in-memory copy.
             self._index.view(str(path))
             self._readonly = True
 
@@ -34,13 +25,11 @@ class VectorStore:
         self._capacity = capacity
 
     def _ensure_writable(self) -> None:
-        """Switch from mmap view to in-memory copy if a write is about to happen."""
         if not self._readonly or not self._path:
             return
         if not Path(self._path).exists():
             self._readonly = False
             return
-        # Load from file into memory, preserving current state
         if self._quantize_binary:
             new_index = Index(ndim=self._dims, metric="hamming", dtype="b1")
         else:
@@ -54,7 +43,6 @@ class VectorStore:
         return self._dims
 
     def add(self, slot: int, vector: np.ndarray) -> None:
-        """Add or replace vector for a slot."""
         self._ensure_writable()
         if slot >= self._capacity:
             self.grow(max(slot + 1, self._capacity * 2))
@@ -78,18 +66,12 @@ class VectorStore:
         self._has_vector[slot] = True
 
     def remove(self, slot: int) -> None:
-        """Remove vector for a slot."""
         self._ensure_writable()
         if slot < self._capacity and self._has_vector[slot]:
             self._index.remove(slot)
             self._has_vector[slot] = False
 
     def search(self, query: np.ndarray, k: int, mask: np.ndarray | None = None, oversample_factor: int = 5) -> tuple[np.ndarray, np.ndarray]:
-        """Find k nearest neighbors. Returns (slot_indices, distances).
-
-        If mask provided, only slots where mask[slot]==True are considered.
-        Uses oversampling + post-filter since usearch doesn't natively support masks.
-        """
         count = self.count()
         if count == 0:
             return np.array([], dtype=np.int64), np.array([], dtype=np.float32)
@@ -108,7 +90,6 @@ class VectorStore:
                 return float(d)
 
         if mask is not None:
-            # Adaptive oversample and filter
             current_oversample = min(k * oversample_factor, count)
             max_oversample = min(count, max(current_oversample * 16, 10000))
             
@@ -142,7 +123,6 @@ class VectorStore:
         return slot < self._capacity and bool(self._has_vector[slot])
 
     def get_vector(self, slot: int) -> np.ndarray | None:
-        """Get stored vector for a slot."""
         if not self.has_vector(slot):
             return None
         if self._quantize_binary:
@@ -160,7 +140,6 @@ class VectorStore:
 
     @property
     def memory_bytes(self) -> int:
-        """Approximate memory: vector data + HNSW graph overhead."""
         n = self.count()
         if self._quantize_binary:
             vec_bytes = (self._dims + 7) // 8
@@ -169,14 +148,6 @@ class VectorStore:
             return n * (self._dims * 4 + 64) + self._has_vector.nbytes
 
     def save(self, path: str | None = None) -> bytes | None:
-        """Serialize index. Explicit `path` writes to file and returns None;
-        no arg returns the serialised bytes regardless of ``self._path``.
-
-        Callers that want a bytes buffer (e.g. SYS SNAPSHOT) must omit
-        ``path`` - we used to fall back to ``self._path`` here, which meant
-        snapshots on persistent stores got ``None`` back and then
-        ``Index.load(None)`` crashed.
-        """
         if path is not None:
             self._ensure_writable()
             self._index.save(str(path))
@@ -184,10 +155,8 @@ class VectorStore:
         return bytes(self._index.save(None))
 
     def load(self, data: bytes | str | Path) -> None:
-        """Deserialize index from bytes or file path."""
         if isinstance(data, (str, Path)):
             self._path = str(data)
-            # Memory-mapped view for zero-RAM search. Writable on demand via _ensure_writable().
             if self._quantize_binary:
                 self._index = Index(ndim=self._dims, metric="hamming", dtype="b1")
             else:

@@ -1,35 +1,3 @@
-"""Shared LLM transport for benchmarks and autoresearch.
-
-Single source of truth for all LLM calls in this repo.
-Both benchmark runners (locomo, beam, longmemeval) and the autoresearch
-run_loop import from here.
-
-Design:
-  * Shared per-run concurrency cap (asyncio.Semaphore). Default derived from
-    the provider chain: `:free` models -> 20 req/min (matches OpenRouter
-    free-tier cap); local/paid -> higher.
-  * Per-call retries with exponential backoff on empty/timeout/429.
-  * 429 retry-after header honored when litellm surfaces it.
-  * Provider fallback: on total failure for a call, try the next provider
-    in the chain before giving up for that call.
-  * No "no progress, quit round" heuristic. A slow round is not a broken
-    run. The runner keeps going until every call has exhausted retries
-    for every provider.
-
-Usage (benchmarks):
-
-    from supergraph.llm_runner import LLMRunner, get_shared_runner
-    from tools.autoresearch.providers import load_config, resolve_providers
-
-    runner = LLMRunner(resolve_providers(load_config(), model_priority=[...]))
-    answers = await runner.call_many(prompts, max_tokens=1000)
-
-Usage (autoresearch):
-
-    from supergraph.llm_runner import LLMRunner
-    runner = LLMRunner(resolve_providers(config), timeout_s=800)
-    content, model = runner.call_sync_verbose(prompt, temperature=0.7)
-"""
 from __future__ import annotations
 
 import asyncio
@@ -50,12 +18,9 @@ LOCAL_DEFAULT_RPM = 0
 
 _WINDOW_SECONDS = 60.0
 
-# Canonical QA model priority used by get_shared_runner. Deterministic
-# non-reasoning model first, cloud paid fallback second. Kept here so
-# benches + autoresearch agree on what "the" eval model is.
 QA_MODEL_PRIORITY: list[str] = [
-    "gemma4:31b-cloud",       # Ollama cloud tag - primary for QA
-    "google/gemma-4-31b-it",  # OpenRouter paid fallback
+    "gemma4:31b-cloud",
+    "google/gemma-4-31b-it",
 ]
 
 
@@ -103,7 +68,6 @@ def _parse_retry_after(err: Exception) -> float:
 
 
 class LLMRunner:
-    """Shared LLM caller for all bench runners and autoresearch."""
 
     def __init__(
         self,
@@ -177,7 +141,6 @@ class LLMRunner:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
     ) -> str:
-        """Execute a single prompt. Returns empty string on total failure."""
         async with self._c.semaphore:
             for attempt in range(self._retries):
                 for provider in self._providers:
@@ -208,7 +171,6 @@ class LLMRunner:
         temperature: float = 0.0,
         on_progress=None,
     ) -> list[str]:
-        """Run N prompts concurrently, respecting rpm + concurrency cap."""
         total = len(prompts)
         results: list[str] = [""] * total
         done = 0
@@ -233,7 +195,6 @@ class LLMRunner:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
     ) -> str:
-        """Sync wrapper. Safe only from non-async contexts."""
         return asyncio.run(self.call_one(prompt, max_tokens=max_tokens, temperature=temperature))
 
     def call_sync_verbose(
@@ -243,7 +204,6 @@ class LLMRunner:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
     ) -> tuple[str, str]:
-        """Sync call returning (content, model_used). For autoresearch logging."""
         content = self.call_sync(prompt, max_tokens=max_tokens, temperature=temperature)
         return content, self.last_model
 
@@ -254,14 +214,6 @@ class LLMRunner:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
     ) -> str:
-        """Sync chat-shaped completion with provider fallback.
-
-        Tries each provider in order across `retries` rounds; returns the first
-        non-empty content. Returns "" on total failure. Unlike call_one this
-        accepts a full messages list (system + user) and runs synchronously -
-        the rpm cap is not enforced here (interactive ingestion is per-message,
-        not bulk). Use call_many for rpm-bounded batch throughput.
-        """
         import litellm
         litellm.suppress_debug_info = True
         for attempt in range(self._retries):
@@ -299,12 +251,6 @@ class LLMRunner:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.0,
     ):
-        """Sync streaming completion. Yields content deltas.
-
-        Provider fallback only happens before the first chunk; once a provider
-        starts streaming we commit to it (no cross-provider mid-stream resume).
-        Raises RuntimeError if every provider fails before yielding a token.
-        """
         import litellm
         litellm.suppress_debug_info = True
         last_err: Exception | None = None
@@ -341,12 +287,6 @@ _SHARED: "LLMRunner | None" = None
 
 
 def get_shared_runner() -> "LLMRunner":
-    """Return (or construct) the process-wide LLMRunner.
-
-    Provider chain comes from tools/autoresearch/config.json via
-    providers.resolve_providers. Call reset_shared_runner() after
-    config changes.
-    """
     global _SHARED
     if _SHARED is None:
         from tools.autoresearch.providers import load_config, resolve_providers
@@ -361,6 +301,5 @@ def get_shared_runner() -> "LLMRunner":
 
 
 def reset_shared_runner() -> None:
-    """Drop the cached shared runner so the next call rebuilds it."""
     global _SHARED
     _SHARED = None

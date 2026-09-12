@@ -1,4 +1,3 @@
-"""Intelligence handlers: RECALL, SIMILAR, LEXICAL SEARCH, WHAT IF."""
 
 import time
 
@@ -30,11 +29,9 @@ class IntelligenceHandlers:
     _NUCLEUS_STRUCTURAL_EDGES = ("next", "prev", "has_section", "has_chunk")
 
     def _resolve_remember_parent_slot(self, slot: int, n: int) -> int:
-        """Collapse sub-nodes (sentence, chunk, section) back to their logical parent."""
         if slot < 0 or slot >= n:
             return slot
 
-        # Check for common parent fields across any kind
         for field in ("parent_chunk", "parent_node", "parent_id"):
             col_info = self.store.columns.get_column(field, n)
             if col_info is None:
@@ -49,7 +46,6 @@ class IntelligenceHandlers:
         return slot
 
     def _nucleus_neighbors(self, slot: int) -> np.ndarray:
-        """Traverse only structural edges for nucleus expansion."""
         seen: set[int] = set()
         neighbors: list[int] = []
         for edge_type in self._NUCLEUS_STRUCTURAL_EDGES:
@@ -65,25 +61,9 @@ class IntelligenceHandlers:
                     neighbors.append(nb_int)
         return np.asarray(neighbors, dtype=np.int32)
 
-    # Cross-encoders truncate at their own max_length and ANSWER prompts have a
-    # token budget, so there is no point decoding a whole multi-MB blob.
     _DOCUMENT_TEXT_CAP = 8000
 
     def _document_text(self, slot: int) -> str:
-        """Body text for a node that carries it as a DOCUMENT blob, not a column.
-
-        ``CREATE NODE ... DOCUMENT "..."`` routes content to the DocumentStore
-        and doc_fts, never to a ColumnStore field - so ``_materialize_slot``
-        returns no content/summary/text for it. Callers that fall back to ``""``
-        silently degrade: the reranker scores every candidate as the empty
-        string (identical logits, ranking becomes a no-op) and ANSWER emits
-        "(no retrieved context)" while still citing the nodes. This is the
-        shape Research.ingest, the MCP sg_ingest tool, and /api/ingest-media
-        all produce, so it is the common case, not an edge case.
-
-        Returns "" when there is no document store, no blob, or the blob is
-        binary (a PDF or image body is not rerankable text).
-        """
         ds = self._document_store
         if ds is None:
             return ""
@@ -101,7 +81,6 @@ class IntelligenceHandlers:
 
     @handles(RecallQuery)
     def _recall(self, q: RecallQuery) -> Result:
-        """RECALL: spreading activation from a cue node."""
         cue_slot = self._resolve_slot(q.node_id)
         if cue_slot is None:
             raise NodeNotFound(q.node_id)
@@ -194,7 +173,6 @@ class IntelligenceHandlers:
 
     @handles(SimilarQuery)
     def _similar(self, q: SimilarQuery) -> Result:
-        """SIMILAR TO: vector similarity search."""
         if hasattr(self, '_embedder_dirty') and self._embedder_dirty:
             from supergraph.core.errors import SuperGraphError
             raise SuperGraphError("Embedder changed. Run SYS REEMBED to update vectors.")
@@ -267,7 +245,6 @@ class IntelligenceHandlers:
 
     @handles(LexicalSearchQuery)
     def _lexical_search(self, q: LexicalSearchQuery) -> Result:
-        """LEXICAL SEARCH: BM25 full-text search over document summaries."""
         if not self._document_store:
             return Result(kind="nodes", data=[], count=0)
 
@@ -293,16 +270,10 @@ class IntelligenceHandlers:
 
     @handles(CounterfactualQuery)
     def _counterfactual(self, q: CounterfactualQuery) -> Result:
-        """WHAT IF RETRACT: simulate retraction without committing."""
         src_slot = self._resolve_slot(q.node_id)
         if src_slot is None:
             raise NodeNotFound(q.node_id)
 
-        # Centralized snapshot — captures the fields the old hand-rolled
-        # version missed (string_table, secondary_indices, _indexed_fields,
-        # _edge_data_idx). Matters here because WHAT IF RETRACT runs
-        # bfs_reach over the edge graph which indirectly pulls slots via
-        # materialize_slot → column interned lookups (bug #49).
         snap = self.store.make_snapshot()
 
         try:
@@ -336,8 +307,6 @@ class IntelligenceHandlers:
                 count=len(affected_nodes),
             )
         finally:
-            # Unconditional restore: WHAT IF RETRACT is explicitly a
-            # simulation, so we roll back even on the success path.
             self.store.restore_snapshot(snap)
             self.store._rebuild_edges()
             self.store._invalidate_live_cache()
@@ -345,23 +314,6 @@ class IntelligenceHandlers:
 
     @handles(RememberQuery, write=True)
     def _remember(self, q: RememberQuery, *, _plan_only: bool = False) -> Result:
-        """REMEMBER: 3-signal fusion with optional reranker and nucleus.
-
-        Pipeline: gather -> 3-signal fusion -> top-N -> reranker -> results
-
-        Marked ``write=True`` because the handler mutates per-slot columns
-        (``__recall_count__``, ``__last_recalled_at__``) as a side effect
-        of every call. Pre-fix, the query was read-only from the dispatch
-        layer's perspective so those column writes never reached the WAL
-        — a crash between the mutation and the next checkpoint lost the
-        recall-count increment (bug #50).
-
-        ``_plan_only=True`` (internal, used by ``SYS EXPLAIN REMEMBER``):
-        run gather + fuse + temporal filter only. Skip rerank, nucleus,
-        node materialization, recall-count bumps, and the similarity
-        buffer. Return a ``Result(kind="plan", ...)`` listing the top-k
-        candidate slot ids with their per-signal scores. No state change.
-        """
         if getattr(self, '_embedder_dirty', False):
             from supergraph.core.errors import SuperGraphError
             raise SuperGraphError("Embedder changed. Run SYS REEMBED to update vectors.")
@@ -391,7 +343,6 @@ class IntelligenceHandlers:
         anchor_ms = getattr(q, 'at', None)
         at_range = getattr(q, 'at_range', None)
 
-        # Sentence query expansion
         use_sqe = getattr(self, '_sentence_query_expansion', True)
         if use_sqe:
             from supergraph.algos.sentence_split import split_sentences
@@ -400,7 +351,6 @@ class IntelligenceHandlers:
             sentences = [q.query]
         num_sentences = max(len(sentences), 1)
 
-        # ── Stage 1: Candidate Gathering ──────────────────────────────
         vs_mask = None
         vec_slots_np = np.empty(0, dtype=np.int64)
         vec_sims_np = np.empty(0, dtype=np.float64)
@@ -473,8 +423,6 @@ class IntelligenceHandlers:
                         "Use ASSERT ... EVENT_AT ... or CREATE NODE ... EVENT_AT ... "
                         "to populate it."
                     )
-            # Diagnose why both channels returned nothing so users do not have
-            # to guess whether they need a schema, an embedder, or content.
             vec_ready = bool(self._embedder and self._vector_store and self._vector_store.count() > 0)
             fts_ready = False
             if self._document_store is not None:
@@ -520,7 +468,6 @@ class IntelligenceHandlers:
                 )
             return Result(kind="nodes", data=[], count=0, meta=early_meta)
 
-        # Adaptive oversample cap
         max_candidates = min(num_sentences * oversample_factor * target_k, 200)
         slot_arr = np.union1d(vec_slots_np, bm25_slots_np)
         union_size = int(len(slot_arr))
@@ -539,7 +486,6 @@ class IntelligenceHandlers:
             top_indices = np.argsort(-combined_scores[slot_arr])[:max_candidates]
             slot_arr = slot_arr[top_indices]
 
-        # ── Stage 2: Signal Fusion ───────────────────────────────────
         weights = getattr(self, '_remember_weights', [0.55, 0.25, 0.20])
 
         vec_signal = np.zeros(n, dtype=np.float64)
@@ -554,7 +500,6 @@ class IntelligenceHandlers:
             if m > 0:
                 bm25_signal = scattered / m
 
-        # Co-occurrence bonus (counted once, not amplified by fusion weights)
         co_bonus = np.zeros(n, dtype=np.float64)
         if len(vec_slots_np) > 0 and len(bm25_slots_np) > 0:
             vec_set = set(vec_slots_np.tolist())
@@ -594,19 +539,13 @@ class IntelligenceHandlers:
                 u_scores = _algo_recency_decay(u_ts, u_pres_at, u_ref, half_life_days=half_life)
                 recency_signal[no_event_cands] = u_scores
 
-        # Graph signal: entity-aware scoring via one CSR matmul.
-        # mentions[chunk, entity] = 1 → in_degree(entity) = column sum.
-        # graph_signal[chunk] = sum_{e in entities_of(chunk)} log1p(in_degree(e))
-        #                    = (mentions @ log1p(in_degree))[chunk]
-        # Replaces a nested Python loop + per-entity memoisation dict.
         graph_enabled = getattr(self, '_graph_signal_enabled', False)
         graph_signal = np.zeros(n, dtype=np.float64)
         if graph_enabled:
             mentions = self.store.edge_matrices.get({"mentions"})
             if mentions is not None and mentions.shape[0] >= 1 and mentions.nnz > 0:
-                # Clip to current slot count if matrix was built on stale capacity.
                 m = mentions[:n, :n] if mentions.shape[0] > n else mentions
-                in_deg = np.asarray(m.sum(axis=0)).ravel()  # length n
+                in_deg = np.asarray(m.sum(axis=0)).ravel()
                 log1p_deg = np.log1p(in_deg)
                 gs = np.asarray(m @ log1p_deg).ravel()
                 graph_signal[:len(gs)] = gs
@@ -614,10 +553,6 @@ class IntelligenceHandlers:
                 if max_gs > 0:
                     graph_signal /= max_gs
 
-        # Fusion. Graph-signal semantics, parity across fusion methods:
-        #   - 4 weights: graph is additive 4th channel       (w3 * graph)
-        #   - 3 weights: graph replaces recency channel      (w2 * graph)  per spec
-        #   - graph_enabled=False: recency stays, no graph
         fusion_method = getattr(self, '_fusion_method', 'weighted')
         if fusion_method == 'weighted':
             w = weights if len(weights) >= 3 else [0.55, 0.25, 0.20]
@@ -635,8 +570,6 @@ class IntelligenceHandlers:
             base_final = _algo_rrf_fusion(*signals, candidate_slots=slot_arr,
                                            k_rrf=max(getattr(self, '_rrf_k', 60.0), 1.0))
 
-        # Recall frequency boost: frequently recalled memories are implicitly important.
-        # Log-scaled with w=0.05 to nudge without dominating: count 1→0.03, 10→0.12, 100→0.23
         recall_boost_full = np.zeros(n, dtype=np.float64)
         recall_count_col = self.store.columns.get_column("__recall_count__", n)
         if recall_count_col is not None:
@@ -649,7 +582,6 @@ class IntelligenceHandlers:
 
         base_final += co_bonus
 
-        # ── Stage 3: Temporal Filter ─────────────────────────────────
         warnings: list[str] = []
         if at_range is not None or anchor_ms is not None:
             t_event_col = self.store.columns.get_column("__event_at__", n)
@@ -674,10 +606,6 @@ class IntelligenceHandlers:
 
         base_final *= live_mask
 
-        # ── Plan-only short-circuit ──────────────────────────────────
-        # Used by SYS EXPLAIN REMEMBER. No materialization, no rerank,
-        # no nucleus, no recall-count bumps. Pure read of the fused
-        # scores for the top-k candidate slots.
         if _plan_only:
             try:
                 weights_out = list(weights) if not isinstance(weights, list) else weights
@@ -747,22 +675,16 @@ class IntelligenceHandlers:
                 meta={"signals": signals_meta, "warnings": warnings},
             )
 
-        # ── Stage 4: Top-N Selection + Materialization ───────────────
         if len(slot_arr) == 0:
             return Result(kind="nodes", data=[], count=0)
 
-        # Sort all candidates by their final fused score
         order = slot_arr[np.argsort(-base_final[slot_arr])]
 
-        # Materialize candidates for reranker
         results = []
         retrieved_slots = []
         running_tokens = 0
         texts_for_rerank = []
 
-        # Hoisted: decides whether a candidate with no column text is worth a
-        # DocumentStore round trip below. With no reranker configured nothing
-        # consumes texts_for_rerank, so the blob read would be pure cost.
         reranker = getattr(self, '_reranker', None)
 
         for slot in order:
@@ -797,7 +719,6 @@ class IntelligenceHandlers:
                 if running_tokens >= q.tokens:
                     break
 
-        # Reranker stage
         meta: dict = {}
         if warnings:
             meta.setdefault("warnings", []).extend(warnings)
@@ -811,7 +732,6 @@ class IntelligenceHandlers:
                                key=lambda x: x[0], reverse=True)
                 results = [r for _, r, _ in ranked[:target_k]]
                 retrieved_slots = [s for _, _, s in ranked[:target_k]]
-                # Update scores with reranker scores; also preserve the pre-rerank fusion score.
                 for score, node, slot in ranked[:target_k]:
                     node["_fusion_score"] = node.get("_remember_score")
                     node["_rerank_score"] = round(float(score), 4)
@@ -832,7 +752,6 @@ class IntelligenceHandlers:
             results = results[:target_k]
             retrieved_slots = retrieved_slots[:target_k]
 
-        # ── Optional: Nucleus Expansion ──────────────────────────────
         nucleus_on = getattr(self, '_nucleus_expansion', False)
         if nucleus_on and results and self.store.edge_matrices.total_edges > 0:
             max_nb = getattr(self, '_nucleus_neighbors_per_hop', 3)
@@ -882,9 +801,6 @@ class IntelligenceHandlers:
             meta["nucleus"] = nucleus_results
             meta["nucleus_visits"] = visits
 
-        # ── Retrieval Feedback ───────────────────────────────────────
-        # Recall-count bumps are best-effort - if ColumnStore rejects a write
-        # (schema lock, concurrent compact), retrieval still succeeds.
         import logging as _logging
         _rc_log = _logging.getLogger(__name__)
         for slot in retrieved_slots:
@@ -907,8 +823,6 @@ class IntelligenceHandlers:
         if buf is not None and results:
             buf.append(results[0].get("_vector_sim", 0.0))
 
-        # Telemetry block: always populate so callers can see which stages ran
-        # and with what weights. Additive - does not replace existing meta keys.
         try:
             weights_out = list(weights) if not isinstance(weights, list) else weights
         except Exception:
@@ -952,45 +866,9 @@ class IntelligenceHandlers:
 
         return Result(kind="nodes", data=results, count=len(results), meta=meta)
 
-    # ─────────────────────────────────────────────────────────────────
-    # ANSWER: REMEMBER + reader-LLM synthesis
-    # ─────────────────────────────────────────────────────────────────
 
     @handles(AnswerQuery, write=True)
     def _answer(self, q: AnswerQuery) -> Result:
-        """ANSWER: retrieve with REMEMBER, synthesize with a reader LLM.
-
-        Internally runs ``_remember`` with the same ``query`` / ``limit`` /
-        ``where`` / ``at`` / ``tokens`` as a normal REMEMBER call (so recall
-        counts bump, matching real retrieval). Then hands the top-k
-        retrieved passages to a reader callable configured on the
-        SuperGraph, or a named reader specified via ``USING "name"``.
-
-        The reader is a plain callable:
-            reader(prompt: str, max_tokens: int = 1000) -> str
-
-        supergraph core ships no LLM dependencies. The caller wires a
-        reader at construction:
-            SuperGraph(reader=my_llm_callable, ...)
-            SuperGraph(readers={"fast": a, "careful": b}, reader="fast", ...)
-
-        Result shape:
-            Result(
-                kind="answer",
-                data={
-                    "answer": str,                # reader's output
-                    "cited_slots": list[str],     # node ids used as context
-                    "candidates": list[dict],     # full REMEMBER nodes
-                    "reader": str | None,         # reader name used
-                },
-                count=1,
-                meta=<REMEMBER's meta, including meta["signals"]>,
-            )
-
-        If reader is unavailable, raises SuperGraphError. Reader-side
-        errors are caught and returned in ``data["error"]`` without
-        raising so the caller can inspect retrieval state.
-        """
         reader = self._resolve_reader(q.using)
         if reader is None:
             name_hint = f" named {q.using!r}" if q.using else ""
@@ -1000,7 +878,6 @@ class IntelligenceHandlers:
                 "SuperGraph() to enable ANSWER verbs."
             )
 
-        # Build an equivalent RememberQuery and run the real retrieval.
         inner = RememberQuery(
             query=q.query,
             limit=q.limit,
@@ -1024,9 +901,6 @@ class IntelligenceHandlers:
                 or ""
             )
             if not text and node_id is not None:
-                # DOCUMENT-only node: without this the block is dropped and the
-                # reader is handed "(no retrieved context)" while cited_slots
-                # still lists the node - an ungrounded answer wearing citations.
                 slot = self._resolve_slot(node_id)
                 if slot is not None:
                     text = self._document_text(slot)
@@ -1073,18 +947,6 @@ class IntelligenceHandlers:
         prompt: str,
         timeout_s: float,
     ) -> tuple[str, str | None, bool]:
-        """Run reader(prompt) with a wall-clock timeout.
-
-        Daemon thread runs the call; on timeout we abandon it (Python cannot
-        cancel a running thread). The leak is bounded by how many readers
-        genuinely hang; in normal operation the thread completes well before
-        timeout and is garbage-collected.
-
-        Returns ``(answer, error_message, timed_out)``. Exactly one of
-        ``answer`` (non-empty) or ``error_message`` is populated under
-        non-timeout paths; on timeout, ``answer == ""`` and ``error_message``
-        is the timeout description.
-        """
         import logging
         import threading
 
@@ -1095,9 +957,6 @@ class IntelligenceHandlers:
             try:
                 result["ok"] = reader(prompt)  # type: ignore[operator]
             except BaseException as exc:
-                # Catch BaseException: an unhandled SystemExit / KeyboardInterrupt
-                # in the user-supplied reader would die silently in the daemon
-                # thread, leaving the main thread to wait out the full timeout.
                 result["err"] = exc
 
         worker = threading.Thread(target=_runner, daemon=True, name="supergraph-reader")
@@ -1120,21 +979,12 @@ class IntelligenceHandlers:
         return str(ok), None, False
 
     def _resolve_reader(self, name: str | None):
-        """Look up a reader callable by name, or fall back to the default.
-
-        Lookup order:
-          1. If ``name`` is set, check ``self._readers[name]``.
-          2. Fall back to ``self._reader`` (the default configured at
-             construction).
-          3. Return None if nothing is wired.
-        """
         readers = getattr(self, "_readers", None) or {}
         if name is not None:
             return readers.get(name)
         default = getattr(self, "_reader", None)
         if default is not None:
             return default
-        # Only one registered reader? Use it.
         if len(readers) == 1:
             return next(iter(readers.values()))
         return None

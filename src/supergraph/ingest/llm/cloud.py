@@ -1,9 +1,3 @@
-"""Cloud-backed NL->DSL ingestor.
-
-Same @-verb shorthand + whole-turn DSL synthesis as the local BonsaiIngestor
-(reused via the synthesis shim), but generation runs through litellm with a
-free-tier-first multi-provider chain. Adds a streaming progress API.
-"""
 from __future__ import annotations
 
 import time
@@ -14,18 +8,10 @@ from supergraph.llm_runner import LLMRunner
 from supergraph.ingest.llm.resolve import build_provider_chain, DEFAULT_FREE_FIRST_CHAIN
 from supergraph.ingest.llm import synthesis as S
 
-# cloud.py is at src/supergraph/ingest/llm/cloud.py; the skill prompt is at
-# src/supergraph/bonsai_dsl_prompt.txt -> two parents up from `llm/`.
 _DEFAULT_SKILL = Path(__file__).resolve().parents[2] / "bonsai_dsl_prompt.txt"
 
 
 class CloudIngestor:
-    """NL -> DSL ingestion through cloud LLM providers.
-
-    Reuses Bonsai's prompt + parse + synthesize pipeline; only the LLM
-    transport differs. Tracks cross-message belief state like Bonsai so the
-    model reuses fact ids across calls.
-    """
 
     def __init__(
         self,
@@ -69,11 +55,6 @@ class CloudIngestor:
         ]
 
     def _synthesize(self, cleaned, *, msg_id, session_id, role, text, dry_run):
-        """Parse @-verbs -> synthesize DSL -> parse-validate. No execution.
-
-        Returns (valid_lines, rejected). Synthesis uses the live gs (unless
-        dry_run) so entity resolution dedupes against the real store.
-        """
         turn = S.parse_verb_output(cleaned)
         synthesized = S.synthesize_dsl(
             turn, msg_id=msg_id, session_id=session_id, role=role, text=text,
@@ -91,11 +72,6 @@ class CloudIngestor:
         return valid, rejected
 
     def _execute_iter(self, valid: list[str], *, dry_run: bool) -> Iterator[dict]:
-        """Execute each valid line, yielding one event per line.
-
-        Goes through gs.execute so the single-writer / queued contract holds.
-        Belief-state scrape is the caller's job (needs the full executed set).
-        """
         if dry_run:
             for ln in valid:
                 yield {"statement": ln, "status": "dry_run"}
@@ -116,7 +92,6 @@ class CloudIngestor:
         role: str = "user",
         dry_run: bool = False,
     ) -> S.IngestResult:
-        """Generate (batch), synthesize, execute. Returns IngestResult."""
         if not text or not text.strip():
             raise S.IngestEmpty("input text is empty or whitespace-only")
         if not dry_run and self._gs is None:
@@ -156,18 +131,6 @@ class CloudIngestor:
         session_id: str = "default",
         role: str = "user",
     ) -> Iterator[dict]:
-        """Stream generation, then synthesize + execute whole-turn.
-
-        Yields progress events:
-          {"phase": "generating", "delta": str}    one per token chunk
-          {"phase": "synthesizing"}                 once, before execution
-          {"phase": "executing", "statement", "status": "ok"|"rejected", "error"?}
-          {"phase": "done", "status": "ok"|"empty", "executed"?, "rejected"?}
-
-        The model emits @-verb shorthand, so DSL synthesis needs the whole
-        turn; execution is whole-turn, not per-token. Streaming gives live
-        generation progress + live per-statement execution feedback.
-        """
         if not text or not text.strip():
             raise S.IngestEmpty("input text is empty or whitespace-only")
         if self._gs is None:

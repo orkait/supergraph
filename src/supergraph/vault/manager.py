@@ -1,4 +1,3 @@
-"""VaultManager: file I/O for markdown notes."""
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -9,13 +8,10 @@ from supergraph.vault.parser import (
 
 
 class VaultManager:
-    """Manages markdown note files in a vault directory."""
 
     def __init__(self, vault_path: str | Path):
         self._path = Path(vault_path)
         self._path.mkdir(parents=True, exist_ok=True)
-        # Cache the resolved absolute vault root so every _safe_resolve call
-        # avoids repeated syscalls. Refresh lazily if the path changes.
         self._resolved_root = self._path.resolve()
 
     @property
@@ -23,34 +19,16 @@ class VaultManager:
         return self._path
 
     def _safe_resolve(self, title_or_slug: str) -> Path:
-        """Resolve a user-supplied title/slug into a vault-contained .md path.
-
-        Rejects any input containing path separators or parent-dir components
-        so DSL callers cannot escape the vault root. Returns the resolved
-        Path. The file may or may not exist; callers are expected to handle
-        FileNotFoundError themselves.
-
-        Raises:
-            ValueError: if the input contains path traversal markers or if
-                        the resolved path lies outside the vault root.
-        """
         if not isinstance(title_or_slug, str):
             raise ValueError("vault name must be a string")
         if not title_or_slug or not title_or_slug.strip():
             raise ValueError("vault name cannot be empty")
-        # Reject path-component separators and parent-dir traversal. We reject
-        # by raw substring rather than a path parse because Pathlib normalizes
-        # ``..`` differently across platforms (``a/..`` collapses to ``.`` on
-        # POSIX) which would let an attacker sneak through after normalization.
         forbidden = ("/", "\\", "\x00")
         for ch in forbidden:
             if ch in title_or_slug:
                 raise ValueError(
                     f"invalid vault name {title_or_slug!r}: contains {ch!r}"
                 )
-        # Reject parent-dir markers as whole path components. Allow literal
-        # ``..`` inside a longer filename (e.g. "readme..bak") but not as a
-        # standalone segment.
         stripped = title_or_slug.strip()
         if stripped in ("..", "."):
             raise ValueError(
@@ -59,9 +37,6 @@ class VaultManager:
 
         candidate = (self._path / f"{title_or_slug}.md").resolve()
 
-        # Final containment check. Symlinks inside the vault that point
-        # outside are rejected here (resolve follows symlinks). A symlink to
-        # a file inside the vault root is allowed.
         try:
             candidate.relative_to(self._resolved_root)
         except ValueError:
@@ -72,11 +47,7 @@ class VaultManager:
 
     def new(self, title: str, kind: str = "memory", tags: list[str] | None = None,
             agent: str | None = None, body: str = "", summary: str = "") -> str:
-        """Create a new note file. Returns the slug."""
         slug = title_to_slug(title)
-        # Slugification strips path-unsafe characters but may yield an empty
-        # string for inputs like "/" or "...". Guard so we don't try to create
-        # a dotfile at the vault root.
         if not slug:
             raise ValueError(f"invalid note title: {title!r}")
         file_path = self._safe_resolve(slug)
@@ -108,30 +79,17 @@ class VaultManager:
         return slug
 
     def read(self, title_or_slug: str) -> str:
-        """Read full note content. Accepts title or slug.
-
-        Resolution order:
-          1. slugified form of the input (``title_to_slug``)
-          2. exact form of the input
-
-        Both candidates pass through ``_safe_resolve`` so a malicious
-        ``title_or_slug`` cannot escape the vault.
-        """
-        # Try slugified form first; slugification already strips path-unsafe
-        # characters, so this path is always in-vault.
         slug = title_to_slug(title_or_slug)
         if slug:
             candidate = self._safe_resolve(slug)
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
-        # Fall through to exact match, but guard against traversal.
         candidate = self._safe_resolve(title_or_slug)
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
         raise FileNotFoundError(f"Note not found: {title_or_slug}")
 
     def write_section(self, title_or_slug: str, section: str, content: str) -> None:
-        """Overwrite a section in a note."""
         slug = title_to_slug(title_or_slug)
         file_path = self._safe_resolve(slug) if slug else self._safe_resolve(title_or_slug)
         if not file_path.exists():
@@ -145,7 +103,6 @@ class VaultManager:
         file_path.write_text(new_content, encoding="utf-8")
 
     def append_section(self, title_or_slug: str, section: str, content: str) -> None:
-        """Append to a section in a note."""
         slug = title_to_slug(title_or_slug)
         file_path = self._safe_resolve(slug) if slug else self._safe_resolve(title_or_slug)
         if not file_path.exists():
@@ -162,7 +119,6 @@ class VaultManager:
         file_path.write_text(new_content, encoding="utf-8")
 
     def daily(self, agent: str | None = None) -> str:
-        """Create or return today's daily note. Returns slug (YYYY-MM-DD)."""
         today = datetime.now().strftime("%Y-%m-%d")
         file_path = self._path / f"{today}.md"
 
@@ -172,7 +128,6 @@ class VaultManager:
         return today
 
     def archive(self, title_or_slug: str) -> None:
-        """Archive a note (set status = archived)."""
         slug = title_to_slug(title_or_slug)
         file_path = self._safe_resolve(slug) if slug else self._safe_resolve(title_or_slug)
         if not file_path.exists():
@@ -186,15 +141,9 @@ class VaultManager:
         file_path.write_text(content, encoding="utf-8")
 
     def list_files(self) -> list[str]:
-        """List all .md files in vault. Returns slugs (without .md)."""
         return [f.stem for f in sorted(self._path.glob("*.md"))]
 
     def get_mtime(self, slug: str) -> float:
-        """Get file modification time for a note.
-
-        Returns 0.0 for both "not found" and "invalid name" so callers that
-        use mtime as a cache key can treat both as "needs resync".
-        """
         try:
             file_path = self._safe_resolve(slug)
         except ValueError:

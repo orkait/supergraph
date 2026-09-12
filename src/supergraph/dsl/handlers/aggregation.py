@@ -1,4 +1,3 @@
-"""AGGREGATE query handlers."""
 
 import numpy as np
 

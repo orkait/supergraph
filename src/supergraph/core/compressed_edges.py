@@ -1,13 +1,8 @@
-"""Memory-efficient edge matrix using Delta-VByte compressed adjacency lists."""
 
 import numpy as np
 from supergraph.algos.compressed import pack_delta_vbyte, unpack_delta_vbyte
 
 class CompressedEdgeMatrix:
-    """Compressed adjacency matrix replacement for scipy.sparse.csr_matrix.
-    
-    Stores edges in variable-length Delta-VByte buffers.
-    """
 
     def __init__(self, num_nodes: int):
         self.shape = (num_nodes, num_nodes)
@@ -19,7 +14,6 @@ class CompressedEdgeMatrix:
 
     @classmethod
     def from_csr(cls, mat) -> "CompressedEdgeMatrix":
-        """Convert a scipy CSR matrix to a CompressedEdgeMatrix."""
         inst = cls(mat.shape[0])
         ptr = mat.indptr
         idx = mat.indices
@@ -34,7 +28,6 @@ class CompressedEdgeMatrix:
             inst._out_degree[i] = len(row_indices)
             
             if len(row_indices) > 0:
-                # Delta-VByte pack the row
                 packed = pack_delta_vbyte(row_indices)
                 inst._buffer.extend(packed)
                 current_offset += len(packed)
@@ -48,7 +41,6 @@ class CompressedEdgeMatrix:
         return np.concatenate(([0], np.cumsum(self._out_degree)))
 
     def get_row(self, row_idx: int) -> np.ndarray:
-        """Get all target indices for a specific row."""
         if row_idx >= self._num_nodes:
             return np.array([], dtype=np.int32)
             
@@ -63,7 +55,6 @@ class CompressedEdgeMatrix:
         return unpack_delta_vbyte(data, count).astype(np.int32)
 
     def dot(self, vector: np.ndarray) -> np.ndarray:
-        """Sparse Matrix-Vector Multiplication (SpMV)."""
         result = np.zeros(self._num_nodes, dtype=np.float32)
         active_sources = np.nonzero(vector)[0]
         
@@ -128,5 +119,4 @@ class CompressedEdgeMatrix:
 
     @property
     def nbytes(self) -> int:
-        """Total memory footprint of the compressed matrix."""
         return self._row_offsets.nbytes + len(self._buffer)

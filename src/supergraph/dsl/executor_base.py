@@ -1,4 +1,3 @@
-"""ExecutorBase: wires store/schema/embedder into the handler mixin chain."""
 
 import time
 
@@ -49,7 +48,6 @@ class ExecutorBase(VisibilityMixin, FilteringMixin):
         return self._runtime.embedder
 
     def execute(self, ast) -> Result:
-        """Execute a parsed AST node and return a Result."""
         start = time.perf_counter_ns()
         result = self._dispatch(ast)
         elapsed = (time.perf_counter_ns() - start) // 1000

@@ -1,4 +1,3 @@
-"""Write-Ahead Log management for supergraph persistence."""
 
 import time
 import logging
@@ -13,7 +12,6 @@ from supergraph.persistence.serializer import checkpoint as _checkpoint_fn
 
 
 class WALManager:
-    """Manages WAL append, replay, auto-checkpoint, and query log rotation."""
 
     def __init__(self, runtime: RuntimeState, executor,
                  wal_hard_limit: int, auto_checkpoint_threshold: int,
@@ -45,7 +43,6 @@ class WALManager:
 
     @property
     def pending_count(self) -> int:
-        """Number of WAL entries not yet checkpointed."""
         if self._conn is None:
             return 0
         row = self._conn.execute("SELECT COUNT(*) FROM wal").fetchone()
@@ -82,18 +79,6 @@ class WALManager:
             return
         self._replay_errors.clear()
 
-        # Wrap the entire replay loop in a single sqlite transaction. Pre-fix
-        # each failed-statement branch committed independently (bug #5). If
-        # the process crashed mid-replay, some WAL entries were deleted
-        # while others were retried on next boot — state drift was possible
-        # when later-in-replay statements depended on earlier ones. With a
-        # single enclosing transaction, a crash leaves the WAL exactly as it
-        # was before replay started, and the next boot re-runs from a clean
-        # starting point.
-        #
-        # We use an IMMEDIATE transaction rather than DEFERRED so the lock
-        # is acquired up-front; DEFERRED would silently upgrade on first
-        # write and risk SQLITE_BUSY under concurrent access.
         conn.execute("BEGIN IMMEDIATE")
         try:
             for seq, statement in rows:
@@ -101,12 +86,6 @@ class WALManager:
                     ast = parse(statement)
                     self._executor.execute(ast)
                 except NodeExists:
-                    # The node already exists. Re-applying the CREATE NODE is
-                    # a no-op; the right thing is to drop the WAL entry so the
-                    # next boot does not retry it indefinitely (bug #4).
-                    # Pre-fix this branch just ``continue``d, leaving the
-                    # offending entry in the WAL where it would fail the
-                    # same way on every subsequent replay.
                     try:
                         conn.execute("DELETE FROM wal WHERE seq = ?", (seq,))
                     except Exception as del_e:
@@ -120,8 +99,6 @@ class WALManager:
                         logger.error(
                             "Fatal error during WAL replay (strict_recovery=True): %s", e,
                         )
-                        # Undo any partial replay before re-raising; the outer
-                        # caller expects "either fully replayed or untouched".
                         conn.execute("ROLLBACK")
                         raise SuperGraphError(
                             f"Fatal recovery error on statement: {statement}"
@@ -139,9 +116,6 @@ class WALManager:
                         err["error_type"], err["error"], err["statement"],
                     )
 
-                    # Dead-letter queue + delete the failing WAL entry.
-                    # Both ops participate in the outer transaction; they
-                    # commit together at the end.
                     try:
                         conn.execute(
                             "INSERT INTO failed_wal_entries (timestamp, statement, error_msg) VALUES (?, ?, ?)",
@@ -156,12 +130,8 @@ class WALManager:
                             "Failed to delete failed WAL entry seq=%s: %s",
                             seq, del_e,
                         )
-            # Commit the whole replay atomically. Only reached if no branch
-            # raised and triggered the ROLLBACK above.
             conn.execute("COMMIT")
         except Exception:
-            # Any uncaught exception (strict-recovery fatal path re-raised,
-            # or sqlite IO error) leaves the WAL untouched.
             try:
                 conn.execute("ROLLBACK")
             except Exception:
@@ -221,7 +191,6 @@ class WALManager:
     def emit_event(self, query: str, elapsed_us: int, result_count: int, error: str | None,
                    tag: str | None = None, trace_id: str | None = None,
                    source: str = "user", phase: str | None = None) -> None:
-        """Emit structured log event via supergraph.events logger."""
         _event_logger.info(
             "%s [%s] %dus %d results",
             tag or "unknown", source, elapsed_us, result_count,

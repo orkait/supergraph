@@ -1,8 +1,3 @@
-"""Cost estimation adapter - wraps supergraph.algos.cost with domain shapes.
-
-Translates MatchPattern / EdgeMatrices into the edge_types list + get_matrix
-callable that the pure algos.cost layer expects.
-"""
 
 from supergraph.algos.cost import (
     DEFAULT_FRONTIER_THRESHOLD,

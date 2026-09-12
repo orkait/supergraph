@@ -1,20 +1,3 @@
-"""Predicate algebra for WHERE clauses (Django-Q-inspired, immutable).
-
-Terminology:
-  Leaf         a single comparison: field op value  (e.g. ``kind = "memory"``)
-  Not          negation of another F
-  And / Or     n-ary conjunction / disjunction (flattened for associativity)
-
-The algebra supports:
-  - ``&`` AND            (commutative, associative, identity: true-leaf)
-  - ``|`` OR             (commutative, associative, identity: false-leaf)
-  - ``~`` NOT            (involution: ``~~f == f``)
-  - ``F.raw(expr)``      unescaped escape hatch
-  - ``F.from_dict({})``  dict shorthand -> F tree
-
-Compiled to DSL via ``.to_dsl()``. Compilation is pure; the F tree is
-never mutated.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,10 +5,6 @@ from typing import Any
 
 from supergraph.query.escape import dsl_field_ref, dsl_literal
 
-
-# -------------------------------------------------------------------------
-# Operator registry
-# -------------------------------------------------------------------------
 
 _COMPARISON_OPS: dict[str, str] = {
     "eq":  "=",
@@ -54,23 +33,16 @@ _UNARY_OPS: dict[str, str] = {
 ALL_OPS = frozenset(_COMPARISON_OPS) | frozenset(_MEMBERSHIP_OPS) | frozenset(_STRING_OPS) | frozenset(_UNARY_OPS)
 
 
-# -------------------------------------------------------------------------
-# F nodes
-# -------------------------------------------------------------------------
-
 @dataclass(frozen=True, slots=True)
 class F:
-    """Base predicate. Subclasses are Leaf / Not / And / Or / Raw / Const."""
 
     def __and__(self, other: "F") -> "F":
         if not isinstance(other, F):
             return NotImplemented
-        # true & x == x  / false & x == false
         if isinstance(self, _Const):
             return other if self.value else self
         if isinstance(other, _Const):
             return self if other.value else other
-        # flatten nested And
         left = self.operands if isinstance(self, _And) else (self,)
         right = other.operands if isinstance(other, _And) else (other,)
         return _And(left + right)
@@ -78,7 +50,6 @@ class F:
     def __or__(self, other: "F") -> "F":
         if not isinstance(other, F):
             return NotImplemented
-        # false | x == x  / true | x == true
         if isinstance(self, _Const):
             return self if self.value else other
         if isinstance(other, _Const):
@@ -88,7 +59,6 @@ class F:
         return _Or(left + right)
 
     def __invert__(self) -> "F":
-        # double negation
         if isinstance(self, _Not):
             return self.inner
         return _Not(self)
@@ -96,7 +66,6 @@ class F:
     def to_dsl(self) -> str:
         raise NotImplementedError
 
-    # -- Builder class methods ------------------------------------------
 
     @classmethod
     def eq(cls, field_name: str, value: Any) -> "F":
@@ -162,10 +131,6 @@ class F:
 
     @classmethod
     def similar_score(cls, field_name: str, text: str, *, gt: float) -> "F":
-        """``SIMILAR(field, "text") > N`` - vector similarity predicate.
-
-        Grammar requires strict ``>`` comparison.
-        """
         if not isinstance(text, str):
             raise TypeError("F.similar_score text must be a str")
         if not isinstance(gt, (int, float)):
@@ -196,12 +161,6 @@ class F:
 
     @classmethod
     def from_dict(cls, d: dict) -> "F":
-        """Compile a dict shorthand into an F tree.
-
-        Plain keys compile to ``field = value``. Keys ending in ``__op`` use
-        the named operator. ``__or__`` / ``__and__`` / ``__not__`` keys
-        introduce explicit groupings.
-        """
         if not d:
             return _Const(True)
         leaves: list[F] = []
@@ -227,7 +186,6 @@ class F:
                     raise ValueError("__not__ expects dict predicate")
                 leaves.append(~cls.from_dict(value))
                 continue
-            # Split field__op or treat as plain eq
             if "__" in key and key.rsplit("__", 1)[1] in ALL_OPS:
                 field_name, op = key.rsplit("__", 1)
                 leaves.append(_Leaf(field_name, op, value))
@@ -252,22 +210,17 @@ class _Leaf(F):
         if self.op in _COMPARISON_OPS:
             return f"{name} {_COMPARISON_OPS[self.op]} {dsl_literal(self.value)}"
         if self.op in _MEMBERSHIP_OPS:
-            # Grammar: in_cond: field_ref "IN" "(" value ("," value)* ")"
-            #          NOT IN is not in grammar directly; emit as NOT(IN)
             vals = list(self.value)
             joined = "(" + ", ".join(dsl_literal(v) for v in vals) + ")"
             if self.op == "not_in":
                 return f"NOT ({name} IN {joined})"
             return f"{name} IN {joined}"
         if self.op == "contains":
-            # Grammar: contains_cond: field_ref "CONTAINS" STRING
             return f"{name} CONTAINS {dsl_literal(self.value)}"
         if self.op == "startswith":
-            # Grammar: no STARTSWITH op; use LIKE "x%" instead
             val = str(self.value)
             return f"{name} LIKE {dsl_literal(val + '%')}"
         if self.op in _UNARY_OPS:
-            # Grammar: no explicit IS NULL / IS NOT NULL; use != null or = null
             if self.op == "is_null":
                 return f"{name} = NULL"
             return f"{name} != NULL"
@@ -298,7 +251,7 @@ _DEGREE_OPS = {"!=": "!=", ">=": ">=", "<=": "<=", "=": "=", ">": ">", "<": "<"}
 
 @dataclass(frozen=True, slots=True)
 class _Degree(F):
-    kind: str              # "INDEGREE" | "OUTDEGREE"
+    kind: str
     field_name: str | None
     op: str
     n: int | float
@@ -353,14 +306,6 @@ class _Const(F):
 
 
 def compile_where(where: F | dict | None) -> str | None:
-    """Normalise a ``where`` argument to a DSL string or ``None``.
-
-    A ``true`` constant (e.g. ``F.from_dict({})``) compiles to ``None``
-    meaning the WHERE clause is omitted. A ``false`` constant raises:
-    grammar has no ``false`` literal and no way to express "match
-    nothing" in a WHERE, so this almost always indicates an algebra
-    collapse the caller didn't intend (e.g. ``F.eq(...) & F.false()``).
-    """
     if where is None:
         return None
     if isinstance(where, dict):

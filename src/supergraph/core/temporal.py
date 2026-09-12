@@ -1,13 +1,3 @@
-"""Temporal parsing and indexing for first-class date support.
-
-Dates are stored as epoch milliseconds (int64) in __event_at__ columns.
-This module handles:
-    - Parsing natural language dates ("8 May 2023", "last Friday", "2023")
-    - Parsing ISO-8601 ("2023-05-08", "2023-05-08T13:56:00Z")
-    - Parsing relative expressions ("3 days ago", "last week", "2 years ago")
-    - Range queries ("between May and July 2023", "before June 2023")
-    - Extracting date references from free text (questions, messages)
-"""
 
 from __future__ import annotations
 
@@ -31,7 +21,6 @@ _WEEKDAYS = {
 
 
 class DateRange(NamedTuple):
-    """A resolved date range in epoch ms."""
     start_ms: int
     end_ms: int
 
@@ -52,57 +41,44 @@ def _end_of_day(dt: datetime) -> datetime:
     return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
 
-# ---- Absolute date patterns ------------------------------------------------
-
-# "8 May 2023", "08 May, 2023" - day must be 1-31
 _PAT_DMY = re.compile(
     r'\b(0?[1-9]|[12]\d|3[01])\s+(january|february|march|april|may|june|july|august|'
     r'september|october|november|december),?\s+(\d{4})\b', re.I
 )
 
-# "May 8, 2023", "May 2023"
 _PAT_MDY = re.compile(
     r'\b(january|february|march|april|may|june|july|august|'
     r'september|october|november|december)\s+(?:(\d{1,2}),?\s+)?(\d{4})\b', re.I
 )
 
-# "2023-05-08", "2023-05-08T13:56:00"
 _PAT_ISO = re.compile(r'\b(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?\b')
 
-# "2023-05" (month only)
 _PAT_ISO_MONTH = re.compile(r'\b(\d{4})-(\d{2})\b')
 
-# Bare year "2023"
 _PAT_YEAR = re.compile(r'\b((?:19|20)\d{2})\b')
 
-# Time prefix from LoCoMo: "1:56 pm on 8 May, 2023"
 _PAT_LOCOMO = re.compile(
     r'(\d{1,2}):(\d{2})\s*(am|pm)\s+on\s+(\d{1,2})\s+'
     r'(january|february|march|april|may|june|july|august|'
     r'september|october|november|december),?\s+(\d{4})', re.I
 )
 
-# ---- Relative date patterns ------------------------------------------------
 
-# "3 days ago", "2 years ago", "a week ago"
 _PAT_AGO = re.compile(
     r'\b(?:(\d+)|a|an)\s+(second|minute|hour|day|week|month|year)s?\s+ago\b', re.I
 )
 
-# "last Friday", "last week", "last month"
 _PAT_LAST = re.compile(
     r'\blast\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
     r'week|month|year|january|february|march|april|may|june|july|august|'
     r'september|october|november|december)\b', re.I
 )
 
-# "before June 2023", "after May 2023"
 _PAT_BEFORE_AFTER = re.compile(
     r'\b(before|after|since|until)\s+(january|february|march|april|may|june|july|august|'
     r'september|october|november|december)\s+(\d{4})\b', re.I
 )
 
-# "the week before 9 June 2023", "the friday before 15 July 2023"
 _PAT_RELATIVE_TO = re.compile(
     r'\bthe\s+(week|day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+'
     r'before\s+(\d{1,2})\s+(january|february|march|april|may|june|july|august|'
@@ -111,20 +87,14 @@ _PAT_RELATIVE_TO = re.compile(
 
 
 def parse_date(text: str, reference: datetime | None = None) -> int | None:
-    """Parse a date string to epoch ms. Returns None if unparseable.
-
-    Supports: ISO-8601, natural dates, LoCoMo format, relative dates.
-    """
     if reference is None:
         reference = datetime.now(timezone.utc)
 
     text = text.strip()
 
-    # Raw epoch
     if text.isdigit() and len(text) > 8:
         return int(text)
 
-    # LoCoMo format: "1:56 pm on 8 May, 2023"
     m = _PAT_LOCOMO.search(text)
     if m:
         try:
@@ -141,7 +111,6 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         except (ValueError, OverflowError):
             pass
 
-    # ISO full: "2023-05-08T13:56:00"
     m = _PAT_ISO.search(text)
     if m:
         try:
@@ -154,7 +123,6 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         except (ValueError, OverflowError):
             pass
 
-    # "8 May 2023"
     m = _PAT_DMY.search(text)
     if m:
         try:
@@ -164,7 +132,6 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         except (ValueError, OverflowError):
             pass
 
-    # "May 8, 2023" or "May 2023"
     m = _PAT_MDY.search(text)
     if m:
         try:
@@ -176,7 +143,6 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         except (ValueError, OverflowError):
             pass
 
-    # ISO month: "2023-05"
     m = _PAT_ISO_MONTH.search(text)
     if m:
         try:
@@ -186,20 +152,16 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         except (ValueError, OverflowError):
             pass
 
-    # Bare year: "2023" - only if the text is mostly just the year
-    # (avoids matching "2023" inside "Smarch 2023" where the month is invalid)
     m = _PAT_YEAR.search(text)
     if m:
-        # Check the word before the year isn't an invalid month-like word
         prefix = text[:m.start()].strip().split()
         if prefix and len(prefix[-1]) > 2 and prefix[-1].lower() not in _MONTHS:
-            pass  # Skip - looks like "InvalidMonth 2023"
+            pass
         else:
             y = int(m.group(1))
             dt = datetime(y, 1, 1, tzinfo=timezone.utc)
             return _to_ms(dt)
 
-    # "3 days ago"
     m = _PAT_AGO.search(text)
     if m:
         n = int(m.group(1)) if m.group(1) else 1
@@ -208,7 +170,6 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
         dt = reference - delta
         return _to_ms(dt)
 
-    # "last Friday", "last month"
     m = _PAT_LAST.search(text)
     if m:
         token = m.group(1).lower()
@@ -220,22 +181,11 @@ def parse_date(text: str, reference: datetime | None = None) -> int | None:
 
 
 def parse_date_range(text: str, reference: datetime | None = None) -> DateRange | None:
-    """Parse a date expression to a range. Returns None if unparseable.
-
-    Examples:
-        "8 May 2023" -> that day (00:00 to 23:59)
-        "May 2023" -> that month
-        "2023" -> that year
-        "before June 2023" -> epoch to June 1
-        "after May 2023" -> June 1 to far future
-        "the week before 9 June 2023" -> June 2 to June 8
-    """
     if reference is None:
         reference = datetime.now(timezone.utc)
 
     text = text.strip()
 
-    # "the week/friday before 9 June 2023"
     m = _PAT_RELATIVE_TO.search(text)
     if m:
         unit = m.group(1).lower()
@@ -255,7 +205,6 @@ def parse_date_range(text: str, reference: datetime | None = None) -> DateRange 
             target = anchor - timedelta(days=days_back)
             return DateRange(_to_ms(_start_of_day(target)), _to_ms(_end_of_day(target)))
 
-    # "before/after June 2023"
     m = _PAT_BEFORE_AFTER.search(text)
     if m:
         direction = m.group(1).lower()
@@ -267,23 +216,19 @@ def parse_date_range(text: str, reference: datetime | None = None) -> DateRange 
         else:
             return DateRange(_to_ms(anchor), _to_ms(reference + timedelta(days=3650)))
 
-    # Try exact date -> single day range
     ms = parse_date(text, reference)
     if ms is not None:
         dt = datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
-        # If only year was parsed, range = full year
         if _PAT_YEAR.fullmatch(text.strip()):
             start = datetime(dt.year, 1, 1, tzinfo=timezone.utc)
             end = datetime(dt.year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
             return DateRange(_to_ms(start), _to_ms(end))
-        # If only month, range = full month
         m = _PAT_ISO_MONTH.fullmatch(text.strip())
         if m or (not _PAT_DMY.search(text) and _PAT_MDY.search(text) and not _PAT_MDY.search(text).group(2)):
             import calendar
             _, last_day = calendar.monthrange(dt.year, dt.month)
             end = datetime(dt.year, dt.month, last_day, 23, 59, 59, tzinfo=timezone.utc)
             return DateRange(ms, _to_ms(end))
-        # Specific date -> that day
         return DateRange(
             _to_ms(_start_of_day(dt)),
             _to_ms(_end_of_day(dt)),
@@ -293,11 +238,6 @@ def parse_date_range(text: str, reference: datetime | None = None) -> DateRange 
 
 
 def extract_dates(text: str, reference: datetime | None = None) -> list[int]:
-    """Extract all date references from free text. Returns deduplicated list of epoch ms.
-
-    Handles absolute dates (8 May 2023), relative dates (3 days ago, last Friday),
-    and LoCoMo format (1:56 pm on 8 May, 2023). Deduplicates overlapping matches.
-    """
     if reference is None:
         reference = datetime.now(timezone.utc)
 
@@ -315,7 +255,6 @@ def extract_dates(text: str, reference: datetime | None = None) -> list[int]:
             seen_spans.add((match_start, match_end))
             results.append(ms)
 
-    # Absolute patterns (ordered from most specific to least)
     for pattern, handler in [
         (_PAT_LOCOMO, lambda m: _to_ms(datetime(
             int(m.group(6)), _MONTHS[m.group(5).lower()], int(m.group(4)),
@@ -335,7 +274,6 @@ def extract_dates(text: str, reference: datetime | None = None) -> list[int]:
             except (ValueError, TypeError):
                 continue
 
-    # Relative patterns
     for m in _PAT_AGO.finditer(text):
         try:
             n = int(m.group(1)) if m.group(1) else 1

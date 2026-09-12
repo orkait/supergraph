@@ -1,8 +1,3 @@
-"""Optional type system for supergraph.
-
-When kinds are registered, writes are validated against them.
-Unregistered kinds pass through without validation (schema-free mode).
-"""
 
 from __future__ import annotations
 
@@ -118,13 +113,8 @@ class SchemaRegistry:
         }
 
     def validate_node(self, kind: str, data: dict):
-        """Validate node data against registered kind schema.
-
-        If kind is not registered, no validation (schema-free mode).
-        Raises SchemaError if required fields are missing or types mismatch.
-        """
         if kind not in self._node_kinds:
-            return  # unregistered kind, no validation
+            return
         defn = self._node_kinds[kind]
         missing = defn.required - set(data.keys())
         if missing:
@@ -149,11 +139,6 @@ class SchemaRegistry:
         return True
 
     def validate_edge(self, kind: str, source_kind: str, target_kind: str):
-        """Validate edge endpoint kinds against registered schema.
-
-        If kind is not registered, no validation.
-        Raises SchemaError if endpoint kinds don't match.
-        """
         if kind not in self._edge_kinds:
             return
         defn = self._edge_kinds[kind]
@@ -169,7 +154,6 @@ class SchemaRegistry:
             )
 
     def to_dict(self) -> dict:
-        """Export schema for serialization."""
         node_kinds = {}
         for k, v in self._node_kinds.items():
             d = {
@@ -190,7 +174,6 @@ class SchemaRegistry:
 
     @classmethod
     def from_dict(cls, data: dict) -> SchemaRegistry:
-        """Rebuild from serialized form."""
         registry = cls()
         for kind, defn in data.get("node_kinds", {}).items():
             field_types = defn.get("field_types", {})

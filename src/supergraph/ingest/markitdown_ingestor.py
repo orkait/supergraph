@@ -1,4 +1,3 @@
-"""MarkItDown ingestor: Tier 1 - general files (Office, HTML, text, etc.)."""
 from supergraph.ingest.base import Ingestor, IngestResult
 
 

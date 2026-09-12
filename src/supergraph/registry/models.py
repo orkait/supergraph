@@ -1,4 +1,3 @@
-"""Supported models registry."""
 
 SUPPORTED_MODELS = {
     "embeddinggemma-300m": {

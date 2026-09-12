@@ -1,4 +1,3 @@
-"""Optimizer scheduling: health checks and auto-optimize between execute calls."""
 
 import logging
 
@@ -8,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class OptimizerScheduler:
-    """Tracks write pressure and triggers optimization at safe points."""
 
     def __init__(self, runtime: RuntimeState,
                  auto_optimize: bool = False, optimize_interval: int = 500,
@@ -50,13 +48,11 @@ class OptimizerScheduler:
         return self._optimizing
 
     def on_write(self) -> None:
-        """Called after each write operation. Increments counter and checks health."""
         self._write_counter += 1
         if self._auto_optimize and self._write_counter % self._optimize_interval == 0:
             self._check_health()
 
     def maybe_optimize(self) -> None:
-        """Run optimization if pressure detected. Call at safe points (between execute calls)."""
         if not self._needs_optimize:
             return
         self._optimizing = True
@@ -73,7 +69,6 @@ class OptimizerScheduler:
             self._needs_optimize = False
 
     def _check_health(self) -> None:
-        """Lightweight health check - sets _needs_optimize if pressure detected."""
         try:
             from supergraph.core.optimizer import health_check, needs_optimization
             health = health_check(self._store, self._vector_store, self._document_store)
@@ -82,7 +77,6 @@ class OptimizerScheduler:
                                   string_gc_threshold=self._string_gc_threshold,
                                   cache_gc_threshold=self._cache_gc_threshold):
                 self._needs_optimize = True
-            # Emergency eviction if memory > 90% ceiling
             from supergraph.core.memory import check_ceiling_accurate
             if check_ceiling_accurate(self._store, self._vector_store, self._store._ceiling_bytes):
                 from supergraph.core.optimizer import evict_oldest
@@ -91,7 +85,6 @@ class OptimizerScheduler:
         except Exception as e:
             logger.debug("health check failed: %s", e)
 
-        # Evolution tick: evaluate rules if engine present and not re-entrant
         engine = self._evolution_engine
         if engine is not None and not engine._evaluating:
             try:

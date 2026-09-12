@@ -1,11 +1,3 @@
-"""VisionHandler: image understanding via any OpenAI-compatible /v1 endpoint
-(Ollama, llama.cpp server, vLLM, LM Studio, or the real OpenAI API).
-
-Uses stdlib urllib instead of the 15 MB openai Python SDK - we only call
-``/v1/chat/completions`` and ``/v1/models``, both of which are trivial
-JSON-over-HTTP. This keeps the ingest extra small and zero-dep for
-vision.
-"""
 import base64
 import json
 import logging
@@ -16,12 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 class VisionHandler:
-    """Connects to an OpenAI-compatible vision endpoint. Tier 4 fallback.
-
-    If ``base_url`` is ``None``, resolves via ``vision_sidecar.resolve_base_url``
-    which checks ``SUPERGRAPH_VISION_URL`` env, a running supergraph sidecar, and
-    finally auto-spawns one when the ``[vision]`` extra is installed.
-    """
 
     def __init__(
         self,
@@ -94,11 +80,6 @@ class VisionHandler:
             logger.warning("VisionHandler: request failed: %s", e)
             return ""
 
-        # Defensive unpacking. Ollama/OpenAI-compatible servers occasionally
-        # return no choices or content=None (safety-filter blocks, timeouts,
-        # partial streams). Returning an empty string at the call site lets
-        # the ingest layer treat missing descriptions as "nothing generated"
-        # instead of silently sending empty strings to the embedder - bug #64.
         choices = response.get("choices") or []
         if not choices:
             logger.warning("VisionHandler: VLM returned no choices for %d bytes", len(image_bytes))

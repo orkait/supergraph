@@ -1,12 +1,3 @@
-"""Vision sidecar: spawn a local llama.cpp OpenAI-compatible HTTP server for
-image captioning. Default model is SmolVLM-500M-Instruct (~400 MB GGUF).
-
-Architecture: a separate process owns the model weights. supergraph talks to
-it over loopback HTTP via the same VisionHandler used for Ollama/vLLM/cloud.
-Crash isolation, weight dedup across SuperGraph instances, and server-side
-batching all fall out of keeping the seam at HTTP. We never load the model
-in-process.
-"""
 from __future__ import annotations
 
 import json
@@ -26,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class VLMModelSpec:
-    """Declarative VLM preset: HF repo + GGUF files + llama.cpp chat format."""
     repo: str
     model_file: str
     mmproj_file: str
@@ -37,10 +27,6 @@ class VLMModelSpec:
         return f"{self.repo}/{self.model_file}"
 
 
-# Built-in presets. Users can register more via ``register_model`` or pass raw
-# repo/file overrides to ``start``. Keys are the short names accepted by
-# ``supergraph vision serve --model <name>`` and by VisionHandler's ``model``
-# kwarg when the `[vision]` extra is installed.
 VLM_MODELS: dict[str, VLMModelSpec] = {
     "smolvlm-500m": VLMModelSpec(
         repo="ggml-org/SmolVLM-500M-Instruct-GGUF",
@@ -77,15 +63,10 @@ _PORT_ENV = "SUPERGRAPH_VISION_PORT"
 
 
 def register_model(name: str, spec: VLMModelSpec) -> None:
-    """Register a VLM preset. Users can add custom entries at import time."""
     VLM_MODELS[name] = spec
 
 
 def resolve_spec(model: str | VLMModelSpec | None = None) -> VLMModelSpec:
-    """Return the VLMModelSpec for a preset name or pass-through a VLMModelSpec.
-
-    Lookup order: explicit arg -> ``SUPERGRAPH_VISION_MODEL`` env -> default.
-    """
     if isinstance(model, VLMModelSpec):
         return model
     name = model or os.environ.get(_MODEL_ENV) or DEFAULT_MODEL_NAME
@@ -137,7 +118,6 @@ class SidecarStatus:
 
 
 def _read_pid() -> tuple[int, int, str] | None:
-    """Return (pid, port, model) tuple if a live sidecar is recorded, else None."""
     pf = _pid_file()
     if not pf.exists():
         return None
@@ -181,11 +161,6 @@ def _probe(host: str, port: int, timeout: float = 1.0) -> bool:
 def download_weights(
     spec: VLMModelSpec | str | None = None,
 ) -> tuple[Path, Path]:
-    """Download the GGUF model + mmproj. Returns (model_path, mmproj_path).
-
-    Accepts a preset name (``"smolvlm-500m"``), a :class:`VLMModelSpec`, or
-    ``None`` to use the default. Idempotent - re-calling returns cached paths.
-    """
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as e:
@@ -212,12 +187,6 @@ def start(
     wait_ready: bool = True,
     ready_timeout: float = 90.0,
 ) -> SidecarStatus:
-    """Spawn the sidecar. If already running at ``host:port``, returns its status.
-
-    All defaults respect the ``SUPERGRAPH_VISION_{HOST,PORT,MODEL}`` env vars
-    so the same binary can be run in different project contexts without
-    rewiring kwargs.
-    """
     host = host or _env_host()
     port = port if port is not None else _env_port()
     spec = resolve_spec(model)
@@ -294,7 +263,6 @@ def start(
 
 
 def stop() -> bool:
-    """Stop the sidecar. Returns True iff a process was signalled."""
     existing = _read_pid()
     if existing is None:
         return False
@@ -340,14 +308,6 @@ def resolve_base_url(
     port: int | None = None,
     auto_start: bool = True,
 ) -> str | None:
-    """Return the URL to use for VisionHandler, or None if no endpoint available.
-
-    Precedence:
-      1. ``SUPERGRAPH_VISION_URL`` env var (user-configured remote endpoint)
-      2. Live sidecar recorded in the PID file
-      3. Probe ``host:port`` (defaults respect ``SUPERGRAPH_VISION_{HOST,PORT}``)
-      4. ``auto_start`` -> spawn sidecar (requires ``[vision]`` extra)
-    """
     env = os.environ.get(_URL_ENV)
     if env:
         return env.rstrip("/")

@@ -1,4 +1,3 @@
-"""Ingestor protocol and data types."""
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -7,11 +6,6 @@ from supergraph.algos.chunker import Chunk  # noqa: F401 - re-export
 
 @runtime_checkable
 class ChunkerProtocol(Protocol):
-    """Protocol for text chunking implementations.
-
-    Runtime isinstance() only verifies method names, not signatures.
-    Use mypy/pyright for structural type checking.
-    """
 
     def chunk(self, text: str, **kwargs) -> list[Chunk]:
         ...
@@ -36,7 +30,6 @@ class IngestResult:
     confidence: float = 1.0
 
 class Ingestor:
-    """Base interface for document ingestors."""
     name: str = "base"
     supported_extensions: list[str] = []
 

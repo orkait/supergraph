@@ -1,29 +1,3 @@
-"""supergraph pro: slotted spec + live calibration + resolver.
-
-Pro mode is a single profile that owns model selection (embedder /
-reranker / ingest mode / vision / audio / NER), GPU setup, and resource
-sizing for agentic-memory deployments. This module defines the data
-model and the resolver. CLI lives in ``supergraph.cli``;
-``SuperGraph(profile="pro")`` integration lives in ``supergraph.store``.
-
-Hard rules baked into this design:
-
-  - **No hard-coded RAM/TPS/disk numbers.** All resource estimates come
-    from a per-host calibration cache populated by ``supergraph pro
-    setup`` (which downloads each component then immediately probes it).
-    Missing cache → ``ProCalibrationMissing`` raised; we don't guess.
-  - **Slotted spec, not flat list.** Embedders / rerankers / ingest
-    modes are mutually exclusive within a slot. Slots make the choice
-    explicit.
-  - **One resolver, one trip.** ``resolve(spec, host) -> ResolvedConfig``
-    returns either ``fits=True`` with the maximal knobs that fit, or
-    ``fits=False`` with structured shortfalls + suggestions. Callers
-    raise ``ProUnsupportedHostError`` from the latter.
-  - **Layered VRAM allocation: bonsai-first.** Throughput-critical path
-    gets GPU first; reranker / vision get whatever VRAM remains.
-  - **Linux x86_64 + NVIDIA CUDA 12 only for v1.** Apple Metal /
-    AMD ROCm out of scope.
-"""
 from __future__ import annotations
 
 import json
@@ -42,36 +16,13 @@ from supergraph.core.errors import SuperGraphError
 
 _log = logging.getLogger(__name__)
 
-# Schema version for the calibration cache file. Bump on any breaking
-# change to the cache shape so older caches are auto-discarded instead
-# of mis-parsed.
 _CACHE_SCHEMA_VERSION = 1
 
-# Default location of the calibration cache. Honors XDG_CACHE_HOME.
 _DEFAULT_CACHE_DIR = (
     Path(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")))
     / "supergraph"
 )
 
-# Slot value sets are encoded as Literal types on ProSpec itself; msgspec
-# enforces at decode time. No separate tuple registry to keep in sync.
-#
-# Reserved keys in CalibrationEntry.extra populated by the probe runner
-# (supergraph.cli `pro setup`/`probe`). Resolver reads these to scale
-# knobs without hard-coding host-RAM thresholds:
-#
-#   "n_ctx_min" / "n_ctx_default" / "n_ctx_max"   - bonsai context window
-#                                                   measured at ram_mb_min /
-#                                                   ram_mb_at_default /
-#                                                   ram_mb_max
-#   "n_batch_at_default"                          - bonsai n_batch at the
-#                                                   default measurement
-#   "embed_batch_at_default"                      - embedder batch size at
-#                                                   the default measurement
-#   "reranker_max_at_default"                     - reranker max_length at
-#                                                   the default measurement
-#
-# Missing keys → resolver falls back to safe minimums.
 _EXTRA_N_CTX_MIN = "n_ctx_min"
 _EXTRA_N_CTX_DEFAULT = "n_ctx_default"
 _EXTRA_N_CTX_MAX = "n_ctx_max"
@@ -85,14 +36,7 @@ _FALLBACK_EMBED_BATCH = 16
 _FALLBACK_RERANKER_MAX = 512
 
 
-# ---------------------------------------------------------------------
-# Errors
-# ---------------------------------------------------------------------
-
-
 class ProUnsupportedHostError(SuperGraphError):
-    """Selected pro spec does not fit current host. ``.resolved`` carries
-    the structured ``ResolvedConfig`` (with shortfalls + suggestions)."""
 
     def __init__(self, message: str, resolved: ResolvedConfig):
         super().__init__(message)
@@ -100,9 +44,6 @@ class ProUnsupportedHostError(SuperGraphError):
 
 
 class ProCalibrationMissing(SuperGraphError):
-    """No calibration data for the selected components on this host.
-    ``.missing_components`` lists the component_ids needing calibration.
-    Run ``supergraph pro setup`` or ``supergraph pro probe``."""
 
     def __init__(self, message: str, missing_components: list[str]):
         super().__init__(message)
@@ -110,23 +51,13 @@ class ProCalibrationMissing(SuperGraphError):
 
 
 class ProExtraNotInstalled(SuperGraphError):
-    """``[pro]`` extra not installed. ``.missing_dists`` lists pip
-    distributions that need to be present for the selected spec."""
 
     def __init__(self, message: str, missing_dists: list[str]):
         super().__init__(message)
         self.missing_dists = missing_dists
 
 
-# ---------------------------------------------------------------------
-# Spec
-# ---------------------------------------------------------------------
-
-
 class ProSpec(msgspec.Struct, frozen=True):
-    """Slotted pro spec. Each slot picks at most one option; ``"none"``
-    disables that slot. Defaults match the measured-best LoCoMo
-    configuration as of v0.5.0 - subject to change as benches improve."""
 
     embedder: Literal[
         "jina-v5-small", "jina-v5-nano",
@@ -146,11 +77,6 @@ class ProSpec(msgspec.Struct, frozen=True):
     ner: Literal["tinybert", "none"] = "tinybert"
 
     def component_ids(self) -> list[str]:
-        """Return calibration-cache keys for each non-empty slot.
-
-        Bonsai is one cache entry per (quant, skill) combination because
-        n_ctx / n_batch / TPS all depend on both. Other slots are simpler.
-        """
         ids: list[str] = []
         if self.embedder != "none":
             ids.append(f"embedder:{self.embedder}")
@@ -158,7 +84,6 @@ class ProSpec(msgspec.Struct, frozen=True):
             ids.append(f"reranker:{self.reranker}")
         if self.ingest_mode == "bonsai":
             ids.append(f"ingest:bonsai-{self.bonsai_quant}-{self.bonsai_skill}")
-        # ingest_mode="deterministic" needs no model beyond the NER slot.
         if self.vision != "none":
             ids.append(f"vision:{self.vision}")
         if self.audio != "none":
@@ -168,12 +93,6 @@ class ProSpec(msgspec.Struct, frozen=True):
         return ids
 
     def required_dists(self) -> list[str]:
-        """Pip distribution names that must be importable for this spec.
-
-        Used by ``check_extras_installed()`` to fail fast with a clear
-        ``pip install 'supergraph[pro]'`` hint when extras are missing.
-        Returns canonical PEP 503 normalized names.
-        """
         dists: list[str] = []
         if self.ingest_mode == "bonsai" or self.vision != "none":
             dists.append("llama-cpp-python")
@@ -186,7 +105,6 @@ class ProSpec(msgspec.Struct, frozen=True):
         if self.ner == "tinybert":
             dists.append("onnxruntime")
             dists.append("tokenizers")
-        # De-dup while preserving order.
         seen: set[str] = set()
         out: list[str] = []
         for d in dists:
@@ -196,19 +114,8 @@ class ProSpec(msgspec.Struct, frozen=True):
         return out
 
 
-# ---------------------------------------------------------------------
-# Host snapshot
-# ---------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class HostSnapshot:
-    """Live host capabilities. No assumptions, no static thresholds.
-
-    All numbers come from ``capture()`` calling psutil / shutil / OS at
-    the moment of resolution. ``host_signature()`` derives a stable key
-    used to namespace calibration cache entries.
-    """
 
     ram_total_mb: int
     ram_available_mb: int
@@ -227,8 +134,6 @@ class HostSnapshot:
         cache_dir: Path | None = None,
         probe_gpu: bool = True,
     ) -> HostSnapshot:
-        """Snapshot RAM / disk / CPU / GPU / installed-extras live."""
-        # RAM
         try:
             import psutil
             mem = psutil.virtual_memory()
@@ -237,13 +142,10 @@ class HostSnapshot:
         except Exception:  # pragma: no cover - psutil is a core dep
             ram_total = ram_avail = 0
 
-        # Disk: free space at the cache root, since that's where models
-        # land.
         target = cache_dir or _DEFAULT_CACHE_DIR
         target.mkdir(parents=True, exist_ok=True)
         disk_free = int(shutil.disk_usage(str(target)).free / (1024 * 1024))
 
-        # CPU
         try:
             import psutil
             phys = psutil.cpu_count(logical=False) or 0
@@ -251,7 +153,6 @@ class HostSnapshot:
         except Exception:  # pragma: no cover
             phys = logical = os.cpu_count() or 0
 
-        # GPU - via supergraph.gpu (cheap if already setup).
         gpu_ready = False
         gpu_name: str | None = None
         gpu_vram_total = gpu_vram_free = 0
@@ -266,7 +167,6 @@ class HostSnapshot:
             except Exception as e:  # pragma: no cover
                 _log.debug("pro: gpu probe in HostSnapshot.capture() failed: %s", e)
 
-        # Installed extras (canonical pip dist names).
         installed: set[str] = set()
         try:
             import importlib.metadata as im
@@ -291,13 +191,6 @@ class HostSnapshot:
         )
 
     def host_signature(self) -> str:
-        """Stable key for calibration cache namespacing.
-
-        Includes architecture, physical cores, RAM bucket (rounded to
-        nearest 1 GB), and GPU name + total VRAM. Different signature →
-        cache invalidated. We round RAM because exact `available` jitters
-        per process; total RAM is the durable quantity.
-        """
         import platform
         ram_bucket = (self.ram_total_mb // 1024) * 1024
         parts = [
@@ -314,7 +207,6 @@ class HostSnapshot:
 
 
 def _read_vram_mb() -> tuple[int, int]:
-    """nvidia-smi VRAM (total, free) in MB. (0, 0) on any failure."""
     try:
         out = subprocess.run(
             ["nvidia-smi",
@@ -331,27 +223,8 @@ def _read_vram_mb() -> tuple[int, int]:
         return 0, 0
 
 
-# ---------------------------------------------------------------------
-# Calibration cache
-# ---------------------------------------------------------------------
-
-
 @dataclass
 class CalibrationEntry:
-    """One component's measured numbers. All fields populated by the
-    probe runner in ``supergraph pro setup``; this module only reads.
-
-    Conventions:
-      - ``ram_mb_*`` is resident-set delta from idle baseline at the
-        labelled config (e.g. ``ram_mb_n_ctx_2048_cpu``).
-      - ``vram_mb_full_offload`` is delta in GPU memory free between
-        before-load and after-load when offloading all layers.
-      - ``tps_cpu_threads`` maps thread-count (string) → tokens-per-second
-        (float). Resolver picks the entry matching host cpu_cores_logical
-        (or interpolates).
-      - ``tps_gpu_full_offload`` is at n_gpu_layers=-1 with default
-        n_batch.
-    """
 
     component_id: str
     measured_at: str
@@ -368,11 +241,6 @@ class CalibrationEntry:
 
 @dataclass
 class CalibrationCache:
-    """In-memory representation of ``calibration.json``.
-
-    Loader is forgiving: schema-version mismatch or host-signature
-    mismatch returns an empty cache. Writer overwrites atomically.
-    """
 
     schema_version: int
     supergraph_version: str
@@ -397,13 +265,6 @@ class CalibrationCache:
         host_signature: str,
         cache_dir: Path | None = None,
     ) -> CalibrationCache:
-        """Read cache file. Returns ``empty()`` on any of:
-          - file missing
-          - JSON parse error
-          - schema_version mismatch
-          - host_signature mismatch (host changed)
-          - supergraph_version mismatch (calibration semantics changed)
-        """
         path = (cache_dir or _DEFAULT_CACHE_DIR) / "calibration.json"
         try:
             data = json.loads(path.read_text())
@@ -454,12 +315,9 @@ class CalibrationCache:
         )
 
     def save(self, cache_dir: Path | None = None) -> Path:
-        """Atomic write to ``calibration.json``. Returns the path written."""
         target_dir = cache_dir or _DEFAULT_CACHE_DIR
         target_dir.mkdir(parents=True, exist_ok=True)
         path = target_dir / "calibration.json"
-        # Path.with_suffix REPLACES the suffix; appending ".tmp" via name
-        # concatenation is the unambiguous form regardless of basename.
         tmp = path.parent / (path.name + ".tmp")
         payload = {
             "schema_version": self.schema_version,
@@ -487,21 +345,8 @@ class CalibrationCache:
         return path
 
 
-# ---------------------------------------------------------------------
-# Resolver
-# ---------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class ResolvedConfig:
-    """Output of ``resolve()``. ``fits=False`` is the hard-stop signal.
-
-    Knob fields (n_ctx etc.) are populated only when ``fits=True``;
-    callers should treat them as undefined when fits is False. Use
-    ``warnings`` for non-fatal observations (tight RAM, partial
-    offload, calibration aging) and ``shortfalls`` for the reasons
-    fits=False.
-    """
 
     spec: ProSpec
     host: HostSnapshot
@@ -524,11 +369,6 @@ class ResolvedConfig:
 
 
 def check_extras_installed(spec: ProSpec, host: HostSnapshot) -> None:
-    """Raise ``ProExtraNotInstalled`` when required pip dists are absent.
-
-    Called before ``resolve()`` so users see the install hint instead of
-    a more cryptic calibration-missing error.
-    """
     required = spec.required_dists()
     missing = [d for d in required if d.lower() not in host.extras_installed]
     if missing:
@@ -547,23 +387,9 @@ def resolve(
     cache: CalibrationCache | None = None,
     cache_dir: Path | None = None,
 ) -> ResolvedConfig:
-    """Compute the maximal knobs that fit ``spec`` on ``host``.
-
-    Behaviour:
-      - host = None → ``HostSnapshot.capture()``
-      - cache = None → loads from disk (calibration.json) for the host
-      - if any selected component has no calibration entry, returns
-        ``ResolvedConfig(calibration_source="missing", fits=False, ...)``
-        with structured shortfalls. Caller can convert to
-        ``ProCalibrationMissing`` if they want a hard exception.
-      - otherwise computes RAM / VRAM budgets and the largest knobs that
-        fit the host's available resources. ``fits=True`` only when
-        every component's *minimum* RAM/disk/VRAM budget is satisfied.
-    """
     host = host or HostSnapshot.capture(cache_dir=cache_dir)
     cache = cache or CalibrationCache.load(host.host_signature(), cache_dir=cache_dir)
 
-    # Step 1: every selected component must have calibration data.
     component_ids = spec.component_ids()
     missing = [cid for cid in component_ids if cid not in cache.components]
     if missing:
@@ -580,7 +406,6 @@ def resolve(
             calibration_source="missing",
         )
 
-    # Step 2: sum minimum-knob RAM and disk requirements.
     use_gpu = host.gpu_ready
     ram_budget: dict[str, int] = {}
     vram_budget: dict[str, int] = {}
@@ -589,12 +414,9 @@ def resolve(
         e = cache.components[cid]
         disk_required += e.disk_mb
         if use_gpu and e.vram_mb_full_offload > 0:
-            # Component will live in VRAM - host RAM only carries Python
-            # overhead. ram_mb_idle is the closest proxy.
             ram_budget[cid] = e.ram_mb_idle
             vram_budget[cid] = e.vram_mb_full_offload
         else:
-            # CPU mode - minimum-knob RAM is the floor we need.
             ram_budget[cid] = max(e.ram_mb_min, e.ram_mb_idle)
             vram_budget[cid] = 0
 
@@ -616,7 +438,6 @@ def resolve(
             f"RAM: minimum-knob budget {total_ram} MB exceeds "
             f"{host.ram_available_mb} MB available"
         )
-        # Suggest the heaviest droppable slot.
         heaviest = max(ram_budget.items(), key=lambda kv: kv[1])
         suggestions.append(
             f"drop {heaviest[0]} (saves ~{heaviest[1]} MB RAM); "
@@ -624,14 +445,11 @@ def resolve(
         )
 
     if use_gpu and total_vram > host.gpu_vram_free_mb:
-        # Layered allocation: bonsai-first. Try removing reranker, then
-        # vision, from the GPU side.
         warnings.append(
             f"VRAM: full offload would need {total_vram} MB, only "
             f"{host.gpu_vram_free_mb} MB free; falling back to layered "
             "allocation (bonsai → reranker → vision)."
         )
-        # Recompute layered budget.
         offload_priority = [
             cid for cid in component_ids if cid.startswith("ingest:bonsai-")
         ] + [
@@ -648,7 +466,6 @@ def resolve(
             if cost > 0 and used_vram + cost <= host.gpu_vram_free_mb:
                 used_vram += cost
                 kept_on_gpu.add(cid)
-        # CPU-side RAM grows for components that did NOT make it onto GPU.
         for cid in component_ids:
             if cid not in kept_on_gpu and vram_budget.get(cid, 0) > 0:
                 e = cache.components[cid]
@@ -672,20 +489,12 @@ def resolve(
             calibration_age_s=_age_s(cache.measured_at),
         )
 
-    # Step 3: pick maximal knobs that still fit. Knob values come from
-    # the calibration entry's `extra` dict (set by the probe runner) so
-    # we never hard-code "tier X needs N MB". The probe ran the actual
-    # model at concrete knobs and recorded both the knob value and the
-    # resulting RAM use; we just check which measurement still fits.
     bonsai_id = next((cid for cid in component_ids
                       if cid.startswith("ingest:bonsai-")), None)
     n_ctx = _FALLBACK_N_CTX
     bonsai_n_batch = _FALLBACK_N_BATCH
     if bonsai_id is not None:
         e = cache.components[bonsai_id]
-        # ram_left = how much host RAM remains for bonsai once every
-        # other component takes its share. Compare each measured tier
-        # against this; pick the largest knob whose recorded RAM fits.
         ram_left = host.ram_available_mb - sum(
             v for k, v in ram_budget.items() if k != bonsai_id)
         n_ctx_max = _maybe_int(e.extra.get(_EXTRA_N_CTX_MAX))
@@ -701,10 +510,7 @@ def resolve(
         elif n_ctx_min:
             n_ctx = n_ctx_min
             bonsai_n_batch = _FALLBACK_N_BATCH
-        # else: leave fallbacks (cache extra empty, e.g. legacy probe).
 
-    # Reranker max length and embedder batch read straight from the
-    # default measurement; no host-RAM ladder.
     reranker_id = next((cid for cid in component_ids
                         if cid.startswith("reranker:")), None)
     reranker_max = 0
@@ -719,7 +525,6 @@ def resolve(
         e = cache.components[embedder_id]
         embed_batch = _maybe_int(e.extra.get(_EXTRA_EMBED_BATCH)) or _FALLBACK_EMBED_BATCH
 
-    # GPU layer counts: -1 if cached layered allocation kept it on GPU.
     bonsai_n_gpu_layers = -1 if (use_gpu and bonsai_id and vram_budget.get(bonsai_id, 0) > 0) else 0
     reranker_gpu_layers = -1 if (use_gpu and reranker_id and vram_budget.get(reranker_id, 0) > 0) else 0
     vision_offload = bool(use_gpu and any(
@@ -727,22 +532,18 @@ def resolve(
         for cid in component_ids
     ))
 
-    # Projected TPS: best-available - GPU number when offloaded, CPU
-    # number at logical-thread count when not.
     projected: dict[str, float] = {}
     for cid in component_ids:
         e = cache.components[cid]
         if use_gpu and vram_budget.get(cid, 0) > 0 and e.tps_gpu_full_offload:
             projected[cid] = e.tps_gpu_full_offload
         elif e.tps_cpu_threads:
-            # Pick the entry closest to host.cpu_cores_logical.
             best_key = min(
                 e.tps_cpu_threads.keys(),
                 key=lambda k: abs(int(k) - host.cpu_cores_logical),
             )
             projected[cid] = e.tps_cpu_threads[best_key]
 
-    # Tightness warnings.
     if total_ram > int(host.ram_available_mb * 0.85):
         warnings.append(
             f"RAM tight: budget {total_ram} MB / available "
@@ -785,7 +586,6 @@ def resolve(
 
 
 def _age_s(measured_at: str) -> int | None:
-    """Seconds since ``measured_at`` ISO timestamp. None on parse failure."""
     if not measured_at:
         return None
     try:
@@ -796,11 +596,6 @@ def _age_s(measured_at: str) -> int | None:
 
 
 def _maybe_int(value: Any) -> int | None:
-    """Best-effort int coerce. Returns None for None / non-numeric values.
-
-    Used to read scalar knob values from CalibrationEntry.extra dicts,
-    which can carry arbitrary user-supplied JSON.
-    """
     if value is None:
         return None
     try:

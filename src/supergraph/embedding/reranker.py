@@ -1,10 +1,3 @@
-"""Pluggable reranker interface + implementations.
-
-Three backends:
-- FlashRankReranker: 22MB default model, no torch, CPU. Best for most users.
-- OnnxReranker: Any ONNX cross-encoder (GTE, BGE). For power users.
-- GGUFReranker: Jina Reranker v3 via llama-cpp-python. CUDA/Metal native.
-"""
 
 from __future__ import annotations
 
@@ -15,19 +8,12 @@ import numpy as np
 
 
 class Reranker(Protocol):
-    """Any reranker must implement score()."""
 
     def score(self, query: str, documents: list[str]) -> np.ndarray:
-        """Score query-document pairs. Returns array of relevance scores (higher = better)."""
         ...
 
 
 class FlashRankReranker:
-    """Tiny cross-encoder reranker via FlashRank.
-
-    Default model is 4MB (ms-marco-TinyBERT-L-2-v2). No torch required.
-    Install: pip install flashrank
-    """
 
     def __init__(self, model_name: str = "rank-T5-flan", max_length: int = 512):
         try:
@@ -50,12 +36,6 @@ class FlashRankReranker:
         passages = [{"id": i, "text": doc} for i, doc in enumerate(documents)]
         request = RerankRequest(query=query, passages=passages)
         results = self._ranker.rerank(request)
-        # Initialize with -inf so any doc flashrank filters (e.g. empty text
-        # after internal normalization) ranks strictly below legitimate hits.
-        # Pre-fix, dropped docs stayed at 0.0, which for a cross-encoder that
-        # produces small positive relevance scores is indistinguishable from
-        # "just not very relevant" (bug #72). Caller code downstream can now
-        # filter scores > -inf to identify the rerankable subset.
         scores = np.full(len(documents), -np.inf, dtype=np.float64)
         for r in results:
             scores[r["id"]] = r["score"]
@@ -63,11 +43,6 @@ class FlashRankReranker:
 
 
 class OnnxReranker:
-    """Cross-encoder reranker via ONNX Runtime.
-
-    Works with any cross-encoder model (GTE, BGE, Jina, etc.)
-    that takes (query, document) pairs and outputs relevance scores.
-    """
 
     def __init__(self, model_dir: str | Path, onnx_file: str = "onnx/model_int8.onnx", max_length: int = 512):
         try:
@@ -119,11 +94,6 @@ class OnnxReranker:
 
 
 class GGUFReranker:
-    """Late-interaction reranker via llama-cpp-python + projector MLP.
-
-    Designed for Jina Reranker v3: embed query and docs via GGUF model,
-    project through MLP, score by cosine similarity. Native CUDA/Metal.
-    """
 
     def __init__(self, model_path: str, projector_path: str | None = None,
                  n_ctx: int | None = None, n_gpu_layers: int = -1):
@@ -135,16 +105,12 @@ class GGUFReranker:
                 "Install with: pip install llama-cpp-python"
             ) from e
 
-        # 1. Metadata-only pass to extract native n_ctx
         temp_model = Llama(model_path=model_path, n_ctx=1, n_gpu_layers=0, verbose=False)
         native_ctx = int(temp_model.metadata.get("llama.context_length", 2048))
         del temp_model
 
-        # 2. Cap n_ctx to prevent massive VRAM allocation for KV cache
         actual_ctx = n_ctx if n_ctx is not None else min(native_ctx, 16384)
 
-        # n_batch controls compute buffer size. Cap at 2048 since we embed
-        # one document at a time.
         actual_batch = min(actual_ctx, 2048)
 
         self._model = Llama(
@@ -169,8 +135,6 @@ class GGUFReranker:
         if isinstance(texts, str):
             texts = [texts]
 
-        # Use llama-cpp-python's internal batching if supported, else loop
-        # and unit-normalize for cosine similarity MaxSim math.
         results = []
         for t in texts:
             e = self._model.embed(t)
@@ -181,12 +145,10 @@ class GGUFReranker:
                 emb = emb[0]
 
             if self._proj_w1 is not None:
-                # Apply Jina projection [seq, 1024] @ [1024, 1024]
                 emb = emb @ self._proj_w1.T
-                emb = np.maximum(emb, 0)  # ReLU
+                emb = np.maximum(emb, 0)
                 emb = emb @ self._proj_w2.T
 
-            # Unit-normalize for MaxSim cosine similarity math
             norms = np.linalg.norm(emb, axis=1, keepdims=True)
             norms[norms == 0] = 1.0
             results.append(emb / norms)
@@ -198,20 +160,14 @@ class GGUFReranker:
         if not documents:
             return np.empty(0, dtype=np.float64)
 
-        # q_emb: [Q_len, dims]
         q_emb = self._embed_and_project(query)[0]
         
-        # Optimize: embed documents in batches to allow llama-cpp to parallelize prefill
         d_embs = self._embed_and_project(documents)
         
         scores = np.zeros(len(documents), dtype=np.float64)
         for i, d_emb in enumerate(d_embs):
-            # MaxSim Operator: sum(max(cosine_sim(q_tokens, d_tokens)))
-            # 1. Compute similarity matrix [Q_len, D_len]
             sim_matrix = q_emb @ d_emb.T
-            # 2. Max across document tokens for each query token
             max_sims = np.max(sim_matrix, axis=1)
-            # 3. Sum of max similarities
             scores[i] = float(np.sum(max_sims))
             
         return scores

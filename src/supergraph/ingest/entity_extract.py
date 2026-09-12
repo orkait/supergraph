@@ -1,4 +1,3 @@
-"""Entity extraction with ONNX TinyBERT NER + co-reference resolution."""
 from __future__ import annotations
 
 import hashlib
@@ -15,9 +14,6 @@ _SLUG_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
 
 def slug(text: str) -> str:
-    """Create a URL-safe slug. Appends a short hash suffix when truncated
-    so distinct long names don't silently collide.
-    """
     base = _SLUG_RE.sub("_", text.lower()).strip("_")
     if len(base) <= 40:
         return base
@@ -41,7 +37,6 @@ class Entity:
 
 
 class CoReferenceResolver:
-    """Resolve pronouns to the most recently mentioned named entity."""
 
     def __init__(self):
         self._current_context: str | None = None
@@ -51,7 +46,6 @@ class CoReferenceResolver:
             self._current_context = entity_name
 
     def resolve(self, sentence: str) -> list[str]:
-        """Return resolved named entity if pronouns found, else empty list."""
         if not self._current_context:
             return []
         words = re.findall(r'\b\w+\b', sentence.lower())
@@ -65,10 +59,6 @@ _extractors: dict[tuple, Any] = {}
 
 
 def _get_extractor(model_dir: str | Path, max_length: int):
-    # Key includes max_length so two callers with the same model but
-    # different max_length don't share an extractor with the wrong
-    # tokenizer truncation limit (bug #61). Pre-fix, only the path was
-    # used, silently returning the first-initialized instance.
     key = (str(model_dir), int(max_length))
     if key not in _extractors:
         try:
@@ -148,7 +138,6 @@ def _get_extractor(model_dir: str | Path, max_length: int):
 def _decode_entities(text: str, offsets: list[tuple[int, int]],
                      labels: list[str], scores: np.ndarray,
                      score_threshold: float) -> list[Entity]:
-    """Decode token-level BIO labels into entity spans."""
     out: list[Entity] = []
     current_start: int | None = None
     current_end: int | None = None
@@ -199,7 +188,6 @@ def _decode_entities(text: str, offsets: list[tuple[int, int]],
 def extract_batch(texts: list[str], model_dir: str | Path | None = None,
                   score_threshold: float = 0.6,
                   max_length: int = 256) -> list[list[Entity]]:
-    """Extract named entities from multiple texts using ONNX TinyBERT NER."""
     if not texts:
         return []
     if model_dir is None:
@@ -208,7 +196,6 @@ def extract_batch(texts: list[str], model_dir: str | Path | None = None,
     extractor = _get_extractor(model_dir, max_length)
     encodings = [extractor["tokenizer"].encode(t) for t in texts]
     
-    # Simple padding
     max_len = max(len(e.ids) for e in encodings)
     input_ids = []
     attention_mask = []
@@ -232,7 +219,6 @@ def extract_batch(texts: list[str], model_dir: str | Path | None = None,
     
     results = []
     for i, logits in enumerate(all_logits):
-        # Softmax
         x = logits[:len(encodings[i].ids)] - np.max(logits[:len(encodings[i].ids)], axis=-1, keepdims=True)
         exp_x = np.exp(x)
         probs = exp_x / np.sum(exp_x, axis=-1, keepdims=True)
@@ -248,10 +234,5 @@ def extract_batch(texts: list[str], model_dir: str | Path | None = None,
 def extract_entities(text: str, model_dir: str | Path | None = None,
                      score_threshold: float = 0.6,
                      max_length: int = 256) -> list[Entity]:
-    """Extract named entities from text using ONNX TinyBERT NER.
-
-    Returns list of Entity dataclasses sorted by position in text.
-    Returns empty list if text is empty or no model_dir provided.
-    """
     res = extract_batch([text], model_dir, score_threshold, max_length)
     return res[0] if res else []

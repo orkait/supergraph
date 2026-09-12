@@ -1,17 +1,3 @@
-"""System DSL executor.
-
-Composes SYS* handler mixins from ``supergraph.dsl.sys``. Each mixin
-self-registers its methods via ``@handles_sys(AstType)`` at import time;
-dispatch is a plain dict lookup against ``SYS_DISPATCH``.
-
-Handler bodies live in the domain mixins:
-    sys/queries.py    read-only diagnostics (stats, kinds, describe, ...)
-    sys/schema.py     register / unregister node/edge kinds
-    sys/lifecycle.py  checkpoint, rebuild, snapshot, rollback, optimize, ...
-    sys/pipeline.py   connect, consolidate, reembed, embedders, duplicates
-    sys/cron.py       cron rule management
-    sys/evolve.py     metacognitive evolution rule management
-"""
 
 import time
 
@@ -38,9 +24,6 @@ class SystemExecutor(
     SysCronHandlers,
     SysEvolveHandlers,
 ):
-    """Executes SYS* commands. Owns no state - delegates to the mixins
-    which read runtime state through the shared RuntimeState container.
-    """
 
     def __init__(
         self,
@@ -58,10 +41,6 @@ class SystemExecutor(
         self._duplicate_threshold_override: float | None = None
         self._protected_kinds: set[str] | None = None
         self._wal_manager = None
-        # Back-reference to the main Executor. Wired by SuperGraph at
-        # construction time. Needed so SYS handlers that dry-run user
-        # queries (e.g. SYS EXPLAIN REMEMBER) can reach the user-query
-        # handlers and their configured state (embedder, weights, ...).
         self._executor = None
 
     @property

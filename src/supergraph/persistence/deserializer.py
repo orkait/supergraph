@@ -1,9 +1,3 @@
-"""Deserialize a CoreStore + SchemaRegistry from sqlite.
-
-load() reads the full graph state from the blobs and metadata tables,
-reconstructing the in-memory CoreStore with arrays, edge matrices,
-secondary indices, and tombstones.
-"""
 
 import os
 from pathlib import Path
@@ -20,51 +14,34 @@ from supergraph.core.errors import VersionMismatch
 
 
 def load(conn, use_compression: bool = False, db_path: str | Path | None = None) -> tuple[CoreStore, SchemaRegistry]:
-    """Load graph from sqlite. Returns (store, schema).
-
-    Raises VersionMismatch if schema_version doesn't match.
-    Returns empty store if no data found.
-    """
-    # Check version
     row = conn.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
     if row is None:
-        # Fresh database, return empty store
         return CoreStore(use_compression=use_compression), SchemaRegistry()
 
     if int(row[0]) != SCHEMA_VERSION:
         raise VersionMismatch(found=row[0], expected=SCHEMA_VERSION)
 
-    # Load string table
     strings_row = conn.execute("SELECT data FROM blobs WHERE key='strings'").fetchone()
     if strings_row is None:
         return CoreStore(use_compression=use_compression), SchemaRegistry()
 
     string_table = StringTable.from_list(mjson.decode(strings_row[0]))
 
-    # Load store metadata. Missing row means corrupted / partially-written
-    # database - fall back to empty store rather than surfacing
-    # `TypeError: 'NoneType' object is not subscriptable`.
     meta_row = conn.execute("SELECT data FROM blobs WHERE key='store_meta'").fetchone()
     if meta_row is None:
         return CoreStore(use_compression=use_compression), SchemaRegistry()
     meta = mjson.decode(meta_row[0])
 
-    # Create store and set its internals
     store = CoreStore(use_compression=use_compression)
     store.string_table = string_table
     store.columns._string_table = string_table
     store._next_slot = meta["next_slot"]
     store._count = meta["count"]
 
-    # Ensure capacity
     capacity = meta.get("capacity", max(meta["next_slot"] * 2, 1024))
     store._capacity = capacity
     store.columns._capacity = capacity
 
-    # Load node arrays. Each blob is required once store_meta exists - a
-    # checkpoint writes them in a single transaction. If any are missing we
-    # refuse to half-load: bail to empty so the caller hits NodeNotFound
-    # instead of a silent zero-length array shadowing real data.
     ids_row = conn.execute("SELECT data, dtype FROM blobs WHERE key='node_ids'").fetchone()
     kinds_row = conn.execute("SELECT data, dtype FROM blobs WHERE key='node_kinds'").fetchone()
     tomb_row = conn.execute("SELECT data FROM blobs WHERE key='tombstones'").fetchone()
@@ -81,8 +58,6 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
 
     store.node_tombstones = set(mjson.decode(tomb_row[0]))
 
-    # Rebuild id_to_slot from node_ids array. Single vectorised filter
-    # instead of a Python loop over every slot.
     n = store._next_slot
     ids = store.node_ids[:n]
     live = ids >= 0
@@ -95,22 +70,14 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
     store.id_to_slot = dict(zip(ids[live_slots].astype(int).tolist(),
                                 live_slots.astype(int).tolist()))
 
-    # Load raw edge lists
     store._edges_by_type = {}
     edge_rows = conn.execute(
         "SELECT key, data FROM blobs WHERE key LIKE 'raw_edges:%'"
     ).fetchall()
     for key, data in edge_rows:
-        # Symmetric unquote — see serializer for why etypes are URL-quoted
-        # on write (bug #7). Legacy databases that wrote unquoted etypes
-        # still decode correctly because alnum characters are unaffected
-        # by quote/unquote round-tripping.
         etype = unquote(key[len("raw_edges:"):])
-        # mjson.decode returns tuples as lists; wrap to tuples in one shot.
-        # Previously did a per-edge generator + tuple repack.
         store._edges_by_type[etype] = [tuple(e) for e in mjson.decode(data)]
 
-    # Rebuild edge keys set and edge matrices
     store._edge_keys = {
         (s, t, k)
         for k, edges in store._edges_by_type.items()
@@ -118,11 +85,9 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
     }
     store._rebuild_edges()
 
-    # Load indexed field names (indices rebuilt after columns are loaded)
     idx_row = conn.execute("SELECT data FROM blobs WHERE key='indexed_fields'").fetchone()
     indexed_fields = mjson.decode(idx_row[0]) if idx_row else []
 
-    # Load column store data
     col_rows = conn.execute(
         "SELECT key, data, dtype FROM blobs WHERE key LIKE 'columns:%'"
     ).fetchall()
@@ -156,12 +121,10 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
 
                 store.columns._dtypes[field_name] = col_dtype_str
 
-    # Rebuild secondary indices now that columns are loaded
     if idx_row:
         for field in indexed_fields:
             store.add_index(field)
 
-    # Load vector index if present
     dims_row = conn.execute("SELECT data FROM blobs WHERE key='vector_dims'").fetchone()
     if dims_row:
         from supergraph.vector.store import VectorStore
@@ -177,7 +140,6 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
         if index_row:
             data, dtype = index_row
             if dtype == "marker" and data == b"FILE_BASED":
-                # Handled by __init__(path=...) above
                 pass
             else:
                 store.vectors.load(data)
@@ -189,7 +151,6 @@ def load(conn, use_compression: bool = False, db_path: str | Path | None = None)
     else:
         store.vectors = None
 
-    # Load schema
     schema = SchemaRegistry()
     schema_row = conn.execute("SELECT data FROM blobs WHERE key='schema'").fetchone()
     if schema_row:

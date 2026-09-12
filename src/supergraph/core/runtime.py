@@ -1,12 +1,3 @@
-"""RuntimeState: single mutable container for shared component refs.
-
-SuperGraph owns one RuntimeState. All components that need references
-to store / schema / vector_store / document_store / embedder / conn
-take the same RuntimeState instance in their constructor and read
-those fields as properties. reset_memory() and lazy vector-store init
-mutate the container directly; every component sees the new ref
-through its shared reference.
-"""
 
 from __future__ import annotations
 

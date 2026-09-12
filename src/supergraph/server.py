@@ -1,4 +1,3 @@
-"""FastAPI server for the supergraph playground."""
 
 from __future__ import annotations
 
@@ -37,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Auth + Rate Limiting Middleware ---
 
 _AUTH_TOKEN = os.environ.get("SUPERGRAPH_AUTH_TOKEN")
 _RATE_LIMIT_RPM = int(os.environ.get("SUPERGRAPH_RATE_LIMIT_RPM", "120"))
@@ -47,7 +45,6 @@ _rate_cleanup_counter = 0
 
 
 def _check_rate_limit(client_ip: str) -> bool:
-    """Returns True if request is allowed."""
     global _rate_cleanup_counter
     now = _time.time()
     window = float(_RATE_LIMIT_WINDOW)
@@ -87,10 +84,6 @@ async def auth_and_rate_limit(request: Request, call_next):
     return await call_next(request)
 
 
-# ---------------------------------------------------------------------------
-# Module-level store (created lazily)
-# ---------------------------------------------------------------------------
-
 _store: SuperGraph | None = None
 
 
@@ -107,22 +100,11 @@ def _get_store() -> SuperGraph:
             kwargs["config_path"] = config_path
         if ingest_root:
             kwargs["ingest_root"] = ingest_root
-        # SUPERGRAPH_NER falsy -> entity_model_dir=None, skips the NER extractor.
         if os.environ.get("SUPERGRAPH_NER", "1").strip().lower() in ("0", "false", "off", "no"):
             kwargs["entity_model_dir"] = None
-        # FastAPI serves these sync endpoints from a threadpool, so multiple
-        # requests can hit this shared store concurrently. The storage engine
-        # is single-writer - concurrent writers corrupt node_count / id_to_slot
-        # and crash ColumnStore._grow. queued=True serializes execute() through
-        # one worker, making the shared instance safe across request threads.
         kwargs["queued"] = True
         _store = SuperGraph(**kwargs)
     return _store
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _result_payload(result) -> dict[str, Any]:
@@ -136,11 +118,6 @@ def _result_payload(result) -> dict[str, Any]:
 
 def _json_bytes_response(payload: Any) -> Response:
     return Response(content=encode_json(payload), media_type="application/json")
-
-
-# ---------------------------------------------------------------------------
-# Request / response models
-# ---------------------------------------------------------------------------
 
 
 class ExecuteRequest(BaseModel):
@@ -176,17 +153,12 @@ class MediaIngestRequest(BaseModel):
     models: list[str] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Input validation
-# ---------------------------------------------------------------------------
-
 _MAX_QUERY_LENGTH = int(os.environ.get("SUPERGRAPH_MAX_QUERY_LENGTH", "10000"))
 _MAX_BATCH_SIZE = int(os.environ.get("SUPERGRAPH_MAX_BATCH_SIZE", "1000"))
 _RATE_LIMIT_WINDOW = int(os.environ.get("SUPERGRAPH_RATE_LIMIT_WINDOW", "60"))
 
 
 def _validate_query(query: str) -> str | None:
-    """Validate query input. Returns error message or None if valid."""
     if not query or not query.strip():
         return "Empty query"
     if len(query) > _MAX_QUERY_LENGTH:
@@ -194,11 +166,6 @@ def _validate_query(query: str) -> str | None:
     if "\x00" in query:
         return "Query contains null bytes"
     return None
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
 
 
 @app.post("/api/execute")
@@ -210,12 +177,6 @@ def execute(req: ExecuteRequest):
     try:
         result = store.execute(req.query, namespace=req.namespace)
     except Exception as exc:
-        # Catch all exceptions (including ValueError, KeyError, etc.) and
-        # return them as soft 200 errors. Pre-fix only SuperGraphError was
-        # caught, so a programmer bug anywhere in the executor surfaced as
-        # an HTTP 500 with a stack trace leaked to the client, and in
-        # batch mode caused the whole batch to abort (bug #80). Logging
-        # here gives us the observability we used to get from the 500.
         import logging
         logging.getLogger(__name__).warning(
             "execute: %s: %s", type(exc).__name__, exc,
@@ -245,8 +206,6 @@ def execute_batch(req: BatchRequest):
             r = store.execute(q, namespace=req.namespace)
             results.append(_result_payload(r))
         except Exception as exc:
-            # Same widening as /api/execute — a single unexpected error
-            # shouldn't abort the remaining queries in the batch.
             _logging.getLogger(__name__).warning(
                 "execute-batch: %s: %s", type(exc).__name__, exc,
             )
@@ -260,8 +219,6 @@ def execute_batch(req: BatchRequest):
 
 
 def _detect_cpu_quota() -> int:
-    """Effective CPU count from the cgroup CFS quota (cgroup v2 then v1), falling
-    back to affinity/cpu_count. Quota reflects the real limit; affinity sees host cores."""
     try:
         with open("/sys/fs/cgroup/cpu.max") as f:
             quota, period = f.read().split()
@@ -287,9 +244,6 @@ _bonsai_lock = threading.Lock()
 
 
 def _get_bonsai():
-    """Lazily build a CPU BonsaiIngestor (n_gpu_layers=0) from
-    SUPERGRAPH_BONSAI_GGUF. Bypasses the CUDA-gated pro resolver, which refuses
-    to build on a host without a GPU - Bonsai itself runs fine on CPU."""
     global _bonsai
     if _bonsai is None:
         with _bonsai_lock:
@@ -304,10 +258,6 @@ def _get_bonsai():
                 if threads_env:
                     n_threads = int(threads_env)
                 else:
-                    # Use the cgroup CFS quota, not the visible core count. llama.cpp's
-                    # default (and sched_getaffinity) read HOST cores, which massively
-                    # oversubscribes a quota-limited container (e.g. Railway: 24 vCPU
-                    # quota on a 48-core host). Reserve one only when there's headroom.
                     avail = _detect_cpu_quota()
                     n_threads = avail - 1 if avail > 2 else avail
                     n_threads = max(1, n_threads)
@@ -323,20 +273,6 @@ def _get_bonsai():
 
 @app.post("/api/ingest")
 def ingest(req: NLIngestRequest):
-    """Natural-language -> DSL, routed by ``config.ingest.nl_backend``.
-
-    ``"cloud"`` runs the litellm multi-provider CloudIngestor (PR #198/#201);
-    anything else falls back to the local Ternary-Bonsai GGUF. The backend is
-    env-driven - ``SUPERGRAPH_INGEST_NL_BACKEND=cloud`` - so the same image
-    serves both without a code change.
-
-    Pre-fix this endpoint called Bonsai unconditionally, which meant the
-    [cloud-cpu] image (no GGUF by design) could only reach NL ingestion
-    in-process or via MCP. HTTP is the only surface a deployed supergraph
-    exposes, so on Railway that left NL ingest unreachable entirely.
-
-    ``dry_run=True`` returns the synthesized DSL without writing.
-    """
     import logging
     import uuid
     store = _get_store()
@@ -374,8 +310,6 @@ def ingest(req: NLIngestRequest):
     except Exception:
         payload = {k: getattr(result, k) for k in ("statements", "executed", "parsed", "rejected")
                    if hasattr(result, k)}
-    # Which engine ran is not otherwise visible in the response, and the two
-    # produce different rejection profiles - worth one key to avoid guessing.
     return _json_bytes_response({
         "kind": "ingest", "data": payload, "backend": backend or "local",
     })
@@ -390,9 +324,6 @@ def _dsl_str(value: str) -> str:
 
 @app.post("/api/ingest-media")
 def ingest_media(req: MediaIngestRequest):
-    """Understand media (image/audio) into descriptive text via a cloud multimodal
-    model, then store it as an embedded DOCUMENT - so it is searchable like any
-    other memory. supergraph owns the understanding; callers just hand over bytes."""
     import base64
     import logging
 
@@ -436,8 +367,6 @@ def get_graph():
 
 @app.post("/api/reset")
 def reset():
-    """Reset the in-memory graph. For persistent DBs, wipes memory and WAL
-    but preserves the script metadata so Run All can repopulate cleanly."""
     store = _get_store()
     store.reset_store(preserve_config=True)
     return {"ok": True}
@@ -482,7 +411,6 @@ def get_logs(
     trace_id: str | None = None,
     since: str | None = None,
 ):
-    """Query the enriched query log."""
     store = _get_store()
     conn = store._conn
     if conn is None:
@@ -524,13 +452,7 @@ def get_logs(
     ]
 
 
-# ---------------------------------------------------------------------------
-# Static files helper
-# ---------------------------------------------------------------------------
-
-
 def mount_static(application: FastAPI, path: str | Path) -> None:
-    """Mount a StaticFiles directory on / if it exists."""
     p = Path(path)
     if p.is_dir():
         application.mount(

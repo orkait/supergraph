@@ -1,17 +1,9 @@
-"""Provider-prefix model resolution for cloud NL ingestion.
-
-Ports zerocostllm's resolve_model + free-first ordering, kept self-contained
-(reads os.environ directly, no tools/ or repo-root env.py dependency) so it
-works from an installed wheel. Turns a provider-prefixed model id into the
-call kwargs LLMRunner needs, and builds an ordered free-first provider chain.
-"""
 from __future__ import annotations
 
 import os
 
 OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
 
-# OpenAI/Anthropic names route to free equivalents. Override via IngestConfig.
 DEFAULT_ALIASES: dict[str, str] = {
     "gpt-4": "groq/llama-3.3-70b-versatile",
     "gpt-4o": "groq/llama-3.3-70b-versatile",
@@ -21,7 +13,6 @@ DEFAULT_ALIASES: dict[str, str] = {
     "claude-3-5-haiku": "groq/llama-3.1-8b-instant",
 }
 
-# Free-tier-first default candidate chain (provider-prefixed ids).
 DEFAULT_FREE_FIRST_CHAIN: list[str] = [
     "groq/llama-3.3-70b-versatile",
     "cerebras/llama-3.3-70b",
@@ -34,11 +25,6 @@ _FREE_PREFIXES = ("groq/", "cerebras/", "cloudflare/", "aistudio/")
 
 
 def resolve_model(model_id: str, aliases: dict[str, str] | None = None) -> dict:
-    """Resolve a provider-prefixed model id to litellm call kwargs.
-
-    Returns {litellm_model, api_base, api_key, [account_id]}. api_key may be
-    "" when the provider env var is unset; build_provider_chain drops those.
-    """
     aliases = aliases if aliases is not None else DEFAULT_ALIASES
     model_id = aliases.get(model_id, model_id)
 
@@ -80,12 +66,6 @@ def build_provider_chain(
     free_first: bool = True,
     aliases: dict[str, str] | None = None,
 ) -> list[dict]:
-    """Map model ids to LLMRunner provider dicts.
-
-    Drops entries whose provider has no API key set. With free_first, stable-
-    sorts free-prefixed providers ahead of paid ones (preserving input order
-    within each group). Cloudflare entries also carry account_id.
-    """
     ordered = list(models)
     if free_first:
         ordered = sorted(

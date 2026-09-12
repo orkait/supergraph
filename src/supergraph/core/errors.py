@@ -1,12 +1,10 @@
-"""Exception hierarchy for supergraph."""
 
 
 class SuperGraphError(Exception):
-    """Base exception for all supergraph errors."""
+    pass
 
 
 class QueryError(SuperGraphError):
-    """DSL parse or validation failure."""
 
     def __init__(self, message: str, position: int = -1, query: str = "") -> None:
         self.message = message
@@ -24,7 +22,6 @@ class QueryError(SuperGraphError):
 
 
 class NodeNotFound(SuperGraphError):
-    """UPDATE/INCREMENT on a node that does not exist."""
 
     def __init__(self, id: str) -> None:
         self.id = id
@@ -32,7 +29,6 @@ class NodeNotFound(SuperGraphError):
 
 
 class NodeExists(SuperGraphError):
-    """CREATE on a node that already exists."""
 
     def __init__(self, id: str) -> None:
         self.id = id
@@ -40,7 +36,6 @@ class NodeExists(SuperGraphError):
 
 
 class CeilingExceeded(SuperGraphError):
-    """Memory ceiling has been exceeded."""
 
     def __init__(self, current_mb: int, ceiling_mb: int, operation: str) -> None:
         self.current_mb = current_mb
@@ -53,7 +48,6 @@ class CeilingExceeded(SuperGraphError):
 
 
 class VersionMismatch(SuperGraphError):
-    """Store version does not match expected version."""
 
     def __init__(self, found: str | None, expected: int) -> None:
         self.found = found
@@ -64,7 +58,6 @@ class VersionMismatch(SuperGraphError):
 
 
 class SchemaError(SuperGraphError):
-    """Write violates a registered schema."""
 
     def __init__(self, message: str) -> None:
         self.message = message
@@ -72,12 +65,10 @@ class SchemaError(SuperGraphError):
 
 
 class AggregationError(SchemaError):
-    """Aggregation requires columnarized fields."""
     pass
 
 
 class CostThresholdExceeded(SuperGraphError):
-    """MATCH/TRAVERSE estimated cost exceeds threshold."""
 
     def __init__(self, estimated_frontier: float, threshold: float) -> None:
         self.estimated_frontier = estimated_frontier
@@ -89,7 +80,6 @@ class CostThresholdExceeded(SuperGraphError):
 
 
 class BatchRollback(SuperGraphError):
-    """A statement within BEGIN/COMMIT failed, triggering rollback."""
 
     def __init__(self, failed_statement: str, error: str) -> None:
         self.failed_statement = failed_statement
@@ -100,34 +90,24 @@ class BatchRollback(SuperGraphError):
 
 
 class VectorError(SuperGraphError):
-    """Vector operation failure."""
     pass
 
 
 class EmbedderRequired(VectorError):
-    """Text-based SIMILAR TO requires an embedder."""
     pass
 
 
 class VectorNotFound(VectorError):
-    """Node has no stored vector."""
     pass
 
 
 class OptimizationInProgress(SuperGraphError):
-    """Operation rejected because self-balancing is in progress."""
 
     def __init__(self) -> None:
         super().__init__("Self-balance in progress. Retry after optimization completes.")
 
 
 class StoreInUse(SuperGraphError):
-    """Raised when another process holds the path lock for this database.
-
-    SuperGraph stores are single-owner - SQLite WAL mode allows concurrent
-    readers but the compact/snapshot/WAL-replay paths aren't cross-process
-    safe. Close the other owner, or point this instance at a different path.
-    """
 
     def __init__(self, lock_path: str) -> None:
         super().__init__(

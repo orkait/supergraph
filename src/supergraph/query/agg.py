@@ -1,32 +1,3 @@
-"""Typed aggregate functions for AGGREGATE NODES SELECT + HAVING.
-
-Grammar:
-  agg_func:     "COUNT" "(" ")"                    -> agg_count
-             | "COUNT" "DISTINCT" "(" IDENT ")"     -> agg_count_distinct
-             | "SUM" "(" IDENT ")"                  -> agg_sum
-             | "AVG" "(" IDENT ")"                  -> agg_avg
-             | "MIN" "(" IDENT ")"                  -> agg_min
-             | "MAX" "(" IDENT ")"                  -> agg_max
-  having_expr:  agg_func OP value
-
-Typed API:
-
-  from supergraph.query import agg
-
-  agg.count()                     -> COUNT()
-  agg.count_distinct("topic")     -> COUNT DISTINCT(topic)
-  agg.sum("importance")           -> SUM(importance)
-  agg.avg("importance")
-  agg.min("x") / agg.max("x")
-
-Comparison operators build a HavingExpr:
-
-  agg.avg("importance") > 0.5     -> AVG(importance) > 0.5
-  agg.count() >= 10
-
-  q.aggregate_nodes(select=[agg.count(), agg.avg("importance")],
-                    having=agg.avg("importance") > 0.5)
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -37,9 +8,8 @@ from supergraph.query.escape import dsl_identifier, dsl_literal
 
 @dataclass(frozen=True, slots=True)
 class AggFunc:
-    """Typed agg_func. Used both inside SELECT lists and HAVING expressions."""
-    kind: str           # "count" | "count_distinct" | "sum" | "avg" | "min" | "max"
-    field: str | None   # None only for count()
+    kind: str
+    field: str | None
 
     def to_dsl(self) -> str:
         if self.kind == "count":
@@ -52,7 +22,6 @@ class AggFunc:
     def __str__(self) -> str:
         return self.to_dsl()
 
-    # -- HAVING expression builders via comparison operators --
 
     def _having(self, op: str, value: Any) -> "HavingExpr":
         return HavingExpr(self, op, value)

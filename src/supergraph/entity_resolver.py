@@ -1,12 +1,3 @@
-"""Entity resolution: mention vs identity.
-
-Resolver returns the entity_id a new mention should attach to.
-Algorithm: filter existing entities by case-folded name match; with one
-candidate link unambiguously; with several, pick the embedding-closest
-context above ``threshold_high`` else mint a new entity. False-merge
-is unrecoverable, false-split is reversible via MERGE - thus the
-conservative threshold.
-"""
 from __future__ import annotations
 
 import logging
@@ -19,24 +10,12 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
-# Process-global lock around the resolve -> caller-materializes window.
-# Resolver itself is read-only, but its return value drives a CREATE NODE
-# in the caller. Without serialization, two threads ingesting the same
-# name in parallel both observe "no candidates", both mint fresh entity
-# ids, and both succeed in writing - producing N entities where 1 was
-# intended.
 _RESOLVER_LOCK = threading.Lock()
 
-# In-memory cache: normalize_name -> entity_id, populated by
-# resolve_and_create_entity when it confidently links or creates.
-# Bypasses any read-after-write visibility lag between the CREATE NODE
-# we just wrote and the NODES WHERE query the next call would issue.
-# Invalidated only on explicit reset_for_tests().
 _NAME_TO_ENTITY_CACHE: dict[str, str] = {}
 
 
 def reset_resolver_cache_for_tests() -> None:
-    """Test-only: drop the name -> entity_id cache."""
     _NAME_TO_ENTITY_CACHE.clear()
 
 DEFAULT_HIGH_THRESHOLD = 0.85
@@ -48,8 +27,6 @@ EDGE_REFERS_TO = "refers_to"
 
 @dataclass(frozen=True)
 class ResolvedMention:
-    """Caller materializes the mention node, the entity node when
-    ``is_new_entity``, and the refers_to edge with ``confidence``."""
 
     entity_id: str
     confidence: float
@@ -63,10 +40,6 @@ _NAME_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
 
 
 def normalize_name(name: str) -> str:
-    """Case-fold + strip non-alphanumerics. NFKD-decompose first so the
-    same letter under different Unicode encodings (NFC "Müller" vs NFD
-    "Müller") collapses to the same key - otherwise text from
-    different sources splits the same canonical name."""
     decomposed = unicodedata.normalize("NFKD", name).lower()
     return _NAME_NORMALIZE_RE.sub("", decomposed)
 
@@ -79,15 +52,6 @@ _CANONICAL_ENTITY_PREFIX = "entity:"
 
 
 def _candidates_by_name(gs: Any, surface_name: str) -> list[dict]:
-    """Pre-filter entity candidates by exact normalized-name match.
-
-    Restricted to nodes whose id starts with ``entity:`` (this resolver's
-    canonical-form id) so the deterministic NER pipeline's ``ent:slug``
-    auto-extracted entity nodes do not pollute the candidate set.
-    Without this filter, every ingest with NER enabled creates a parallel
-    same-name entity that triggers the disambiguation branch and forces
-    false-splits.
-    """
     target = normalize_name(surface_name)
     if not target:
         return []
@@ -147,7 +111,6 @@ def resolve_mention(
     context: str,
     threshold_high: float = DEFAULT_HIGH_THRESHOLD,
 ) -> ResolvedMention:
-    """Pure read. Caller materializes mention/entity/edge per the result."""
     notes: list[str] = []
 
     candidates = _candidates_by_name(gs, surface_name)
@@ -175,8 +138,6 @@ def resolve_mention(
 
     new_vec = _embed_text(gs, f"{surface_name}. {context}")
     if new_vec is None:
-        # No embedder available - fall back to most-mentioned candidate
-        # to bias toward consolidation rather than fragmentation.
         notes.append("no embedder; falling back to most-mentioned entity")
         best = max(candidates,
                    key=lambda n: int(n.get("mention_count", 0)))
@@ -218,7 +179,6 @@ def resolve_mention(
             ],
         )
 
-    # Below threshold: mint new. False-merge is unrecoverable.
     return ResolvedMention(
         entity_id=make_entity_id(),
         confidence=1.0,
@@ -233,7 +193,6 @@ def resolve_mention(
 
 
 def make_mention_id(msg_id: str, slug: str, occurrence: int = 0) -> str:
-    """Idempotent location-keyed id: ``mention:{msg}:{slug}:{n}``."""
     return f"mention:{msg_id}:{slug}:{occurrence}"
 
 
@@ -243,24 +202,7 @@ def resolve_and_create_entity(
     context: str,
     threshold_high: float = DEFAULT_HIGH_THRESHOLD,
 ) -> tuple[str, float, bool]:
-    """Atomic resolve + (conditional) CREATE NODE under a process lock.
-
-    Returns ``(entity_id, confidence, was_new)``. When ``was_new`` is
-    True the entity node has already been written to ``gs``; the caller
-    only emits the mention + refers_to edge.
-
-    The lock closes the race in which two threads ingesting the same
-    name observe zero candidates concurrently and both mint a fresh
-    entity. With this wrapper the second thread sees the first's
-    entity inside its own resolve() call.
-    """
     with _RESOLVER_LOCK:
-        # Cache hit short-circuits the whole pipeline. Two threads
-        # racing on the same name: first one resolves + writes +
-        # populates cache; second one reads cache + returns existing
-        # id without ever querying the graph. Closes the read-after-
-        # write visibility gap that caused 2-4 duplicate entities to
-        # leak in the 8-thread stress test.
         nkey = normalize_name(surface_name)
         cached = _NAME_TO_ENTITY_CACHE.get(nkey) if nkey else None
         if cached is not None:

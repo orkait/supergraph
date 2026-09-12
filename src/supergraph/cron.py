@@ -1,9 +1,3 @@
-"""Persistent CRON scheduler for SuperGraph.
-
-Registers DSL queries to run on cron schedules. Jobs persist in SQLite
-and survive restarts. Uses croniter for full cron expression support.
-Requires queued=True (submits via command queue).
-"""
 
 import time
 import threading
@@ -15,26 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 class CronScheduler:
-    """Persistent cron scheduler with daemon timer thread."""
 
     def __init__(self, conn: sqlite3.Connection | None, submit_fn):
-        # Main-thread connection. Used for add/remove/list operations that
-        # run synchronously from DSL dispatch.
         self._conn = conn
-        # Dedicated connection for the cron tick thread. Pre-fix, the tick
-        # thread shared self._conn with the main thread, which meant a
-        # cron UPDATE could finalize or abort an in-flight main-thread
-        # transaction because sqlite transaction state is per-connection,
-        # not per-thread (bug #76). We lazily open a separate connection
-        # when start() is called so the two threads never interleave
-        # writes on the same handle.
         self._tick_conn: sqlite3.Connection | None = None
         self._tick_db_path: str | None = None
         self._submit = submit_fn
         self._thread: threading.Thread | None = None
         self._running = False
-        # Capture the sqlite path now so the tick thread can open its own
-        # handle to the same database without having to share ``self._conn``.
         if conn is not None:
             try:
                 row = conn.execute("PRAGMA database_list").fetchone()
@@ -44,7 +26,6 @@ class CronScheduler:
                 logger.debug("CronScheduler: could not resolve db path: %s", e)
 
     def start(self) -> None:
-        """Start the cron timer thread. Idempotent - no-op if already running."""
         if self._conn is None:
             return
         if self._thread is not None and self._thread.is_alive():
@@ -56,7 +37,6 @@ class CronScheduler:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the cron timer thread. Idempotent."""
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=5)
@@ -69,7 +49,6 @@ class CronScheduler:
             self._tick_conn = None
 
     def add(self, name: str, schedule: str, query: str) -> dict:
-        """Register a cron job. Validates cron expression."""
         from croniter import croniter
         if not croniter.is_valid(schedule):
             raise ValueError(f"Invalid cron expression: {schedule!r}")
@@ -90,7 +69,6 @@ class CronScheduler:
         return {"name": name, "schedule": schedule, "query": query, "next_run": next_run}
 
     def delete(self, name: str) -> None:
-        """Remove a cron job."""
         conn = self._conn
         if conn is None:
             return
@@ -100,11 +78,9 @@ class CronScheduler:
             raise ValueError(f"Cron job not found: {name!r}")
 
     def enable(self, name: str) -> None:
-        """Enable a cron job."""
         self._set_enabled(name, 1)
 
     def disable(self, name: str) -> None:
-        """Disable a cron job."""
         self._set_enabled(name, 0)
 
     def _set_enabled(self, name: str, value: int) -> None:
@@ -119,7 +95,6 @@ class CronScheduler:
             raise ValueError(f"Cron job not found: {name!r}")
 
     def list_jobs(self) -> list[dict]:
-        """List all cron jobs."""
         conn = self._conn
         if conn is None:
             return []
@@ -138,7 +113,6 @@ class CronScheduler:
         ]
 
     def run_now(self, name: str) -> Future:
-        """Manually trigger a cron job. Returns Future."""
         conn = self._conn
         if conn is None:
             raise RuntimeError("CRON requires persistence")
@@ -153,12 +127,6 @@ class CronScheduler:
         return future
 
     def _tick_loop(self) -> None:
-        """Check every 60s for due jobs."""
-        # Open the dedicated tick-thread connection inside the thread body
-        # (sqlite3 connections are tied to the thread that opened them
-        # unless check_same_thread=False, which we pass explicitly). If we
-        # can't resolve the db path, fall back to the shared connection;
-        # the pre-fix behavior is preserved but logged.
         if self._tick_db_path is not None:
             try:
                 self._tick_conn = sqlite3.connect(
@@ -181,9 +149,6 @@ class CronScheduler:
                 time.sleep(1)
 
     def _tick(self) -> None:
-        """Find and submit all due jobs."""
-        # Prefer the dedicated tick connection so cron's transactions
-        # don't interleave with main-thread writes on the same handle.
         conn = self._tick_conn if self._tick_conn is not None else self._conn
         if conn is None:
             return
@@ -215,7 +180,6 @@ class CronScheduler:
                 conn.commit()
 
     def _on_done(self, future: Future, job_name: str) -> None:
-        """Callback after cron job completes."""
         exc = future.exception()
         if exc is not None:
             logger.warning("cron job %s failed: %s", job_name, exc)

@@ -1,4 +1,3 @@
-"""FastEmbed wrapper - Qdrant's lightweight ONNX embedder library."""
 
 import numpy as np
 
@@ -6,11 +5,6 @@ from supergraph.embedding.base import Embedder
 
 
 class FastEmbedEmbedder(Embedder):
-    """Wraps fastembed.TextEmbedding with supergraph's Embedder API.
-
-    Maps encode_queries -> query_embed and encode_documents -> passage_embed
-    so asymmetric models (e5, bge-*-en-v1.5) get the correct prefixes.
-    """
 
     def __init__(
         self,

@@ -1,16 +1,3 @@
-"""Time expression helpers.
-
-Grammar:
-  time_expr: "NOW" "(" ")" "-" NUMBER TIME_UNIT  -> time_offset
-           | "NOW" "(" ")"                       -> time_now
-           | "TODAY"                             -> time_today
-           | "YESTERDAY"                         -> time_yesterday
-  TIME_UNIT: /[smhd]/
-
-These appear as values inside WHERE expressions (e.g. ``kind = "m" AND
-__event_at__ > NOW() - 7d``) and in ASSERT's EVENT_AT / CREATE NODE's
-EVENT_AT slots.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +7,6 @@ from supergraph.query.escape import dsl_time_unit
 
 @dataclass(frozen=True, slots=True)
 class TimeExpr:
-    """Symbolic time. Compiles to a DSL value via ``.to_dsl()``."""
     text: str
 
     def to_dsl(self) -> str:

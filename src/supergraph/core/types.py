@@ -1,4 +1,3 @@
-"""Core types for supergraph query results and graph elements."""
 
 from dataclasses import dataclass, field
 from typing import Any, TypeAlias
@@ -34,16 +33,13 @@ class Edge:
 
 @dataclass(slots=True)
 class Result:
-    kind: str              # "node", "nodes", "edges", "path", "paths", "match",
-                           # "subgraph", "distance", "stats", "plan", "schema",
-                           # "log_entries", "ok", "error"
-    data: Any              # varies by kind
-    count: int             # number of items in data
-    elapsed_us: int = 0    # execution time in microseconds
-    meta: dict = field(default_factory=dict)  # evolution events, future extensions
+    kind: str
+    data: Any
+    count: int
+    elapsed_us: int = 0
+    meta: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        """JSON-serializable representation."""
         d = {
             "kind": self.kind,
             "data": self.data,
@@ -55,5 +51,4 @@ class Result:
         return d
 
     def to_json(self) -> str:
-        """Compact JSON string."""
         return encode_json(self.to_dict()).decode("utf-8")

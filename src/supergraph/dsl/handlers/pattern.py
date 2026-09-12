@@ -1,4 +1,3 @@
-"""MATCH pattern handlers."""
 
 import logging
 
@@ -12,10 +11,6 @@ from supergraph.dsl.cost_estimator import estimate_match_cost
 
 logger = logging.getLogger(__name__)
 
-# Default per-hop frontier ceiling applied when the query has no explicit
-# LIMIT. Previous behavior was a hardcoded 1000 that silently dropped bindings
-# past the cap (bug #43). 10_000 is conservative enough to avoid runaway
-# expansion while being 10x the previous silent cap.
 _DEFAULT_MATCH_FRONTIER_CAP = 10_000
 
 
@@ -29,11 +24,6 @@ class PatternHandlers:
         if cost.rejected:
             raise CostThresholdExceeded(cost.estimated_frontier, self.cost_threshold)
 
-        # Propagate the user's LIMIT down into expansion so the per-hop
-        # frontier cap is at least as generous. Callers that want more
-        # results get more results; callers that ask for few get expansion
-        # cut short early (saves work). When absent, fall back to the
-        # configured default.
         frontier_cap = (
             max(q.limit.value, _DEFAULT_MATCH_FRONTIER_CAP)
             if q.limit is not None
@@ -66,14 +56,6 @@ class PatternHandlers:
         pattern: MatchPattern,
         frontier_cap: int = _DEFAULT_MATCH_FRONTIER_CAP,
     ) -> tuple[list[dict], list[dict]]:
-        """Execute a MATCH pattern. Returns (bindings, edges).
-
-        Args:
-            frontier_cap: per-hop truncation threshold for the working
-                frontier. When exceeded, the frontier is trimmed to cap and
-                a warning is logged so callers aren't silently short-changed
-                on results (bug #43).
-        """
         steps = pattern.steps
         arrows = pattern.arrows
 
@@ -97,11 +79,10 @@ class PatternHandlers:
                     col_mask = self._try_column_filter(remaining, mask, n_total)
                     if col_mask is not None:
                         mask = col_mask
-                        remaining = None # fully handled
+                        remaining = None
             
             current_slots = np.where(mask)[0].tolist()
             if remaining:
-                # slow path fallback for remaining non-vectorizable filters
                 all_nodes = self.store._materialize_bulk(np.array(current_slots, dtype=np.int32))
                 filtered_slots = []
                 for i, node in enumerate(all_nodes):

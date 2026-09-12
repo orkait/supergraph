@@ -1,34 +1,3 @@
-"""Typed EVOLVE rule when/then constructors.
-
-Grammar:
-  evolve_when_clause:  "WHEN" evolve_condition ("AND" evolve_condition)*
-  evolve_condition:    IDENTIFIER EVOLVE_OP NUMBER
-  EVOLVE_OP:           ">=" | "<=" | "==" | "!=" | ">" | "<"
-
-  evolve_then_clause:  "THEN" evolve_action
-  evolve_action:       "SET" IDENT "=" evolve_value                    -> evolve_action_set
-                     | "ADJUST" IDENT "BY" NUMBER "UNTIL" NUMBER        -> evolve_action_adjust_until
-                     | "ADJUST" IDENT "BY" NUMBER                       -> evolve_action_adjust
-                     | "ADD" IDENT STRING                               -> evolve_action_add
-                     | "REMOVE" IDENT STRING                            -> evolve_action_remove
-                     | "RUN" IDENT+                                     -> evolve_action_run
-  evolve_value:        "[" NUMBER ("," NUMBER)* "]"                     -> evolve_value_list
-                     | NUMBER                                           -> evolve_value_scalar
-
-Typed API:
-
-  from supergraph.query import EvolveWhen as W, EvolveThen as A
-
-  q.sys.evolve.rule(
-      "r1",
-      when=[W.cond("recall_hit_rate", "<=", 0.4)],
-      then=[A.run("SYS", "REEMBED")],
-      cooldown=86400,
-  )
-
-Strings still accepted for backwards-compat; typed objects are the
-recommended path forward.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -56,9 +25,9 @@ class EvolveCondition:
 
 @dataclass(frozen=True, slots=True)
 class EvolveAction:
-    kind: str          # "set" | "adjust" | "adjust_until" | "add" | "remove" | "run"
+    kind: str
     target: str | None
-    value: Any         # meaning depends on kind
+    value: Any
 
     def to_dsl(self) -> str:
         if self.kind == "set":
@@ -73,7 +42,6 @@ class EvolveAction:
         if self.kind == "remove":
             return f"REMOVE {dsl_identifier(self.target)} {dsl_literal(self.value)}"
         if self.kind == "run":
-            # value is a tuple of IDENT tokens
             if not self.value:
                 raise ValueError("EvolveAction.run requires at least one identifier")
             return "RUN " + " ".join(dsl_identifier(i) for i in self.value)

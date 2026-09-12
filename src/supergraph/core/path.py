@@ -1,4 +1,3 @@
-"""Deprecation shim. Import from supergraph.algos.graph instead."""
 
 from supergraph.algos.graph import (
     bfs_traverse,

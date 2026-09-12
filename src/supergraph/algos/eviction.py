@@ -62,13 +62,6 @@ def rank_evictable_slots(
         return []
 
     if updated_at is not None and updated_at_present is not None:
-        # Rank slots by "oldest touch first". Slots without __updated_at__
-        # set (absent presence bit) previously got a product of 0 and sorted
-        # as the oldest — meaning "never updated" was treated as "oldest",
-        # which evicted fresh un-tagged nodes first (bug #98). We now treat
-        # a missing timestamp as +inf so those slots sort last, matching the
-        # intuitive "if we don't know when it was last touched, assume it's
-        # still relevant" default.
         live_ts = updated_at[live_slots].astype(np.float64, copy=True)
         live_pres = updated_at_present[live_slots].astype(bool)
         live_ts[~live_pres] = np.inf

@@ -1,10 +1,3 @@
-"""Memory accounting primitives.
-
-Pure size-estimation helpers for core + vector + document components.
-Callers pre-compute every size via sys.getsizeof and pass plain ints;
-this module only sums and returns. No supergraph imports, no runtime
-introspection.
-"""
 
 __all__ = [
     "BYTES_PER_NODE_DEFAULT",
@@ -36,7 +29,6 @@ def will_exceed_ceiling(
     bytes_per_node: int = BYTES_PER_NODE_DEFAULT,
     bytes_per_edge: int = BYTES_PER_EDGE_DEFAULT,
 ) -> tuple[bool, int]:
-    """Return (exceeds, current_mb) so the caller can raise with context."""
     projected = estimate_bytes(
         current_nodes + added_nodes,
         current_edges + added_edges,
@@ -61,7 +53,6 @@ def measure_components(
     id_to_slot_bytes: int,
     vector_store_bytes: int = 0,
 ) -> dict:
-    """Sum per-component memory footprint. Returns a breakdown dict."""
     report: dict = {
         "node_arrays": int(node_arrays_bytes),
         "columns": int(column_nbytes),

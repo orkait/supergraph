@@ -1,6 +1,3 @@
-"""Metacognitive evolution engine: agent-writable WHEN/THEN rules that tune
-the engine's own memory behavior during health-check cycles.
-"""
 
 import json
 import time
@@ -10,9 +7,6 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Validation registries
-# ---------------------------------------------------------------------------
 
 KNOWN_SIGNALS: frozenset = frozenset({
     "memory_pct",
@@ -30,7 +24,6 @@ KNOWN_SIGNALS: frozenset = frozenset({
     "wal_pending",
 })
 
-# name → constraint dict: type, min, max, and optional special flags
 TUNABLE_PARAMS: dict = {
     "ceiling_mb":            {"type": int,   "min": 32,    "max": None,       "monotonic": True},
     "eviction_target_ratio": {"type": float, "min": 0.5,   "max": 0.95},
@@ -44,27 +37,23 @@ TUNABLE_PARAMS: dict = {
     "protected_kinds":       {"type": set,   "min": None,  "max": None,       "always_includes": {"schema", "config"}},
 }
 
-# Protected kinds that can never be removed
 _ALWAYS_PROTECTED = frozenset({"schema", "config"})
 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
 
 @dataclass
 class Condition:
     signal: str
-    operator: str   # >, <, >=, <=, ==, !=
+    operator: str
     value: float
 
 
 @dataclass
 class Action:
-    kind: str           # set | adjust | add | remove | run
+    kind: str
     param: str
     value: object = None
     delta: float = 0.0
-    until: object = None    # ADJUST UNTIL target
+    until: object = None
 
 
 @dataclass
@@ -105,10 +94,6 @@ class EvolutionRule:
         return r
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _check_condition(cond: Condition, signals: dict) -> bool:
     val = signals.get(cond.signal, 0)
     op = cond.operator
@@ -136,38 +121,21 @@ def _normalize_weights(weights: list) -> list:
     return [w / total for w in weights]
 
 
-# ---------------------------------------------------------------------------
-# EvolutionEngine
-# ---------------------------------------------------------------------------
-
 class EvolutionEngine:
-    """Evaluates WHEN/THEN rules during health-check ticks and tunes config."""
 
     def __init__(self, gs, conn, config):
-        """
-        Args:
-            gs: SuperGraph instance (live ref; not weakref - engine lifetime == gs lifetime)
-            conn: sqlite3.Connection or None (in-memory mode)
-            config: EvolutionConfig
-        """
         self._gs = gs
         self._conn = conn
         self._config = config
         self._rules: dict[str, EvolutionRule] = {}
         self._evaluating = False
 
-        # Params with no live runtime field - tracked here
         self._live_params: dict = {}
 
         self._load_from_db()
 
-    # -----------------------------------------------------------------------
-    # Rule management
-    # -----------------------------------------------------------------------
 
     def add_rule(self, rule: EvolutionRule) -> None | str:
-        """Validate and store rule. Returns error string or None on success."""
-        # Validate signal names
         for cond in rule.conditions:
             if cond.signal not in KNOWN_SIGNALS:
                 return f"unknown signal: '{cond.signal}'"
@@ -177,27 +145,19 @@ class EvolutionEngine:
                     UserWarning, stacklevel=3,
                 )
 
-        # Validate param names
         for action in rule.actions:
             if action.kind not in ("run",) and action.param not in TUNABLE_PARAMS:
                 return f"unknown parameter: '{action.param}'"
 
-        # Check duplicate name
         if rule.name in self._rules:
             return f"rule already exists: '{rule.name}' (duplicate name)"
 
-        # Check max rules
         if len(self._rules) >= self._config.max_rules:
             return f"max rules limit ({self._config.max_rules}) reached"
 
-        # Cooldown floor
         if rule.cooldown < self._config.min_cooldown:
             rule.cooldown = self._config.min_cooldown
 
-        # Conflict detection: warn only when same param + same priority - that is
-        # a genuinely unresolvable conflict (execution order becomes insertion-
-        # dependent). Different priorities on the same param is intentional design;
-        # the priority system resolves it at runtime.
         for action in rule.actions:
             for er in self._rules.values():
                 if not er.enabled or er.priority != rule.priority:
@@ -246,20 +206,15 @@ class EvolutionEngine:
         return r.to_dict() if r else None
 
     def reset(self) -> None:
-        """Disable all rules. (Config revert is left to the caller.)"""
         for rule in self._rules.values():
             rule.enabled = False
             self._persist_rule(rule)
 
-    # -----------------------------------------------------------------------
-    # Signal computation
-    # -----------------------------------------------------------------------
 
     def compute_signals(self) -> dict:
         gs = self._gs
         store = gs._store
 
-        # Memory
         try:
             from supergraph.core.memory import measure
             m = measure(store, gs._vector_store, gs._document_store)
@@ -272,10 +227,8 @@ class EvolutionEngine:
         memory_pct = total_bytes / ceiling * 100
         memory_mb = total_bytes / 1_000_000
 
-        # Node count
         node_count = store.node_count
 
-        # Health (tombstone_ratio, string_bloat)
         try:
             from supergraph.core.optimizer import health_check
             h = health_check(store, gs._vector_store, gs._document_store)
@@ -286,20 +239,16 @@ class EvolutionEngine:
             tombstone_ratio = 0.0
             string_bloat = 0.0
 
-        # Recall hit rate + raw miss counter
         hits = gs._counters.get("recall_hits", 0)
         misses = gs._counters.get("recall_misses", 0)
         recall_hit_rate = hits / max(hits + misses, 1) if (hits + misses) > 0 else 1.0
         recall_misses = misses
 
-        # Avg similarity
         buf = gs._similarity_buffer
         avg_similarity = sum(buf) / max(len(buf), 1) if buf else 0.0
 
-        # Eviction count
         eviction_count = gs._counters.get("eviction_total", 0)
 
-        # Query/write rates
         uptime_minutes = max((time.time() - gs._start_time) / 60.0, 1.0 / 60)
         query_rate = gs._counters.get("execute_ok", 0) / uptime_minutes
         write_counter = getattr(gs._optimizer, "_write_counter", 0)
@@ -312,7 +261,6 @@ class EvolutionEngine:
             total_edges = 0
         edge_density = total_edges / max(node_count, 1)
 
-        # WAL pending
         wal_pending = gs._wal.pending_count if gs._conn else 0
 
         return {
@@ -331,9 +279,6 @@ class EvolutionEngine:
             "wal_pending": wal_pending,
         }
 
-    # -----------------------------------------------------------------------
-    # Param access
-    # -----------------------------------------------------------------------
 
     def _get_param(self, name: str):
         gs = self._gs
@@ -365,7 +310,6 @@ class EvolutionEngine:
         return None
 
     def _set_param(self, name: str, value) -> str:
-        """Apply value to the live runtime. Returns status string."""
         gs = self._gs
         spec = TUNABLE_PARAMS.get(name, {})
 
@@ -431,20 +375,17 @@ class EvolutionEngine:
         return "skipped:unknown"
 
     def _adjust_param(self, name: str, delta: float, until=None) -> str:
-        """Adjust param by delta, clamped to constraints. Returns status."""
         current = self._get_param(name)
         if current is None:
             return "skipped:unknown"
 
         spec = TUNABLE_PARAMS.get(name, {})
 
-        # Monotonic: no negative adjustments to ceiling_mb
         if name == "ceiling_mb" and delta < 0:
             return "skipped:monotonic"
 
         if isinstance(current, (int, float)):
             new_val = current + delta
-            # UNTIL: stop if target reached
             if until is not None:
                 if delta > 0 and current >= until:
                     return "skipped:until_reached"
@@ -486,15 +427,8 @@ class EvolutionEngine:
             self._live_params[name] = kinds
         return "applied"
 
-    # -----------------------------------------------------------------------
-    # Core evaluation
-    # -----------------------------------------------------------------------
 
     def evaluate(self, signals: dict) -> list[dict]:
-        """Evaluate all enabled rules against frozen signals snapshot.
-
-        Returns list of history events that were applied.
-        """
         if self._evaluating:
             return []
 
@@ -507,7 +441,6 @@ class EvolutionEngine:
                 key=lambda r: r.priority,
             )
 
-            # Phase 1: collect firing rules (frozen snapshot - no side effects yet)
             pending: list[tuple[EvolutionRule, list[Action]]] = []
             for rule in enabled:
                 now = time.time()
@@ -516,9 +449,8 @@ class EvolutionEngine:
                 if all(_check_condition(c, signals) for c in rule.conditions):
                     pending.append((rule, list(rule.actions)))
 
-                # Phase 2: apply actions (conflict = first wins per param+kind)
             claimed: set[tuple[str, str]] = set()
-            run_queue: list[tuple[str, str]] = []  # (rule_name, cmd)
+            run_queue: list[tuple[str, str]] = []
 
             for rule, actions in pending:
                 now = time.time()
@@ -530,7 +462,6 @@ class EvolutionEngine:
                     key = (action.kind, action.param) if action.kind != "run" else ("run", action.param)
                     prev = self._get_param(action.param) if action.kind != "run" else None
 
-                    # Conflict check (only for set/adjust - not run/add/remove)
                     if action.kind in ("set", "adjust") and key in claimed:
                         rule_events.append({"param": action.param, "status": "skipped:conflict"})
                         continue
@@ -562,13 +493,10 @@ class EvolutionEngine:
                     "signals": dict(signals),
                     "actions": applied_actions,
                     "prev_values": prev_values,
-                    "status": "pending",  # finalized after Phase 3
+                    "status": "pending",
                 }
                 events.append(event)
 
-            # Phase 3: execute RUN commands
-            # Reentrancy guard (self._evaluating = True) is still active - prevents
-            # recursive evolution firing if a RUN action triggers _check_health.
             for rule_name, cmd in run_queue:
                 try:
                     self._gs._execute_internal(cmd)
@@ -583,7 +511,6 @@ class EvolutionEngine:
                             if a["kind"] == "run" and a["param"] == cmd and a["status"] == "pending":
                                 a["status"] = run_status
 
-            # Finalize overall event status and log history (after all statuses are final)
             for event in events:
                 event["status"] = (
                     "applied"
@@ -592,7 +519,6 @@ class EvolutionEngine:
                 )
                 self._log_history(event)
 
-            # Attach events to supergraph for D4 feedback
             if events:
                 self._gs._last_evolution_events.extend(
                     {"rule": e["rule_name"], "actions": e["actions"]} for e in events
@@ -603,9 +529,6 @@ class EvolutionEngine:
 
         return events
 
-    # -----------------------------------------------------------------------
-    # History
-    # -----------------------------------------------------------------------
 
     def history(self, limit: int = 10) -> list[dict]:
         if self._conn is None:
@@ -627,9 +550,6 @@ class EvolutionEngine:
             })
         return result
 
-    # -----------------------------------------------------------------------
-    # Persistence helpers
-    # -----------------------------------------------------------------------
 
     def _persist_rule(self, rule: EvolutionRule) -> None:
         if self._conn is None:
@@ -677,7 +597,6 @@ class EvolutionEngine:
             logger.warning("Evolution: failed to log history: %s", e)
 
     def _prune_history(self) -> None:
-        """Keep only the last history_retention entries."""
         try:
             self._conn.execute(
                 "DELETE FROM evolution_history WHERE id NOT IN "
