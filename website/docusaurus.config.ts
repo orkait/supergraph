@@ -89,7 +89,7 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: 'https://pypi.org/project/supergraph/',
+          href: 'https://pypi.org/project/supergraphdb/',
           label: 'PyPI',
           position: 'right',
         },
@@ -113,7 +113,7 @@ const config: Config = {
           title: 'Project',
           items: [
             {label: 'GitHub', href: 'https://github.com/orkait/supergraph'},
-            {label: 'PyPI', href: 'https://pypi.org/project/supergraph/'},
+            {label: 'PyPI', href: 'https://pypi.org/project/supergraphdb/'},
             {label: 'Issues', href: 'https://github.com/orkait/supergraph/issues'},
           ],
         },
