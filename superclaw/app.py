@@ -8,6 +8,7 @@ from typing import Any, Callable
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
+from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.loop import Options, Result, run
 from superclaw.memory import Memory
@@ -42,6 +43,19 @@ def default_db_path() -> Path:
     return base / "superclaw" / "brain"
 
 
+def hook_paths(workspace: Path, trust_workspace: bool) -> list[Path]:
+    base = Path(os.environ.get("XDG_CONFIG_HOME", "").strip() or Path.home() / ".config")
+    paths = [base / "superclaw" / "hooks.json"]
+    if trust_workspace:
+        paths.append(workspace / ".superclaw" / "hooks.json")
+    return paths
+
+
+def build_hooks(workspace: Path, trust_workspace: bool) -> Dispatcher | None:
+    hooks = load_hooks(hook_paths(workspace, trust_workspace))
+    return Dispatcher(hooks, workspace) if hooks else None
+
+
 def user_guidelines_path() -> Path:
     base = Path(os.environ.get("XDG_CONFIG_HOME", "").strip() or Path.home() / ".config")
     return base / "superclaw" / "SUPERCLAW.md"
@@ -61,6 +75,7 @@ class Runtime:
     context_window: int = DEFAULT_CONTEXT_WINDOW
     token_budget: int = 0
     intent_gate: bool = False
+    hooks: Dispatcher | None = None
 
     @property
     def mode(self) -> Mode:
@@ -140,5 +155,5 @@ def run_once(
         max_turns=rt.max_turns, token_budget=rt.token_budget, context_window=rt.context_window,
         require_completion_signal=require_completion, verify=verify,
         on_event=on_event, on_permission=on_permission, on_ask_user=on_ask_user,
-        session=rt.store, session_id=sid,
+        session=rt.store, session_id=sid, hooks=rt.hooks,
     ))
