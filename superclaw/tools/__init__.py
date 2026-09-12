@@ -16,6 +16,8 @@ from superclaw.tools.budget import Budget, Budgeted, Category, budget_output
 class Observations(Protocol):
     def save(self, session_id: str, tool: str, call_id: str, body: str) -> str: ...
 
+    def load(self, ref: str) -> Any: ...
+
 
 class SideEffect(str, Enum):
     NONE = "none"
@@ -210,7 +212,7 @@ def ref_trailer(ref: str) -> str:
 class Registry:
     def __init__(self, observations: Observations | None = None, budget: Budget | None = None) -> None:
         self._tools: dict[str, Tool] = {}
-        self._observations = observations
+        self.observations = observations
         self._budget = budget
 
     def register(self, tool: Tool) -> None:
@@ -252,8 +254,9 @@ class Registry:
         category = tool.category(args) if tool else Category.DEFAULT
         budgeted = budget_output(boundary, category, self._budget)
         res.output = budgeted.text
-        if self._observations and res.ok and len(boundary) > LIMITS.obs_min_chars:
-            res.artifact = Artifact(self._observations.save(ctx.session_id, name, call_id, boundary), complete=True)
+        body = redact(str(res.meta.pop("full", "")))[0] or boundary
+        if self.observations and res.ok and len(body) > LIMITS.obs_min_chars:
+            res.artifact = Artifact(self.observations.save(ctx.session_id, name, call_id, body), complete=True)
         if budgeted.truncated:
             ctx.files.evict({ctx.files.cursor})
             res.output += truncation_notice(budgeted, res.artifact)

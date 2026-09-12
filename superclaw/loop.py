@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
 from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, cut_point, prune_tool_results
+from superclaw.delegate import SPAWN_KEY
 from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
@@ -26,7 +27,7 @@ from superclaw.guards import (
 from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
-from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
+from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
@@ -67,6 +68,7 @@ class Options:
     session_id: str = ""
     summarize: Callable[[str], str] | None = None
     hooks: Dispatcher | None = None
+    depth: int = 0
 
 
 @dataclass
@@ -95,8 +97,9 @@ class _Run:
         self.nudges = 0
         self.promise_nudged = False
         self.objective = ""
+        self.changed: set[str] = set()
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
-        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan})
+        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan, SPAWN_KEY: self.spawn})
 
     def emit(self, event: dict[str, Any]) -> None:
         if self.o.on_event:
@@ -279,8 +282,47 @@ class _Run:
                 return self.nudge(text, verdict.reason, continue_nudge(f"verifier: {verdict.reason}. Next: {verdict.next_action}"))
         return self.result(text)
 
+    def spawn(self, args: dict[str, Any]) -> ToolResult:
+        o = self.o
+        if o.depth >= LIMITS.delegate_depth:
+            return ToolResult.error(f"Error: delegation depth {LIMITS.delegate_depth} reached; do this part yourself")
+        task = str(args.get("task") or "").strip()
+        if not task:
+            return ToolResult.error("Error: task must not be empty")
+        sid = o.session.create(cwd=str(o.workspace), model="", title=task, parent=o.session_id) if o.session else ""
+        child_options = replace(
+            o, history=[], session_id=sid, depth=o.depth + 1, on_ask_user=None, verify=False, require_completion_signal=True,
+            max_turns=min(int(args.get("max_turns") or LIMITS.delegate_max_turns), LIMITS.delegate_max_turns),
+            token_budget=max(int(args.get("budget_tokens") or LIMITS.delegate_budget_tokens), LIMITS.delegate_min_budget_tokens),
+            on_event=(lambda event: o.on_event({**event, "child": sid})) if o.on_event else None,
+        )
+        self.emit({"type": "delegate", "child": sid, "task": task, "depth": o.depth + 1})
+        child = _Run(self.provider, child_options)
+        res = child.run(self.handoff(task, args))
+        self.tokens_used += child.tokens_used
+        self.cost_usd += child.cost_usd
+        self.changed.update(child.changed)
+        status = f"incomplete ({res.incomplete_reason})" if res.incomplete else "done"
+        answer = clip(res.final_answer, LIMITS.delegate_answer_tokens * LIMITS.chars_per_token)
+        head = f"[delegate {sid or 'child'}] {status}, {res.turns} turns, {child.tokens_used:,} tokens, ${child.cost_usd:.4f}"
+        if child.changed:
+            head += "\nchanged: " + ", ".join(sorted(child.changed))
+        return ToolResult.success(f"{head}\n\n{answer}", changed_files=sorted(child.changed), meta={"full": res.final_answer})
+
+    def handoff(self, task: str, args: dict[str, Any]) -> str:
+        parts = [task]
+        store = self.o.registry.observations
+        for raw in args.get("refs") or []:
+            found = store.load(str(raw).lstrip("§")) if store else None
+            if found:
+                parts.append(f"<result ref=\"§{found.ref}\" tool=\"{found.tool}\">\n{clip(found.body, LIMITS.delegate_handoff_tokens * LIMITS.chars_per_token)}\n</result>")
+        if files := args.get("files"):
+            parts.append("Start by reading: " + ", ".join(str(f) for f in files))
+        return "\n\n".join(parts)
+
     def run_call(self, call: ToolCall) -> tuple[FailureOutcome, str]:
         res, denied = self.execute(call)
+        self.changed.update(res.changed_files)
         self.loaded.update(res.meta.get("load_tools", []))
         self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,

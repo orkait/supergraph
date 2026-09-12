@@ -60,7 +60,7 @@ class Limits:
     hook_output_chars: int = 4000
     hook_error_chars: int = 200
 
-    eager_schema_tokens: int = 1100
+    eager_schema_tokens: int = 1300
     obs_min_chars: int = 2048
     ref_hex_chars: int = 8
     ref_hex_step: int = 4
@@ -93,6 +93,14 @@ class Limits:
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
+    capture_preview_lines: int = 5
+    kernel_trace_depth: int = 3
+    delegate_depth: int = 2
+    delegate_max_turns: int = 24
+    delegate_budget_tokens: int = 200_000
+    delegate_min_budget_tokens: int = 20_000
+    delegate_handoff_tokens: int = 8000
+    delegate_answer_tokens: int = 1500
 
     id_hash_chars: int = 16
     run_id_bytes: int = 4

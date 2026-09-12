@@ -63,14 +63,14 @@ def _walk(root: Path, max_depth: int | None):
 
 class ReadFile(Tool):
     name = "read_file"
-    description = "Read a file with line numbers (offset, limit). Ranges already in your context are skipped unless force=true."
+    description = "Read a file with line numbers. offset and limit select a line range."
     parameters = {
         "type": "object",
         "properties": {
             "path": {"type": "string"},
             "offset": {"type": "integer", "description": "1-based first line.", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1},
-            "force": {"type": "boolean", "default": False},
+            "force": {"type": "boolean", "default": False, "description": "Only to re-send a range the tool reported as already in your context."},
         },
         "required": ["path"],
         "additionalProperties": False,

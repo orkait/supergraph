@@ -8,8 +8,10 @@ from typing import Any
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
+from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
+from superclaw.kernel import READ_VERBS, Kernel, Python
 from superclaw.loop import Options, Result, run
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
@@ -50,6 +52,7 @@ class Runtime:
     token_budget: int = 0
     intent_gate: bool = False
     hooks: Dispatcher | None = None
+    kernel: Kernel | None = None
 
     @property
     def model_info(self) -> ModelInfo:
@@ -68,7 +71,30 @@ class Runtime:
         self.policy.mode = value
 
     def close(self) -> None:
+        if self.kernel:
+            self.kernel.close()
         self.gs.close()
+
+
+def kernel_resolver(observations: ObservationStore, gs: Any) -> Callable[[str, dict[str, Any]], Any]:
+    def resolve(kind: str, request: dict[str, Any]) -> Any:
+        if kind == "obs":
+            found = observations.load(str(request.get("ref") or ""))
+            if found is None:
+                raise KeyError(f"no stored result §{request.get('ref')}")
+            return found.body
+        if kind == "query":
+            dsl = str(request.get("dsl") or "").strip()
+            if not dsl.upper().startswith(READ_VERBS):
+                raise PermissionError("only read queries are allowed from the kernel")
+            return gs.execute(dsl).data
+        raise ValueError(f"unknown kernel request {kind!r}")
+
+    return resolve
+
+
+def build_kernel(workspace: Path, backend: Backend | None, observations: ObservationStore, gs: Any) -> Kernel:
+    return Kernel(workspace, backend, kernel_resolver(observations, gs))
 
 
 def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> Dispatcher | None:
@@ -79,12 +105,13 @@ def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> D
     return Dispatcher(hooks, workspace) if hooks else None
 
 
-def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None, settings: Settings | None = None) -> Registry:
+def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,
+                   settings: Settings | None = None, kernel: Kernel | None = None) -> Registry:
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
-    for tool in (*core_file_tools(), Bash(backend), UpdatePlan(), SkillTool(roots=roots), AskUser(),
-                 memory.search_tool(), memory.note_tool(), Recall(observations)):
+    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(),
+                 memory.search_tool(), memory.note_tool(), Recall(observations), Delegate(), *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))
     return registry
@@ -106,11 +133,13 @@ def build_runtime(
     gs = SuperGraph(path=str(settings.db_path))
     memory = Memory(gs)
     backend = detect()
+    observations = ObservationStore(gs)
+    kernel = build_kernel(workspace, backend, observations, gs)
     return Runtime(
-        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), workspace, backend, settings),
+        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, observations, workspace, backend, settings, kernel),
         policy=Policy(workspace, mode, sandboxed=backend is not None), provider=LitellmProvider(chain),
         workspace=workspace, model=settings.model, settings=settings, max_turns=max_turns,
-        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks,
+        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel,
     )
 
 

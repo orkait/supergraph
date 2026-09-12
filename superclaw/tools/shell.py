@@ -6,6 +6,8 @@ import signal
 import subprocess
 from typing import Any
 
+from superclaw.kernel import Kernel
+from superclaw.runtime import approx_tokens
 from superclaw.sandbox import Backend, Grant
 from superclaw.settings import LIMITS
 from superclaw.tools import Category, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
@@ -33,14 +35,16 @@ class Bash(Tool):
             "additional_permissions": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}, "network": {"type": "boolean"}}, "additionalProperties": False},
             "justification": {"type": "string", "description": "User-facing reason; required with escalation or extra permissions."},
             "prefix_rule": {"type": "array", "items": {"type": "string"}, "description": "Narrow prefix to remember if approved, e.g. [\"git\",\"pull\"]."},
+            "capture": {"type": "string", "description": "Bind the full output in the python kernel under this name (a Run with .out, .code, .lines) instead of reading it all here."},
         },
         "required": ["command", "description"],
         "additionalProperties": False,
     }
     safety = Safety(SideEffect.SHELL, Permission.PROMPT, "Runs a shell command.")
 
-    def __init__(self, backend: Backend | None = None) -> None:
+    def __init__(self, backend: Backend | None = None, kernel: Kernel | None = None) -> None:
         self.backend = backend
+        self.kernel = kernel
 
     def category(self, args: dict[str, Any]) -> Category:
         return Category.TEST if _TEST_RUNNER.search(str(args.get("command") or "")) else Category.PROCESS
@@ -69,7 +73,14 @@ class Bash(Tool):
         err = stderr[:LIMITS.shell_capture_bytes].decode("utf-8", errors="replace").rstrip("\n")
         if err:
             out = f"{out}\n{err}" if out else err
+        name = str(args.get("capture") or "")
+        meta: dict[str, Any] = {}
+        if name and self.kernel is not None and name.isidentifier():
+            self.kernel.bind(name, out, proc.returncode)
+            lines = out.splitlines()
+            meta["full"] = out
+            out = f"{name} = Run(code={proc.returncode}, {len(lines)} lines, {approx_tokens(out):,} tokens); tail:\n" + "\n".join(lines[-LIMITS.capture_preview_lines:])
         if proc.returncode != 0:
             out = f"{out}\n[exit {proc.returncode}]" if out else f"[exit {proc.returncode}]"
-            return Result.error(out)
-        return Result.success(out)
+            return Result.error(out, meta=meta)
+        return Result.success(out, meta=meta)
