@@ -14,6 +14,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.runtime import Provider
+from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore
 from superclaw.skills import default_roots, load_skills
 from superclaw.tools import Registry
@@ -69,9 +70,9 @@ class Runtime:
         self.gs.close()
 
 
-def build_registry(memory: Memory, workspace: Path) -> Registry:
+def build_registry(memory: Memory, workspace: Path, backend: Backend | None = None) -> Registry:
     registry = Registry()
-    for tool in (*core_file_tools(), Bash(), UpdatePlan(), SkillTool(roots=default_roots(workspace)), AskUser(),
+    for tool in (*core_file_tools(), Bash(backend), UpdatePlan(), SkillTool(roots=default_roots(workspace)), AskUser(),
                  memory.search_tool(), memory.note_tool()):
         registry.register(tool)
     return registry
@@ -84,9 +85,11 @@ def build_runtime(workspace: Path, mode: Mode, model: str, db_path: Path, **limi
     db_path.mkdir(parents=True, exist_ok=True)
     gs = SuperGraph(path=str(db_path))
     memory = Memory(gs)
+    backend = detect()
     return Runtime(
-        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, workspace),
-        policy=Policy(workspace, mode), provider=LitellmProvider(chain), workspace=workspace, model=model, **limits,
+        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, workspace, backend),
+        policy=Policy(workspace, mode, sandboxed=backend is not None), provider=LitellmProvider(chain),
+        workspace=workspace, model=model, **limits,
     )
 
 
