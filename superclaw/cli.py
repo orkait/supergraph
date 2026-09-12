@@ -2,25 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import secrets
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from superclaw.app import (
-    DEFAULT_CONTEXT_WINDOW,
-    DEFAULT_MODEL,
-    NoProviderKey,
-    Runtime,
-    build_hooks,
-    build_runtime,
-    default_db_path,
-    resolve_session,
-    run_once,
-)
+from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, resolve_session, run_once
 from superclaw.policy import Mode
-from superclaw.skills import default_roots, load_skills
+from superclaw.settings import Settings
+from superclaw.skills import load_skills
 
 SCHEMA_VERSION = 1
 
@@ -52,7 +43,7 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
             print(line, file=sys.stderr)
 
     emit({"type": "run_start", "sessionId": sid, "cwd": str(rt.workspace), "model": rt.model, "mode": rt.mode.value})
-    res = run_once(rt, prompt, sid, on_event=emit, require_completion=args.require_completion or args.verify, verify=args.verify)
+    res = run_once(rt, prompt, sid, Callbacks(on_event=emit), require_completion=args.require_completion or args.verify, verify=args.verify)
     status = "incomplete" if res.incomplete else "success"
     exit_code = 2 if res.incomplete else 0
     if stream:
@@ -67,13 +58,13 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
 
 
 def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
-    for s in rt.store.list():
+    for s in rt.store.recent():
         print(f"{s['id']}  {s['event_count']:4d} events  {s['model']}  {s['cwd']}")
     return 0
 
 
 def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
-    for s in load_skills(default_roots(rt.workspace)):
+    for s in load_skills(rt.settings.skill_roots(rt.workspace)):
         print(f"{s.name}: {s.description}")
     return 0
 
@@ -85,15 +76,15 @@ def cmd_tui(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="superclaw", description="A terminal coding agent with supergraph as its memory.")
     parser.add_argument("-C", "--cwd", default=".", help="workspace root (default: current directory)")
-    parser.add_argument("--mode", choices=[m.value for m in Mode], default=os.environ.get("SUPERCLAW_MODE", Mode.ASK.value))
-    parser.add_argument("--model", default=os.environ.get("SUPERCLAW_MODEL", DEFAULT_MODEL))
-    parser.add_argument("--db", default=None, help="supergraph store path (default: $SUPERCLAW_DB_PATH or ~/.local/share/superclaw/brain)")
+    parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
+    parser.add_argument("--model", default=defaults.model)
+    parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
     parser.add_argument("--max-turns", type=int, default=12)
-    parser.add_argument("--context-window", type=int, default=int(os.environ.get("SUPERCLAW_CONTEXT_WINDOW", DEFAULT_CONTEXT_WINDOW)))
-    parser.add_argument("--budget-tokens", type=int, default=int(os.environ.get("SUPERCLAW_BUDGET_TOKENS", "0")), help="stop a run once this many tokens were spent (0 = unlimited)")
+    parser.add_argument("--context-window", type=int, default=defaults.context_window)
+    parser.add_argument("--budget-tokens", type=int, default=defaults.budget_tokens, help="stop a run once this many tokens were spent (0 = unlimited)")
     parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--trust-workspace", action="store_true", help="also run hooks from <workspace>/.superclaw/hooks.json")
     parser.add_argument("--resume", default=None, help="session id, or 'latest'")
@@ -109,15 +100,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    defaults = Settings.from_env()
+    args = build_parser(defaults).parse_args(argv)
     workspace = Path(args.cwd).resolve()
     if not workspace.is_dir():
         sys.exit(f"superclaw: not a directory: {workspace}")
+    settings = replace(defaults, model=args.model, mode=args.mode, context_window=args.context_window,
+                       budget_tokens=args.budget_tokens, db_path=Path(args.db))
     try:
-        rt = build_runtime(workspace, Mode(args.mode), args.model, Path(args.db) if args.db else default_db_path(),
-                           max_turns=args.max_turns, context_window=args.context_window,
-                           token_budget=args.budget_tokens, intent_gate=args.intent_gate,
-                           hooks=build_hooks(workspace, args.trust_workspace))
+        rt = build_runtime(settings, workspace, Mode(args.mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
+                           hooks=build_hooks(settings, workspace, args.trust_workspace))
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills}.get(args.command, cmd_tui)

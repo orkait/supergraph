@@ -18,13 +18,16 @@ class ToolSearch(Tool):
     }
     safety = Safety(SideEffect.NONE, Permission.ALLOW, "Loads already-registered tool schemas.")
 
+    description = "Load the full schema of a deferred tool so you can call it next turn."
+
     def __init__(self, registry: Registry) -> None:
         self.registry = registry
 
-    @property
-    def description(self) -> str:
+    def definition(self) -> dict[str, Any]:
+        base = super().definition()
         lines = [f"- {t.name}: {t.summary()}" for t in self.registry.deferred()]
-        return "Load the full schema of a deferred tool so you can call it next turn. Deferred tools:\n" + "\n".join(lines)
+        base["function"]["description"] = f"{self.description} Deferred tools:\n" + "\n".join(lines)
+        return base
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         query = str(args.get("query") or "").strip()

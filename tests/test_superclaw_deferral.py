@@ -28,7 +28,7 @@ def test_deferred_tools_load_through_tool_search(tmp_path):
     names = [d["function"]["name"] for d in eager]
     assert names == ["bash", "edit_file", "grep", "read_file", "tool_search", "write_file"]
     assert approx_tokens(json.dumps(eager)) < 1000
-    assert "- update_plan:" in reg.get("tool_search").description
+    assert "- update_plan:" in reg.get("tool_search").definition()["function"]["description"]
     res = reg.run("tool_search", {"query": "select:update_plan,glob"}, ToolContext(workspace=tmp_path))
     assert res.meta["load_tools"] == ["update_plan", "glob"] and '"name": "update_plan"' in res.output
     assert not reg.run("tool_search", {"query": "zzz"}, ToolContext(workspace=tmp_path)).ok

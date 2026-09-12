@@ -10,7 +10,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 
-from superclaw.app import Runtime, run_once
+from superclaw.app import Callbacks, Runtime, run_once
 from superclaw.loop import Result
 from superclaw.policy import Mode
 
@@ -145,19 +145,18 @@ class SuperclawApp(App[None]):
             self.query_one("#transcript", VerticalScroll).remove_children()
             self.refresh_status()
         elif parts[0] == "/sessions":
-            for s in self.rt.store.list()[:20]:
+            for s in self.rt.store.recent()[:20]:
                 self.add(Static(f"{s['id']}  {s['event_count']} events  {s['cwd']}", classes="note"))
         else:
             self.add(Static(f"unknown command: {text}", classes="error"))
 
     @work(thread=True, exclusive=True)
     def run_prompt(self, text: str) -> None:
-        result = run_once(
-            self.rt, text, self.session_id,
+        result = run_once(self.rt, text, self.session_id, Callbacks(
             on_event=lambda event: self.call_from_thread(self.render_event, event),
             on_permission=self.ask_permission,
             on_ask_user=self.ask_questions,
-        )
+        ))
         self.call_from_thread(self.finish, result)
 
     def render_event(self, event: dict[str, Any]) -> None:

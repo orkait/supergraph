@@ -51,7 +51,7 @@ class SessionStore:
             "created": row.get("created", 0), "event_count": row.get("event_count", 0),
         }
 
-    def list(self) -> list[dict[str, Any]]:
+    def recent(self) -> list[dict[str, Any]]:
         rows = self._x('NODES WHERE kind = "session" LIMIT 1000').data or []
         rows.sort(key=lambda r: (r.get("created", 0), r.get("sid", "")), reverse=True)
         return [
@@ -61,7 +61,7 @@ class SessionStore:
         ]
 
     def latest(self) -> str | None:
-        rows = self.list()
+        rows = self.recent()
         return rows[0]["id"] if rows else None
 
     def append(self, sid: str, etype: str, payload: dict[str, Any]) -> int:

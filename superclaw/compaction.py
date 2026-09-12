@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from superclaw.runtime import Message
 
@@ -83,6 +83,38 @@ def _tool_names(messages: list[Message]) -> dict[str, str]:
     return {c.id: c.name for m in messages for c in m.tool_calls}
 
 
+def _assistant_section(index: int, m: Message) -> str:
+    lines = []
+    if m.content.strip():
+        lines.append(_words(m.content, ASSISTANT_WORD_BUDGET))
+    calls = m.tool_calls[-TOOL_CALLS_PER_TURN:]
+    if len(m.tool_calls) > len(calls):
+        lines.append(f"* ({len(m.tool_calls) - len(calls)} earlier tool calls omitted)")
+    lines += [_call_line(c.name, c.arguments) for c in calls]
+    if not lines:
+        return ""
+    return f"[assistant #{index}]\n" + "\n".join(lines)
+
+
+def _tool_section(index: int, m: Message, name: str) -> str:
+    if m.is_error:
+        return f"[tool_error #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}"
+    if name == "ask_user":
+        return f"[user_answer #{index}]\n{_clamp(m.content, RESULT_BYTES)}"
+    if name in ("write_file", "edit_file"):
+        return f"[tool_result #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}"
+    return ""
+
+
+def _fit(brief: str) -> str:
+    if len(brief) <= BRIEF_MAX_BYTES:
+        return brief
+    marker = "\n\n...[middle omitted to fit the compaction budget]...\n\n"
+    head = (BRIEF_MAX_BYTES - len(marker)) * 2 // 5
+    tail = BRIEF_MAX_BYTES - len(marker) - head
+    return brief[:head] + marker + brief[-tail:]
+
+
 def project(messages: list[Message]) -> str:
     names = _tool_names(messages)
     sections: list[str] = []
@@ -92,33 +124,15 @@ def project(messages: list[Message]) -> str:
             content = m.content.split(PRESERVED_LABEL, 1)[0].strip()
             if content.startswith(SUMMARY_LABEL):
                 previous = _clamp(content[len(SUMMARY_LABEL):].replace(RESUME_NOTE, "").strip(), PREVIOUS_SUMMARY_BYTES)
-                continue
-            if content:
+            elif content:
                 sections.append(f"[user #{index}]\n{_words(content, USER_WORD_BUDGET)}")
         elif m.role == "assistant":
-            lines = []
-            if m.content.strip():
-                lines.append(_words(m.content, ASSISTANT_WORD_BUDGET))
-            calls = m.tool_calls[-TOOL_CALLS_PER_TURN:]
-            if len(m.tool_calls) > len(calls):
-                lines.append(f"* ({len(m.tool_calls) - len(calls)} earlier tool calls omitted)")
-            lines += [_call_line(c.name, c.arguments) for c in calls]
-            if lines:
-                sections.append(f"[assistant #{index}]\n" + "\n".join(lines))
+            if section := _assistant_section(index, m):
+                sections.append(section)
         elif m.role == "tool":
-            name = names.get(m.tool_call_id, "tool")
-            if m.is_error:
-                sections.append(f"[tool_error #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}")
-            elif name == "ask_user":
-                sections.append(f"[user_answer #{index}]\n{_clamp(m.content, RESULT_BYTES)}")
-            elif name in ("write_file", "edit_file"):
-                sections.append(f"[tool_result #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}")
-    brief = "\n\n".join(sections)
-    if len(brief) > BRIEF_MAX_BYTES:
-        marker = "\n\n...[middle omitted to fit the compaction budget]...\n\n"
-        head = (BRIEF_MAX_BYTES - len(marker)) * 2 // 5
-        tail = BRIEF_MAX_BYTES - len(marker) - head
-        brief = brief[:head] + marker + brief[-tail:]
+            if section := _tool_section(index, m, names.get(m.tool_call_id, "tool")):
+                sections.append(section)
+    brief = _fit("\n\n".join(sections))
     if previous:
         brief = f"[previous summary]\n{previous}\n\n{brief}"
     return brief.strip()

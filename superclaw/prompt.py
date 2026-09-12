@@ -154,7 +154,7 @@ def user_guidelines(path: Path | None) -> str:
 def skills_block(skills: list[Skill]) -> str:
     if not skills:
         return ""
-    lines = []
+    lines: list[str] = []
     spent = 0
     omitted = 0
     for skill in skills:

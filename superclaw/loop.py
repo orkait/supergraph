@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, threshold
 from superclaw.hooks import Dispatcher
@@ -13,6 +14,7 @@ from superclaw.guards import (
     MAX_CALLS_PER_TURN,
     MAX_CONTINUE_NUDGES,
     MAX_TURNS_FINAL_ANSWER_PROMPT,
+    FailureOutcome,
     Guards,
     calls_per_turn_reminder,
     continue_nudge,
@@ -27,7 +29,7 @@ from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.runtime import Completion, Message, Provider, ToolCall, approx_tokens, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
-from superclaw.tools.ask import parse_questions
+from superclaw.tools.ask import NON_INTERACTIVE_MESSAGE, parse_questions
 from superclaw.tools.plan import format_plan, pending_items
 from superclaw.verifier import verify
 
@@ -204,8 +206,11 @@ class _Run:
             questions = parse_questions(args)
         except ValueError as e:
             return ToolResult.error(f"Error: invalid arguments for ask_user: {e}")
+        if self.o.on_ask_user is None:
+            return ToolResult.success(NON_INTERACTIVE_MESSAGE)
         answers = self.o.on_ask_user(questions)
-        return ToolResult.success("\n".join(f"Q: {q['question']}\nA: {a}" for q, a in zip(questions, answers)))
+        answers += [""] * (len(questions) - len(answers))
+        return ToolResult.success("\n".join(f"Q: {q['question']}\nA: {a}" for q, a in zip(questions, answers, strict=True)))
 
     def incomplete_reason(self, text: str) -> str:
         pending = pending_items(self.ctx.state)
@@ -251,35 +256,44 @@ class _Run:
                 return self.nudge(text, verdict.reason, continue_nudge(f"verifier: {verdict.reason}. Next: {verdict.next_action}"))
         return self.result(text)
 
+    def run_call(self, call: ToolCall) -> tuple[FailureOutcome, str]:
+        res, denied = self.execute(call)
+        self.loaded.update(res.meta.get("load_tools", []))
+        self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
+        self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
+        outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
+        if not outcome.hint:
+            return outcome, ""
+        tool = self.o.registry.get(call.name)
+        return outcome, tool_failure_hint(call.name, json.dumps(tool.parameters if tool else {}), res.output)
+
+    def abort_rest(self, rest: list[ToolCall]) -> None:
+        for call in rest:
+            self.append(Message(role="tool", content=ABORTED_TOOL_RESULT, tool_call_id=call.id, is_error=True))
+
+    def turn_reminders(self, completion: Completion, call_count: int) -> list[str]:
+        candidates = (calls_per_turn_reminder(call_count) if call_count > MAX_CALLS_PER_TURN else "",
+                      self.guards.tool_only_reminder(completion.text, call_count),
+                      self.guards.stale_plan_reminder(bool(pending_items(self.ctx.state))))
+        return [reminder for reminder in candidates if reminder]
+
     def run_tools(self, completion: Completion) -> Result | None:
         calls = completion.tool_calls
         self.guards.observe_turn(completion.text, len(calls))
         followups: list[str] = []
-        if len(calls) > MAX_CALLS_PER_TURN:
-            followups.append(calls_per_turn_reminder(len(calls)))
         for index, call in enumerate(calls):
             if not call.name:
                 self.append(Message(role="tool", content=DROPPED_TOOL_CALL_NOTICE, tool_call_id=call.id, is_error=True))
                 continue
             if repeated := self.guards.observe_identical(call.name, call.arguments):
                 followups.append(repeated)
-            res, denied = self.execute(call)
-            self.loaded.update(res.meta.get("load_tools", []))
-            self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
-            self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
-            outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
-            if outcome.hint:
-                tool = self.o.registry.get(call.name)
-                followups.append(tool_failure_hint(call.name, json.dumps(tool.parameters if tool else {}), res.output))
+            outcome, hint = self.run_call(call)
+            if hint:
+                followups.append(hint)
             if outcome.stop:
-                for rest in calls[index + 1:]:
-                    self.append(Message(role="tool", content=ABORTED_TOOL_RESULT, tool_call_id=rest.id, is_error=True))
+                self.abort_rest(calls[index + 1:])
                 return self.result(tool_failure_stop_answer(call.name, outcome.count), stop_reason="tool_failure_loop")
-        for reminder in (self.guards.tool_only_reminder(completion.text, len(calls)),
-                         self.guards.stale_plan_reminder(bool(pending_items(self.ctx.state)))):
-            if reminder:
-                followups.append(reminder)
-        for text in followups:
+        for text in followups + self.turn_reminders(completion, len(calls)):
             self.append(Message(role="user", content=text))
         return None
 

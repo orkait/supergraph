@@ -44,6 +44,31 @@ class Classification:
     segments: list[list[str]]
 
 
+@dataclass
+class ShellRequest:
+    cls: Classification
+    wants_host: bool
+    justification: str
+    outside: list[str]
+    risk: Risk
+    escalated: bool
+    network: bool
+
+    def decide(self, action: Action, reason: str) -> Decision:
+        return Decision(action, reason, self.risk, self.escalated, self.network)
+
+    def prompt_reason(self) -> str:
+        if self.wants_host:
+            return f"runs outside the sandbox: {self.justification}"
+        if "destructive" in self.cls.categories:
+            return "destructive shell command requires approval"
+        if self.outside:
+            return f"write access outside the workspace: {', '.join(self.outside)}"
+        if self.network:
+            return "network access requires approval"
+        return ""
+
+
 _SEPARATORS = {";", "|", "||", "&&", "&", "|&"}
 _WRAPPERS = {"env", "nohup", "time", "command", "exec", "nice", "stdbuf"}
 _PRIVILEGED = {"sudo", "doas", "su"}
@@ -251,43 +276,36 @@ class Policy:
                     return str(e)
         return ""
 
-    def _evaluate_shell(self, tool: Tool, args: dict[str, Any]) -> Decision:
-        command = str(args.get("command") or "")
-        cls = classify_command(command)
-        if "interactive" in cls.categories:
-            return Decision(Action.DENY, "interactive programs hang the agent; use a non-interactive form", Risk("high", cls.categories))
+    def _shell_request(self, args: dict[str, Any]) -> ShellRequest:
+        cls = classify_command(str(args.get("command") or ""))
         extra = args.get("additional_permissions") or {}
-        escalated = args.get("sandbox_permissions") == "require_escalated" or not self.sandboxed
+        wants_host = args.get("sandbox_permissions") == "require_escalated"
         network = "network" in cls.categories or bool(extra.get("network"))
-        categories = ["shell", *cls.categories]
         outside = [p for p in extra.get("paths") or [] if not self._inside(p)]
-        if outside:
-            categories.append("out_of_workspace")
+        categories = ["shell", *cls.categories, *(["out_of_workspace"] if outside else [])]
+        escalated = wants_host or not self.sandboxed
         level = "critical" if "destructive" in cls.categories else "high" if network or escalated or outside else "medium"
-        risk = Risk(level, categories)
-        grant = dict(escalated=escalated, network=network)
-        if self._prefix_covers(cls.segments):
-            return Decision(Action.ALLOW, "approved command prefix", risk, **grant)
+        return ShellRequest(cls, wants_host, str(args.get("justification") or "").strip(), outside, Risk(level, categories), escalated, network)
+
+    def _evaluate_shell(self, tool: Tool, args: dict[str, Any]) -> Decision:
+        req = self._shell_request(args)
+        if "interactive" in req.cls.categories:
+            return Decision(Action.DENY, "interactive programs hang the agent; use a non-interactive form", Risk("high", req.cls.categories))
+        if self._prefix_covers(req.cls.segments):
+            return req.decide(Action.ALLOW, "approved command prefix")
         if self.mode == Mode.UNSAFE:
-            return Decision(Action.ALLOW, "unsafe mode", risk, **grant)
-        if args.get("sandbox_permissions") == "require_escalated":
-            why = str(args.get("justification") or "").strip()
-            if not why:
-                return Decision(Action.DENY, "require_escalated needs a justification", risk)
-            return Decision(Action.PROMPT, f"runs outside the sandbox: {why}", risk, **grant)
-        if "destructive" in cls.categories:
-            return Decision(Action.PROMPT, "destructive shell command requires approval", risk, **grant)
-        if outside:
-            return Decision(Action.PROMPT, f"write access outside the workspace: {', '.join(outside)}", risk, **grant)
-        if network:
-            return Decision(Action.PROMPT, "network access requires approval", risk, **grant)
+            return req.decide(Action.ALLOW, "unsafe mode")
+        if req.wants_host and not req.justification:
+            return Decision(Action.DENY, "require_escalated needs a justification", req.risk)
+        prompt_reason = req.prompt_reason()
+        if prompt_reason:
+            return req.decide(Action.PROMPT, prompt_reason)
         if tool.name in self._session_grants:
-            return Decision(Action.ALLOW, "session grant", risk, **grant)
-        if self.mode == Mode.AUTO and self.sandboxed:
-            return Decision(Action.ALLOW, "sandboxed workspace shell auto-allowed", risk, **grant)
+            return req.decide(Action.ALLOW, "session grant")
         if self.mode == Mode.AUTO:
-            return Decision(Action.PROMPT, "no sandbox backend; approve to run unsandboxed", risk, **grant)
-        return Decision(Action.PROMPT, tool.safety.reason, risk, **grant)
+            return req.decide(Action.ALLOW, "sandboxed workspace shell auto-allowed") if self.sandboxed \
+                else req.decide(Action.PROMPT, "no sandbox backend; approve to run unsandboxed")
+        return req.decide(Action.PROMPT, tool.safety.reason)
 
     def _inside(self, path: str) -> bool:
         try:
