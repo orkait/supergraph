@@ -43,7 +43,7 @@ class TestLifecycle:
     def test_list_newest_first_and_latest(self, store):
         a = store.create(cwd="/w", model="m")
         b = store.create(cwd="/w", model="m")
-        assert [s["id"] for s in store.list()] == [b, a]
+        assert [s["id"] for s in store.recent()] == [b, a]
         assert store.latest() == b
 
     def test_latest_is_none_when_empty(self, store):

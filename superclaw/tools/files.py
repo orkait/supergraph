@@ -240,19 +240,32 @@ class Grep(Tool):
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         base = jail(ctx.workspace, args.get("path") or ".")
-        flags = re.IGNORECASE if args.get("case_insensitive") else 0
         try:
-            rx = re.compile(args["pattern"], flags)
+            rx = re.compile(args["pattern"], re.IGNORECASE if args.get("case_insensitive") else 0)
         except re.error as e:
             return Result.error(f"Error: invalid regex: {e}")
         mode = args.get("output_mode") or "content"
         head = int(args.get("head_limit") or 50)
-        name_filter = args.get("glob")
-        files = [base] if base.is_file() else [p for p in _walk(base, None) if p.is_file()]
         root = Path(ctx.workspace).resolve()
         rows: list[str] = []
-        emitted = 0
         truncated = False
+        for rel, hits in self._matches(base, root, rx, args.get("glob")):
+            if mode == "files_with_matches":
+                rows.append(rel)
+            elif mode == "count":
+                rows.append(f"{rel}:{len(hits)}")
+            else:
+                room = head - len(rows)
+                rows += [f"{rel}:{i}:{line}" for i, line in hits[:room]]
+                truncated = truncated or len(hits) > room
+        out = "\n".join(rows)
+        if truncated:
+            out += "\n[... more matches; raise head_limit or narrow the pattern ...]"
+        return Result.success(out or "(no matches)", truncated=truncated)
+
+    @staticmethod
+    def _matches(base: Path, root: Path, rx: re.Pattern[str], name_filter: str | None):
+        files = [base] if base.is_file() else [p for p in _walk(base, None) if p.is_file()]
         for f in sorted(files):
             rel = f.relative_to(root).as_posix()
             if name_filter and not PurePath(rel).match(name_filter):
@@ -262,23 +275,8 @@ class Grep(Tool):
             except (UnicodeDecodeError, OSError):
                 continue
             hits = [(i, line) for i, line in enumerate(text.splitlines(), 1) if rx.search(line)]
-            if not hits:
-                continue
-            if mode == "files_with_matches":
-                rows.append(rel)
-            elif mode == "count":
-                rows.append(f"{rel}:{len(hits)}")
-            else:
-                for i, line in hits:
-                    if emitted >= head:
-                        truncated = True
-                        break
-                    rows.append(f"{rel}:{i}:{line}")
-                    emitted += 1
-        out = "\n".join(rows)
-        if truncated:
-            out += f"\n[... more matches; raise head_limit or narrow the pattern ...]"
-        return Result.success(out or "(no matches)", truncated=truncated)
+            if hits:
+                yield rel, hits
 
 
 def core_file_tools() -> list[Tool]:

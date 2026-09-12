@@ -4,7 +4,8 @@ import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from superclaw.redaction import redact
 
@@ -39,11 +40,11 @@ class Result:
     truncated: bool = False
 
     @classmethod
-    def success(cls, output: str, **kw: Any) -> "Result":
+    def success(cls, output: str, **kw: Any) -> Result:
         return cls(True, output, **kw)
 
     @classmethod
-    def error(cls, output: str, **kw: Any) -> "Result":
+    def error(cls, output: str, **kw: Any) -> Result:
         return cls(False, output, **kw)
 
 

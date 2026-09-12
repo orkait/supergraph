@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,19 +12,6 @@ class Skill:
     description: str
     content: str
     path: str
-
-
-def default_roots(workspace: Path | None = None) -> list[Path]:
-    roots: list[Path] = []
-    override = os.environ.get("SUPERCLAW_SKILLS_DIR", "").strip()
-    if override:
-        roots.append(Path(override))
-    home = Path.home()
-    roots.append(home / ".config" / "superclaw" / "skills")
-    roots.append(home / ".agents" / "skills")
-    if workspace is not None:
-        roots.append(Path(workspace) / ".superclaw" / "skills")
-    return roots
 
 
 def _frontmatter(text: str) -> tuple[dict[str, str], str]:
