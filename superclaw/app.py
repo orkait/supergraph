@@ -28,6 +28,7 @@ from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.search import ToolSearch
 from superclaw.tools.shell import Bash
 from superclaw.tools.skill import SkillTool
+from superclaw.tools.spill import SpillStore
 
 
 class NoProviderKey(RuntimeError):
@@ -79,8 +80,9 @@ def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> D
 
 
 def build_registry(memory: Memory, workspace: Path, backend: Backend | None = None, settings: Settings | None = None) -> Registry:
-    roots = (settings or Settings.from_env()).skill_roots(workspace)
-    registry = Registry()
+    settings = settings or Settings.from_env()
+    registry = Registry(spill=SpillStore(settings.artifacts_dir))
+    roots = settings.skill_roots(workspace)
     for tool in (*core_file_tools(), Bash(backend), UpdatePlan(), SkillTool(roots=roots), AskUser(),
                  memory.search_tool(), memory.note_tool()):
         registry.register(tool)

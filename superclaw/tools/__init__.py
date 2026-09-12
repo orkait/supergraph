@@ -8,7 +8,9 @@ from typing import Any
 from collections.abc import Callable
 
 from superclaw.redaction import redact
-from superclaw.settings import LIMITS
+from superclaw.runtime import approx_tokens
+from superclaw.tools.budget import Budget, Budgeted, Category, budget_output
+from superclaw.tools.spill import SpillStore
 
 
 class SideEffect(str, Enum):
@@ -33,12 +35,40 @@ class Safety:
 
 
 @dataclass
+class Display:
+    summary: str = ""
+    kind: str = ""
+    preview: str = ""
+
+
+@dataclass(frozen=True)
+class Artifact:
+    path: str
+    complete: bool
+
+
+@dataclass(frozen=True)
+class Diagnostics:
+    category: str
+    original_chars: int
+    model_chars: int
+    original_tokens: int
+    model_tokens: int
+    truncated: bool
+    redacted: bool
+    reason: str
+
+
+@dataclass
 class Result:
     ok: bool
     output: str
     changed_files: list[str] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
     truncated: bool = False
+    display: Display = field(default_factory=Display)
+    artifact: Artifact | None = None
+    diagnostics: Diagnostics | None = None
 
     @classmethod
     def success(cls, output: str, **kw: Any) -> Result:
@@ -103,9 +133,13 @@ class Tool:
     parameters: dict[str, Any]
     safety: Safety
     deferred: bool = False
+    output_category: Category = Category.DEFAULT
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         raise NotImplementedError
+
+    def category(self, args: dict[str, Any]) -> Category:
+        return self.output_category
 
     def summary(self) -> str:
         return self.description.split(". ", 1)[0].rstrip(".")
@@ -121,20 +155,17 @@ class Tool:
         }
 
 
-_TRUNCATION_MARKER = "\n\n[... output truncated: {dropped} chars omitted ...]\n\n"
-
-
-def _cap(output: str) -> tuple[str, bool]:
-    if len(output) <= LIMITS.tool_output_bytes:
-        return output, False
-    keep = LIMITS.tool_output_bytes // 2
-    dropped = len(output) - 2 * keep
-    return output[:keep] + _TRUNCATION_MARKER.format(dropped=dropped) + output[-keep:], True
+def truncation_notice(budgeted: Budgeted, artifact: Artifact | None) -> str:
+    where = f"full output saved to {artifact.path}" if artifact else "the omitted part is not recoverable"
+    return (f"\n[superclaw] output shortened from {budgeted.original_tokens:,} tokens ({budgeted.original_chars:,} chars) "
+            f"to {budgeted.retained_tokens:,} tokens; {where}")
 
 
 class Registry:
-    def __init__(self) -> None:
+    def __init__(self, spill: SpillStore | None = None, budget: Budget | None = None) -> None:
         self._tools: dict[str, Tool] = {}
+        self._spill = spill
+        self._budget = budget
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
@@ -156,7 +187,7 @@ class Registry:
     def deferred(self, visible: Callable[[Tool], bool] | None = None) -> list[Tool]:
         return [t for t in self.tools(visible) if t.deferred]
 
-    def run(self, name: str, args: dict[str, Any], ctx: ToolContext) -> Result:
+    def run(self, name: str, args: dict[str, Any], ctx: ToolContext, call_id: str = "") -> Result:
         tool = self._tools.get(name)
         if tool is None:
             return Result.error(f"unknown tool {name!r}; available: {', '.join(self.names())}")
@@ -166,9 +197,28 @@ class Registry:
             return Result.error(f"Error: {e}")
         except Exception as e:
             return Result.error(f"Error: {name} failed: {type(e).__name__}: {e}")
-        res.output, redacted = redact(res.output)
-        res.output, capped = _cap(res.output)
-        res.truncated = res.truncated or capped
+        return self.finalize(name, args, res, ctx, call_id)
+
+    def finalize(self, name: str, args: dict[str, Any], res: Result, ctx: ToolContext, call_id: str = "") -> Result:
+        tool = self._tools.get(name)
+        previous = res.diagnostics
+        boundary, redacted = redact(res.output)
+        category = tool.category(args) if tool else Category.DEFAULT
+        budgeted = budget_output(boundary, category, self._budget)
+        res.output = budgeted.text
+        if budgeted.truncated:
+            if self._spill and res.artifact is None:
+                res.artifact = Artifact(str(self._spill.save(ctx.session_id, name, call_id, boundary)), complete=True)
+            res.output += truncation_notice(budgeted, res.artifact)
+        res.truncated = res.truncated or budgeted.truncated
         if redacted:
             res.meta["redacted"] = True
+        res.diagnostics = Diagnostics(
+            category=category.value,
+            original_chars=previous.original_chars if previous else budgeted.original_chars,
+            model_chars=len(res.output),
+            original_tokens=previous.original_tokens if previous else budgeted.original_tokens,
+            model_tokens=approx_tokens(res.output),
+            truncated=res.truncated, redacted=redacted or bool(previous and previous.redacted), reason=budgeted.reason,
+        )
         return res

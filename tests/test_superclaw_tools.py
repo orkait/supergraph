@@ -105,10 +105,10 @@ class TestRegistry:
         reg = Registry()
         reg.register(Big())
         res = reg.run("big", {}, ctx)
-        assert res.ok
-        assert res.truncated
+        assert res.ok and res.truncated and res.artifact is None
         assert len(res.output) < 70_000
-        assert "truncated" in res.output
+        assert "output shortened from" in res.output and "not recoverable" in res.output
+        assert res.diagnostics.original_chars == 200_000 and res.diagnostics.model_chars == len(res.output)
 
     def test_run_turns_tool_exception_into_error_result(self, ctx):
         reg = Registry()
@@ -157,7 +157,7 @@ class TestFileTools:
 
     def test_read_file_offset_and_limit(self, reg, ctx):
         res = reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1}, ctx)
-        assert res.output == "2→beta"
+        assert res.output == "2→beta\n[1 more lines; call read_file with offset=3 to continue]"
 
     def test_read_file_missing_is_error(self, reg, ctx):
         res = reg.run("read_file", {"path": "src/zzz.py"}, ctx)

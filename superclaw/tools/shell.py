@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 from typing import Any
 
 from superclaw.sandbox import Backend, Grant
 from superclaw.settings import LIMITS
-from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
+from superclaw.tools import Category, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
 
 SANDBOX_MODES = ("use_default", "with_additional_permissions", "require_escalated")
 _MS_PER_SECOND = 1000
+_TEST_RUNNER = re.compile(r"\b(pytest|py\.test|unittest|jest|vitest|mocha|go test|cargo test|npm test|pnpm test|yarn test|bun test|rspec|phpunit|mvn test|gradle test|ctest)\b")
 
 
 class Bash(Tool):
@@ -39,6 +41,9 @@ class Bash(Tool):
 
     def __init__(self, backend: Backend | None = None) -> None:
         self.backend = backend
+
+    def category(self, args: dict[str, Any]) -> Category:
+        return Category.TEST if _TEST_RUNNER.search(str(args.get("command") or "")) else Category.PROCESS
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         cwd = jail(ctx.workspace, args.get("cwd") or ".")

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import difflib
 import re
 from pathlib import Path, PurePath
 from typing import Any
 
 from superclaw.settings import LIMITS
 from superclaw.tools import (
+    Category,
+    Display,
     Permission,
     Result,
     Safety,
@@ -17,6 +20,21 @@ from superclaw.tools import (
 )
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
+
+
+def _clip_line(line: str) -> str:
+    cap = LIMITS.read_line_chars
+    return line if len(line) <= cap else f"{line[:cap]}… [+{len(line) - cap:,} chars]"
+
+
+def _diff_display(rel: str, before: str, after: str, summary: str) -> Display:
+    diff = "".join(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True), fromfile=rel, tofile=rel))
+    return Display(summary=summary, kind="diff", preview=diff if len(diff) <= LIMITS.diff_preview_bytes else "")
+
+
+def _is_binary(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return b"\0" in handle.read(LIMITS.binary_sniff_bytes)
 
 
 def _read(side_effect_reason: str) -> Safety:
@@ -57,6 +75,7 @@ class ReadFile(Tool):
         "additionalProperties": False,
     }
     safety = _read("Reads a file inside the workspace.")
+    output_category = Category.FILE
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         target = jail(ctx.workspace, args["path"])
@@ -67,17 +86,16 @@ class ReadFile(Tool):
         data = target.read_bytes()
         ctx.files.record(target, data)
         truncated = len(data) > LIMITS.read_file_bytes
-        text = data[:LIMITS.read_file_bytes].decode("utf-8", errors="replace")
-        lines = text.split("\n")
+        lines = data[:LIMITS.read_file_bytes].decode("utf-8", errors="replace").split("\n")
         if lines and lines[-1] == "":
             lines.pop()
         start = max(1, int(args.get("offset") or 1))
-        limit = args.get("limit")
-        end = start - 1 + int(limit) if limit else len(lines)
-        window = lines[start - 1:end]
-        out = "\n".join(f"{start + i}→{line}" for i, line in enumerate(window))
+        end = min(len(lines), start - 1 + int(args.get("limit") or LIMITS.read_file_lines))
+        out = "\n".join(f"{start + i}→{_clip_line(line)}" for i, line in enumerate(lines[start - 1:end]))
+        if end < len(lines):
+            out += f"\n[{len(lines) - end:,} more lines; call read_file with offset={end + 1} to continue]"
         if truncated:
-            out += f"\n[... file truncated at {LIMITS.read_file_bytes} bytes ...]"
+            out += f"\n[file is {len(data):,} bytes; only the first {LIMITS.read_file_bytes:,} were read]"
         return Result.success(out, truncated=truncated)
 
 
@@ -100,15 +118,19 @@ class WriteFile(Tool):
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         target = jail(ctx.workspace, args["path"])
         rel = relative(ctx.workspace, target)
+        before = ""
         if target.exists():
             if not args.get("overwrite"):
                 return Result.error(f"Error: {rel} already exists; pass overwrite=true to replace it")
-            if problem := ctx.files.conflict(target, target.read_bytes()):
+            data = target.read_bytes()
+            if problem := ctx.files.conflict(target, data):
                 return Result.error(f"Error: {rel}: {problem}")
+            before = data.decode("utf-8", errors="replace")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(args["content"])
         ctx.files.record(target, args["content"].encode())
-        return Result.success(f"Wrote {len(args['content'])} chars to {rel}", changed_files=[rel])
+        summary = f"Wrote {len(args['content'])} chars to {rel}"
+        return Result.success(summary, changed_files=[rel], display=_diff_display(rel, before, args["content"], summary))
 
 
 class EditFile(Tool):
@@ -150,7 +172,8 @@ class EditFile(Tool):
         updated = text.replace(old, args["new_string"])
         target.write_text(updated)
         ctx.files.record(target, updated.encode())
-        return Result.success(f"Replaced {count} occurrence(s) in {rel}", changed_files=[rel])
+        summary = f"Replaced {count} occurrence(s) in {rel}"
+        return Result.success(summary, changed_files=[rel], display=_diff_display(rel, text, updated, summary))
 
 
 class ListDirectory(Tool):
@@ -236,6 +259,7 @@ class Grep(Tool):
         "additionalProperties": False,
     }
     safety = _read("Searches file contents inside the workspace.")
+    output_category = Category.SEARCH
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         base = jail(ctx.workspace, args.get("path") or ".")
@@ -270,6 +294,8 @@ class Grep(Tool):
             if name_filter and not PurePath(rel).match(name_filter):
                 continue
             try:
+                if f.stat().st_size > LIMITS.read_file_bytes or _is_binary(f):
+                    continue
                 text = f.read_text()
             except (UnicodeDecodeError, OSError):
                 continue
