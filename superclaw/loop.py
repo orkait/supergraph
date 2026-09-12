@@ -23,8 +23,8 @@ from superclaw.guards import (
     tool_failure_stop_answer,
 )
 from superclaw.policy import Action, Policy, validate_prefix
-from superclaw.runtime import Completion, Message, Provider, ToolCall, estimate_tokens
-from superclaw.session import SessionStore
+from superclaw.runtime import Completion, Message, Provider, ToolCall, approx_tokens, estimate_tokens
+from superclaw.session import SessionStore, prompt_hash
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
 from superclaw.tools.ask import parse_questions
 from superclaw.tools.plan import format_plan, pending_items
@@ -104,6 +104,14 @@ class _Run:
                 "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in message.tool_calls],
             })
         self.seqs.append(seq)
+
+    def complete(self, exposed: list[dict[str, Any]]) -> Completion:
+        try:
+            return self.provider.complete(self.messages, exposed)
+        except Exception as e:
+            self.persist("error", {"turn": self.turns, "error": f"{type(e).__name__}: {e}"})
+            self.emit({"type": "error", "message": str(e), "recoverable": False})
+            raise
 
     def result(self, answer: str, **kw: Any) -> Result:
         return Result(final_answer=answer, turns=self.turns, messages=list(self.messages), **kw)
@@ -270,12 +278,13 @@ class _Run:
         self.objective = prompt
         self.messages = [Message(role="system", content=o.system_prompt), *o.history]
         self.seqs = [0] * len(self.messages)
+        self.persist("prompt", {"hash": prompt_hash(o.system_prompt), "tokens": approx_tokens(o.system_prompt), "text": o.system_prompt})
         self.append(Message(role="user", content=prompt))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1
             exposed = o.registry.definitions(o.policy.visible)
             self.maybe_compact(exposed)
-            completion = self.provider.complete(self.messages, exposed)
+            completion = self.complete(exposed)
             self.emit({"type": "usage", "input_tokens": completion.usage.input_tokens, "output_tokens": completion.usage.output_tokens})
             self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
             if completion.text:

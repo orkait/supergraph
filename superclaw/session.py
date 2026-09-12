@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import time
@@ -11,6 +12,10 @@ from superclaw.compaction import SUMMARY_LABEL
 from superclaw.runtime import Message, ToolCall
 
 NAMESPACE = "superclaw"
+
+
+def prompt_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _lit(value: Any) -> str:
@@ -90,6 +95,10 @@ class SessionStore:
             self.append(new, ev["type"], ev["payload"])
         self._x(f'CREATE EDGE {_lit("session:" + new)} -> {_lit("session:" + sid)} kind = "forked_from"')
         return new
+
+    def last_prompt(self, sid: str) -> dict[str, Any] | None:
+        prompts = [ev["payload"] for ev in self.events(sid) if ev["type"] == "prompt"]
+        return prompts[-1] if prompts else None
 
     def plan(self, sid: str) -> list[dict[str, str]]:
         items: list[dict[str, str]] = []
