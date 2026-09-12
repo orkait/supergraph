@@ -38,7 +38,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Loads skills lazily | `SKILL.md` files listed by name and description only; the body loads on `skill` |
 | Asks | `ask_user` with options and a recommended default |
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
-| Fits the window | proactive compaction at 70% of the context window: the summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary |
+| Fits the window | pressure is measured against the model's real window minus a 16,384-token reserve, anchored on the provider's reported usage rather than a local estimate. Under pressure the harness first prunes older tool results (over 8,192 chars) to a head and tail with no model call, and only if that is not enough summarises everything before the last 20,000 tokens, never cutting between a tool call and its result. The summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary. Prunes and compactions are session events, so a resumed session replays the same shortened context |
 
 The system prompt is 541 tokens (838 with the confirmation policy). Only six tool schemas ride every request (`read_file` `edit_file` `write_file` `grep` `bash` `tool_search`); the rest are listed one line each and load on demand through `tool_search`, so a first turn is about 1.6k tokens before the user's message (eager=964 all=2035 prompt=873 first_turn=1837).
 
@@ -159,7 +159,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 $ .venv/bin/ruff check .
 All checks passed!
 $ .venv/bin/python -m pytest -q -p no:randomly tests/test_superclaw_*.py
-145 passed
+37 passed
 $ superclaw --mode auto exec --output-format stream-json "test_calc.py fails. Find the bug in calc.py, fix it, and run pytest -q to prove it passes."
 ... "type": "tool_call", "name": "edit_file", "args": {"path": "calc.py", "old_string": "return a - b", "new_string": "return a + b"}
 ... "type": "run_end", "status": "success", "turns": 7, "exitCode": 0

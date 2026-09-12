@@ -19,8 +19,11 @@ class Limits:
     max_turns: int = 12
     usd_decimals: int = 6
 
-    compaction_trigger_ratio: float = 0.7
-    compaction_preserve_last: int = 6
+    compaction_reserve_tokens: int = 16_384
+    compaction_keep_tokens: int = 20_000
+    prune_threshold_chars: int = 8192
+    prune_head_chars: int = 4096
+    prune_tail_chars: int = 1024
     compaction_tool_result_clamp: int = 2000
     compaction_tool_args_clamp: int = 500
     compaction_user_words: int = 256

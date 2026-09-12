@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from collections.abc import Callable
 
-from superclaw.runtime import Message
+from superclaw.runtime import Message, message_tokens
 from superclaw.settings import LIMITS
 
 SUMMARY_LABEL = "[Summary of earlier conversation]"
@@ -32,8 +32,37 @@ class CompactionResult:
     compacted: bool = False
 
 
-def threshold(context_window: int) -> int:
-    return int(context_window * LIMITS.compaction_trigger_ratio) if context_window > 0 else 0
+PRUNE_MARKER = "\n\n[... tool result middle pruned to fit the context window ...]\n\n"
+
+
+def _system_end(messages: list[Message]) -> int:
+    end = 0
+    while end < len(messages) and messages[end].role == "system":
+        end += 1
+    return end
+
+
+def cut_point(messages: list[Message], keep_tokens: int = LIMITS.compaction_keep_tokens) -> int:
+    system_end = _system_end(messages)
+    boundary, kept = len(messages), 0
+    while boundary > system_end:
+        kept += message_tokens(messages[boundary - 1])
+        if kept > keep_tokens:
+            break
+        boundary -= 1
+    while system_end < boundary < len(messages) and messages[boundary].role == "tool":
+        boundary -= 1
+    if boundary in (system_end, len(messages)) and kept > keep_tokens:
+        boundary = max((i for i in range(system_end, len(messages)) if messages[i].role == "assistant"), default=system_end)
+    return boundary
+
+
+def prune_tool_results(messages: list[Message], upto: int) -> list[tuple[int, str]]:
+    pruned = []
+    for index, m in enumerate(messages[:upto]):
+        if m.role == "tool" and len(m.content) > LIMITS.prune_threshold_chars:
+            pruned.append((index, m.content[:LIMITS.prune_head_chars] + PRUNE_MARKER + m.content[-LIMITS.prune_tail_chars:]))
+    return pruned
 
 
 def _clamp(text: str, limit: int) -> str:
@@ -153,18 +182,12 @@ def preserved_state(middle: list[Message], plan_text: str) -> str:
 def compact(
     messages: list[Message],
     *,
-    preserve_last: int = LIMITS.compaction_preserve_last,
+    keep_tokens: int = LIMITS.compaction_keep_tokens,
     summarize: Callable[[str], str],
     plan_text: str = "",
 ) -> CompactionResult:
-    if preserve_last <= 0:
-        preserve_last = LIMITS.compaction_preserve_last
-    system_end = 0
-    while system_end < len(messages) and messages[system_end].role == "system":
-        system_end += 1
-    boundary = max(len(messages) - preserve_last, system_end)
-    while boundary > system_end and messages[boundary].role != "assistant":
-        boundary -= 1
+    system_end = _system_end(messages)
+    boundary = cut_point(messages, keep_tokens)
     middle = messages[system_end:boundary]
     if not middle:
         return CompactionResult(messages=list(messages), preserved=len(messages))

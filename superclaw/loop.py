@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, threshold
+from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, cut_point, prune_tool_results
 from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
@@ -23,8 +23,9 @@ from superclaw.guards import (
     tool_failure_hint,
     tool_failure_stop_answer,
 )
-from superclaw.policy import Action, Policy, validate_prefix
+from superclaw.meter import ContextMeter
 from superclaw.models import ModelInfo
+from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS
@@ -55,7 +56,8 @@ class Options:
     budget_usd: float = 0.0
     context_window: int = 0
     model_info: ModelInfo | None = None
-    preserve_last: int = 6
+    reserve_tokens: int = LIMITS.compaction_reserve_tokens
+    keep_tokens: int = LIMITS.compaction_keep_tokens
     require_completion_signal: bool = False
     verify: bool = False
     on_event: Callable[[dict[str, Any]], None] | None = None
@@ -82,6 +84,7 @@ class _Run:
         self.provider = provider
         self.o = options
         self.guards = Guards()
+        self.meter = ContextMeter(options.context_window, options.reserve_tokens)
         self.messages: list[Message] = []
         self.seqs: list[int] = []
         self.turns = 0
@@ -105,6 +108,7 @@ class _Run:
 
     def append(self, message: Message) -> None:
         self.messages.append(message)
+        self.meter.append(message)
         if message.role == "tool":
             seq = self.persist("tool_result", {"tool_call_id": message.tool_call_id, "output": message.content, "ok": not message.is_error})
         else:
@@ -132,11 +136,12 @@ class _Run:
         return self.provider.complete(request, []).text
 
     def maybe_compact(self, exposed: list[dict[str, Any]]) -> None:
-        limit = threshold(self.o.context_window)
-        if not limit or estimate_tokens(self.messages, exposed) <= limit:
+        if not self.meter.pressure(estimate_tokens(self.messages, exposed)):
+            return
+        if self.prune() and not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
         plan = self.ctx.state.get("plan", [])
-        res = compact(self.messages, preserve_last=self.o.preserve_last, summarize=self.summarize,
+        res = compact(self.messages, keep_tokens=self.o.keep_tokens, summarize=self.summarize,
                       plan_text=format_plan(plan) if plan else "")
         if not res.compacted:
             return
@@ -145,7 +150,18 @@ class _Run:
         summary_seq = self.persist("compaction", {"summary": res.summary, "through_seq": through})
         self.messages = res.messages
         self.seqs = [*self.seqs[:system_end], summary_seq, *self.seqs[system_end + res.removed:]]
+        self.meter.reset()
         self.emit({"type": "compaction", "removed": res.removed})
+
+    def prune(self) -> int:
+        pruned = prune_tool_results(self.messages, cut_point(self.messages, self.o.keep_tokens))
+        for index, content in pruned:
+            self.messages[index].content = content
+            self.persist("prune", {"seq": self.seqs[index], "output": content})
+        if pruned:
+            self.meter.reset()
+            self.emit({"type": "prune", "results": len(pruned)})
+        return len(pruned)
 
     def decide(self, name: str, args: dict[str, Any]) -> tuple[bool, str]:
         tool = self.o.registry.get(name)
@@ -303,6 +319,7 @@ class _Run:
         return None
 
     def account(self, usage: Usage) -> None:
+        self.meter.observe(usage)
         cost = self.o.model_info.cost(usage) if self.o.model_info else 0.0
         self.tokens_used += usage.total
         self.cost_usd += cost
