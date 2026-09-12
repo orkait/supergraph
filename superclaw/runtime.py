@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+from superclaw.settings import LIMITS
 
 
 @dataclass
@@ -25,6 +28,7 @@ class Message:
 class Usage:
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0
 
     @property
     def total(self) -> int:
@@ -62,16 +66,24 @@ def to_wire(messages: list[Message]) -> list[dict[str, Any]]:
     return wire
 
 
+def clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+_ASCII_INK = re.compile(r"[!-~]")
+_NON_ASCII = re.compile(r"[^\x00-\x7f]")
+
+
 def approx_tokens(text: str) -> int:
-    return sum(1 for ch in text if not ch.isspace()) // 4
+    ink = len(_ASCII_INK.findall(text))
+    foreign = sum(len(ch.encode("utf-8")) for ch in _NON_ASCII.findall(text))
+    return (ink + 3) // 4 + foreign if text else 0
+
+
+def message_tokens(m: Message) -> int:
+    overhead = LIMITS.message_overhead_tokens
+    return approx_tokens(m.content) + overhead + sum(approx_tokens(c.name) + approx_tokens(c.arguments) + overhead for c in m.tool_calls)
 
 
 def estimate_tokens(messages: list[Message], tools: list[dict[str, Any]]) -> int:
-    total = 0
-    for m in messages:
-        total += approx_tokens(m.content) + 4
-        for c in m.tool_calls:
-            total += approx_tokens(c.name) + approx_tokens(c.arguments) + 4
-    for t in tools:
-        total += approx_tokens(json.dumps(t)) + 4
-    return total
+    return sum(message_tokens(m) for m in messages) + sum(approx_tokens(json.dumps(t)) + LIMITS.message_overhead_tokens for t in tools)

@@ -11,8 +11,6 @@ from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
-    MAX_CALLS_PER_TURN,
-    MAX_CONTINUE_NUDGES,
     MAX_TURNS_FINAL_ANSWER_PROMPT,
     FailureOutcome,
     Guards,
@@ -26,14 +24,15 @@ from superclaw.guards import (
     tool_failure_stop_answer,
 )
 from superclaw.policy import Action, Policy, validate_prefix
-from superclaw.runtime import Completion, Message, Provider, ToolCall, approx_tokens, estimate_tokens
+from superclaw.models import ModelInfo
+from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
+from superclaw.settings import LIMITS
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
 from superclaw.tools.ask import NON_INTERACTIVE_MESSAGE, parse_questions
 from superclaw.tools.plan import format_plan, pending_items
 from superclaw.verifier import verify
 
-DEFAULT_MAX_TURNS = 12
 ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
 OWN_STATE_TOOLS = {"update_plan", "ask_user", "memory_note", "write_file", "edit_file"}
 
@@ -51,9 +50,11 @@ class Options:
     workspace: Path
     system_prompt: str = ""
     history: list[Message] = field(default_factory=list)
-    max_turns: int = DEFAULT_MAX_TURNS
+    max_turns: int = LIMITS.max_turns
     token_budget: int = 0
+    budget_usd: float = 0.0
     context_window: int = 0
+    model_info: ModelInfo | None = None
     preserve_last: int = 6
     require_completion_signal: bool = False
     verify: bool = False
@@ -85,6 +86,7 @@ class _Run:
         self.seqs: list[int] = []
         self.turns = 0
         self.tokens_used = 0
+        self.cost_usd = 0.0
         self.loaded: set[str] = set()
         self.nudges = 0
         self.promise_nudged = False
@@ -196,7 +198,7 @@ class _Run:
         if call.name == "update_plan" and res.ok:
             self.persist("plan", {"items": self.ctx.state.get("plan", [])})
         if self.o.hooks:
-            after = self.o.hooks.dispatch("afterTool", {"tool": call.name, "id": call.id, "args": args, "ok": res.ok, "output": res.output[:4000]}, call.name)
+            after = self.o.hooks.dispatch("afterTool", {"tool": call.name, "id": call.id, "args": args, "ok": res.ok, "output": res.output[:LIMITS.hook_output_chars]}, call.name)
             if after.context:
                 res.output += "\n\n[hook] " + "\n[hook] ".join(after.context)
         return res, False
@@ -221,7 +223,7 @@ class _Run:
         return ""
 
     def nudge(self, text: str, reason: str, instruction: str) -> Result | None:
-        if self.nudges < MAX_CONTINUE_NUDGES:
+        if self.nudges < LIMITS.max_continue_nudges:
             self.nudges += 1
             self.append(Message(role="user", content=instruction))
             return None
@@ -240,7 +242,7 @@ class _Run:
             return None
         if self.o.hooks:
             stop = self.o.hooks.dispatch("stop", {"text": text, "turns": self.turns})
-            if stop.blocked and self.nudges < MAX_CONTINUE_NUDGES:
+            if stop.blocked and self.nudges < LIMITS.max_continue_nudges:
                 self.nudges += 1
                 self.append(Message(role="user", content=f"A stop hook ({stop.blocked_by}) asked you to continue: {' '.join(stop.context) or 'work remains'}"))
                 return None
@@ -272,7 +274,7 @@ class _Run:
             self.append(Message(role="tool", content=ABORTED_TOOL_RESULT, tool_call_id=call.id, is_error=True))
 
     def turn_reminders(self, completion: Completion, call_count: int) -> list[str]:
-        candidates = (calls_per_turn_reminder(call_count) if call_count > MAX_CALLS_PER_TURN else "",
+        candidates = (calls_per_turn_reminder(call_count) if call_count > LIMITS.max_calls_per_turn else "",
                       self.guards.tool_only_reminder(completion.text, call_count),
                       self.guards.stale_plan_reminder(bool(pending_items(self.ctx.state))))
         return [reminder for reminder in candidates if reminder]
@@ -297,6 +299,26 @@ class _Run:
             self.append(Message(role="user", content=text))
         return None
 
+    def account(self, usage: Usage) -> None:
+        cost = self.o.model_info.cost(usage) if self.o.model_info else 0.0
+        self.tokens_used += usage.total
+        self.cost_usd += cost
+        self.emit({"type": "usage", "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+                   "cache_read_tokens": usage.cache_read_tokens, "run_total": self.tokens_used,
+                   "cost_usd": round(cost, LIMITS.usd_decimals), "run_cost_usd": round(self.cost_usd, LIMITS.usd_decimals),
+                   "context_used": usage.input_tokens, "context_window": self.o.context_window})
+
+    def budget_spent(self) -> Result | None:
+        o = self.o
+        if o.token_budget and self.tokens_used >= o.token_budget:
+            reason = f"token budget of {o.token_budget} was reached after {self.tokens_used} tokens"
+        elif o.budget_usd and self.cost_usd >= o.budget_usd:
+            reason = f"spend budget of ${o.budget_usd:.2f} was reached after ${self.cost_usd:.4f}"
+        else:
+            return None
+        self.emit({"type": "budget", "tokens": self.tokens_used, "cost_usd": round(self.cost_usd, LIMITS.usd_decimals), "reason": reason})
+        return self.result(f"Stopped: the run's {reason}.", incomplete=True, incomplete_reason="budget reached", stop_reason="budget")
+
     def final_answer_after_max_turns(self) -> Result:
         self.append(Message(role="user", content=MAX_TURNS_FINAL_ANSWER_PROMPT))
         final = self.provider.complete(self.messages, [])
@@ -319,15 +341,12 @@ class _Run:
                 self.append(Message(role="user", content=f"[hook] {line}"))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1
-            if o.token_budget and self.tokens_used >= o.token_budget:
-                self.emit({"type": "budget", "used": self.tokens_used, "budget": o.token_budget})
-                return self.result(f"Stopped: the run's token budget of {o.token_budget} was reached after {self.tokens_used} tokens.",
-                                   incomplete=True, incomplete_reason="token budget reached", stop_reason="budget")
+            if spent := self.budget_spent():
+                return spent
             exposed = o.registry.definitions(o.policy.visible, self.loaded)
             self.maybe_compact(exposed)
             completion = self.complete(exposed)
-            self.tokens_used += completion.usage.total
-            self.emit({"type": "usage", "input_tokens": completion.usage.input_tokens, "output_tokens": completion.usage.output_tokens, "run_total": self.tokens_used})
+            self.account(completion.usage)
             self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
             if completion.text:
                 self.emit({"type": "text", "text": completion.text})

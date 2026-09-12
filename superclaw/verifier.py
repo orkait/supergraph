@@ -7,9 +7,9 @@ from pathlib import Path
 
 from superclaw.compaction import render_transcript
 from superclaw.runtime import Message, Provider
+from superclaw.settings import LIMITS
 from superclaw.tools.plan import format_plan
 
-TRANSCRIPT_CLAMP = 24_000
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -37,8 +37,8 @@ def parse_verdict(text: str) -> Verdict:
 
 def verify(provider: Provider, objective: str, messages: list[Message], plan: list[dict[str, str]]) -> Verdict:
     transcript = render_transcript([m for m in messages if m.role != "system"])
-    if len(transcript) > TRANSCRIPT_CLAMP:
-        transcript = transcript[-TRANSCRIPT_CLAMP:]
+    if len(transcript) > LIMITS.verifier_transcript_bytes:
+        transcript = transcript[-LIMITS.verifier_transcript_bytes:]
     body = f"Objective:\n{objective}\n\n{format_plan(plan)}\n\nTranscript (most recent last):\n{transcript}"
     request = [Message(role="system", content=verifier_prompt()), Message(role="user", content=body)]
     return parse_verdict(provider.complete(request, []).text)

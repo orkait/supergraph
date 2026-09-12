@@ -6,14 +6,11 @@ from pathlib import Path
 
 from superclaw.intent import GUIDANCE, Kind
 from superclaw.policy import Mode
+from superclaw.settings import LIMITS
 from superclaw.skills import Skill
 
 PROJECT_FILES = ("AGENTS.md", "SUPERCLAW.md", ".superclaw/AGENTS.md")
 USER_FILE = "SUPERCLAW.md"
-MAX_FILE_BYTES = 8 * 1024
-MAX_TOTAL_BYTES = 32 * 1024
-SKILLS_BUDGET = 4096
-SKILL_DESC_MAX = 200
 TRUNCATION_MARKER = "\n… (truncated)"
 
 _PROMPTS = Path(__file__).parent / "prompts"
@@ -122,7 +119,7 @@ def project_guidelines(cwd: Path, git_root: Path | None) -> str:
     sections = []
     used = 0
     for directory in _guideline_dirs(cwd, git_root):
-        if used >= MAX_TOTAL_BYTES:
+        if used >= LIMITS.guideline_total_bytes:
             break
         match = _find_project_file(directory)
         if match is None:
@@ -130,7 +127,7 @@ def project_guidelines(cwd: Path, git_root: Path | None) -> str:
         content = match.read_text(errors="replace").strip()
         if not content:
             continue
-        content = _truncate(content, min(MAX_FILE_BYTES, MAX_TOTAL_BYTES - used))
+        content = _truncate(content, min(LIMITS.guideline_file_bytes, LIMITS.guideline_total_bytes - used))
         label = match.relative_to(git_root).as_posix() if git_root and git_root in match.resolve().parents else match.name
         sections.append(f"## Project guidelines ({label})\n\n{content}")
         used += len(content)
@@ -147,7 +144,7 @@ def user_guidelines(path: Path | None) -> str:
         f"## User guidelines ({Path(path).name})\n\n"
         "These are the operator's personal preferences, not project policy. "
         "Where they conflict with the project guidelines below, the project guidelines take precedence.\n\n"
-        + _truncate(content, MAX_FILE_BYTES)
+        + _truncate(content, LIMITS.guideline_file_bytes)
     )
 
 
@@ -159,10 +156,10 @@ def skills_block(skills: list[Skill]) -> str:
     omitted = 0
     for skill in skills:
         desc = skill.description.strip()
-        if len(desc) > SKILL_DESC_MAX:
-            desc = desc[:SKILL_DESC_MAX].rstrip() + "…"
+        if len(desc) > LIMITS.skill_description_chars:
+            desc = desc[:LIMITS.skill_description_chars].rstrip() + "…"
         line = f"- {skill.name}: {desc}" if desc else f"- {skill.name}"
-        if lines and spent + len(line) > SKILLS_BUDGET:
+        if lines and spent + len(line) > LIMITS.skills_index_bytes:
             omitted += 1
             continue
         lines.append(line)

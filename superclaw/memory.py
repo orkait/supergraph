@@ -8,10 +8,14 @@ from typing import Any
 from supergraph.core.errors import SuperGraphError
 
 from superclaw.redaction import redact
+from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 
-_DEFAULT_LIMIT = 5
 ORIGINS = ("user_stated", "user_selected", "inferred")
+_MS_PER_SECOND = 1000
+_MS_PER_DAY = 86_400_000
+_DAYS_PER_MONTH = 30
+_DAYS_PER_YEAR = 365
 _HONESTY_TRAPS = re.compile(
     r"(?i)\b(never|don't|do not|stop|avoid)\s+(disagree|question|challenge|push back|raise|mention|flag|verify|check|test|warn|correct)\b"
     r"|\b(always|just)\s+(agree|comply|approve|say yes)\b"
@@ -29,16 +33,20 @@ def _rows(result: Any) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _now_ms() -> int:
+    return int(time.time() * _MS_PER_SECOND)
+
+
 def _age(stated_at_ms: int, now_ms: int | None = None) -> str:
-    now = now_ms if now_ms is not None else int(time.time() * 1000)
-    days = max(0, (now - stated_at_ms) // 86_400_000)
+    now = now_ms if now_ms is not None else _now_ms()
+    days = max(0, (now - stated_at_ms) // _MS_PER_DAY)
     if days == 0:
         return "today"
-    if days < 30:
+    if days < _DAYS_PER_MONTH:
         return f"{days}d ago"
-    if days < 365:
-        return f"{days // 30}mo ago"
-    return f"{days // 365}y ago"
+    if days < _DAYS_PER_YEAR:
+        return f"{days // _DAYS_PER_MONTH}mo ago"
+    return f"{days // _DAYS_PER_YEAR}y ago"
 
 
 def refusal(text: str, origin: str) -> str:
@@ -60,12 +68,12 @@ class Memory:
     def note(self, text: str, *, origin: str = "user_stated", expires_days: int | None = None) -> str:
         if problem := refusal(text, origin):
             raise ValueError(problem)
-        node_id = "mem:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+        node_id = "mem:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
         expires = f" EXPIRES IN {int(expires_days)}d" if expires_days else ""
         try:
             self._gs.execute(
                 f'CREATE NODE {_lit(node_id)} kind = "memory" origin = {_lit(origin)} '
-                f'stated_at = {int(time.time() * 1000)}{expires} DOCUMENT {_lit(text)}'
+                f'stated_at = {_now_ms()}{expires} DOCUMENT {_lit(text)}'
             )
         except SuperGraphError as e:
             if "exist" not in str(e).lower():
@@ -85,11 +93,11 @@ class Memory:
             return "", 0
         return (data.get("_document") or "").strip(), int(data.get("stated_at") or 0)
 
-    def hits(self, query: str, limit: int = _DEFAULT_LIMIT) -> list[tuple[str, str, int]]:
+    def hits(self, query: str, limit: int = LIMITS.memory_recall_limit) -> list[tuple[str, str, int]]:
         found = [(r["id"], *self._doc(r["id"])) for r in self._search(query, limit)]
         return [(node_id, text, stated_at) for node_id, text, stated_at in found if text]
 
-    def recall(self, query: str, limit: int = _DEFAULT_LIMIT) -> str:
+    def recall(self, query: str, limit: int = LIMITS.memory_recall_limit) -> str:
         return "\n".join(f"- ({_age(stated_at)}) {text}" if stated_at else f"- {text}" for _, text, stated_at in self.hits(query, limit))
 
     def search_tool(self) -> Tool:
@@ -107,7 +115,7 @@ class _MemorySearch(Tool):
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "What to recall."},
-            "limit": {"type": "integer", "description": "Maximum results.", "default": _DEFAULT_LIMIT, "minimum": 1, "maximum": 20},
+            "limit": {"type": "integer", "description": "Maximum results.", "default": LIMITS.memory_recall_limit, "minimum": 1, "maximum": LIMITS.memory_recall_max},
         },
         "required": ["query"],
         "additionalProperties": False,
@@ -118,7 +126,7 @@ class _MemorySearch(Tool):
         self._m = memory
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        limit = int(args.get("limit") or _DEFAULT_LIMIT)
+        limit = int(args.get("limit") or LIMITS.memory_recall_limit)
         hits = self._m.hits(str(args.get("query") or ""), limit)
         lines = [f"{node_id} ({_age(stated_at) if stated_at else 'undated'}): {text}" for node_id, text, stated_at in hits]
         return Result.success("\n".join(lines) if lines else "No matching memories.")
