@@ -60,6 +60,7 @@ Anything outside the workspace is denied in every mode. Interactive programs (`v
 | Fork | a new session with the events copied and a `forked_from` edge |
 | Plan | `plan` events; the last one is restored on resume |
 | Compaction | a `compaction` event; replay substitutes the summary for the events it covered |
+| Prompt and failures | every run logs a `prompt` event (hash, token count, full text) so what the model saw is reconstructable; a resumed session reports `prompt_drift` when the rebuilt prompt differs; provider failures are `error` events |
 | Long-term memory | default namespace: `mem:<sha1>` nodes, recalled with `REMEMBER` before each run |
 
 Nothing superclaw writes into its namespace is visible to plain supergraph queries, and memory notes never leak into the session namespace.

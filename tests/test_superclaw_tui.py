@@ -58,4 +58,4 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path):
             assert not app.query_one("#prompt").disabled
 
     asyncio.run(drive())
-    assert [e["type"] for e in rt.store.events(sid)] == ["message", "message", "tool_result", "message"]
+    assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]

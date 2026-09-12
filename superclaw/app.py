@@ -15,7 +15,7 @@ from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.runtime import Provider
 from superclaw.sandbox import Backend, detect
-from superclaw.session import SessionStore
+from superclaw.session import SessionStore, prompt_hash
 from superclaw.skills import default_roots, load_skills
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
@@ -121,9 +121,13 @@ def run_once(
     require_completion: bool = False,
     verify: bool = False,
 ) -> Result:
+    system_prompt = system_prompt_for(rt, prompt)
+    previous = rt.store.last_prompt(sid)
+    if previous and previous.get("hash") != prompt_hash(system_prompt) and on_event:
+        on_event({"type": "prompt_drift", "previous": previous.get("hash"), "current": prompt_hash(system_prompt)})
     return run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
-        system_prompt=system_prompt_for(rt, prompt), history=rt.store.replay(sid),
+        system_prompt=system_prompt, history=rt.store.replay(sid),
         max_turns=rt.max_turns, context_window=rt.context_window, require_completion_signal=require_completion, verify=verify,
         on_event=on_event, on_permission=on_permission, on_ask_user=on_ask_user,
         session=rt.store, session_id=sid,
