@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from superclaw.runtime import Completion, Message, ToolCall, Usage, to_wire
+
+DEFAULT_MAX_TOKENS = 4096
+DEFAULT_TIMEOUT_S = 120
+
+_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _completion(**kwargs: Any) -> Any:
+    import litellm
+
+    litellm.suppress_debug_info = True
+    return litellm.completion(**kwargs)
+
+
+def parse_response(resp: Any) -> Completion:
+    choice = resp.choices[0]
+    message = choice.message
+    text = _THINK.sub("", message.content or "").strip()
+    calls: list[ToolCall] = []
+    for tc in getattr(message, "tool_calls", None) or []:
+        name = getattr(tc.function, "name", "") or ""
+        if not name:
+            continue
+        calls.append(ToolCall(id=tc.id or f"call_{len(calls)}", name=name, arguments=tc.function.arguments or "{}"))
+    usage = getattr(resp, "usage", None)
+    return Completion(
+        text=text,
+        tool_calls=calls,
+        usage=Usage(
+            input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+        ),
+        finish_reason=getattr(choice, "finish_reason", "") or "",
+    )
+
+
+class LitellmProvider:
+    def __init__(
+        self,
+        chain: list[dict[str, Any]],
+        *,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = 0.0,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
+    ) -> None:
+        if not chain:
+            raise ValueError("LitellmProvider needs at least one provider in the chain")
+        self._chain = chain
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._timeout_s = timeout_s
+
+    @property
+    def model(self) -> str:
+        return self._chain[0]["litellm_model"]
+
+    def complete(self, messages: list[Message], tools: list[dict[str, Any]]) -> Completion:
+        last_err: Exception | None = None
+        for provider in self._chain:
+            kwargs: dict[str, Any] = {
+                "model": provider["litellm_model"],
+                "messages": to_wire(messages),
+                "api_key": provider.get("api_key"),
+                "api_base": provider.get("api_base"),
+                "temperature": self._temperature,
+                "max_tokens": self._max_tokens,
+                "timeout": self._timeout_s,
+                "stream": False,
+            }
+            if provider.get("account_id"):
+                kwargs["account_id"] = provider["account_id"]
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+            try:
+                return parse_response(_completion(**kwargs))
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(f"all providers failed: {last_err}")

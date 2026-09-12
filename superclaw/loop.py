@@ -1,0 +1,250 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, render_transcript, threshold
+from superclaw.guards import (
+    DROPPED_TOOL_CALL_NOTICE,
+    EMPTY_TURN_NUDGE,
+    MAX_CONTINUE_NUDGES,
+    MAX_TURNS_FINAL_ANSWER_PROMPT,
+    Guards,
+    continue_nudge,
+    ends_with_continuation_cue,
+    no_output_stop_answer,
+    tool_failure_hint,
+    tool_failure_stop_answer,
+)
+from superclaw.policy import Action, Policy
+from superclaw.runtime import Completion, Message, Provider, ToolCall, estimate_tokens
+from superclaw.session import SessionStore
+from superclaw.tools import Registry, Result as ToolResult, ToolContext
+from superclaw.tools.ask import parse_questions
+from superclaw.tools.plan import format_plan, pending_items
+
+DEFAULT_MAX_TURNS = 12
+ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
+
+
+@dataclass
+class Options:
+    registry: Registry
+    policy: Policy
+    workspace: Path
+    system_prompt: str = ""
+    history: list[Message] = field(default_factory=list)
+    max_turns: int = DEFAULT_MAX_TURNS
+    context_window: int = 0
+    preserve_last: int = 6
+    require_completion_signal: bool = False
+    on_event: Callable[[dict[str, Any]], None] | None = None
+    on_permission: Callable[[dict[str, Any]], str] | None = None
+    on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
+    session: SessionStore | None = None
+    session_id: str = ""
+    summarize: Callable[[list[Message]], str] | None = None
+
+
+@dataclass
+class Result:
+    final_answer: str
+    turns: int
+    messages: list[Message]
+    incomplete: bool = False
+    incomplete_reason: str = ""
+    stop_reason: str = ""
+
+
+class _Run:
+    def __init__(self, provider: Provider, options: Options) -> None:
+        self.provider = provider
+        self.o = options
+        self.guards = Guards()
+        self.messages: list[Message] = []
+        self.seqs: list[int] = []
+        self.turns = 0
+        self.nudges = 0
+        plan = options.session.plan(options.session_id) if options.session and options.session_id else []
+        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan})
+
+    def emit(self, event: dict[str, Any]) -> None:
+        if self.o.on_event:
+            self.o.on_event(event)
+
+    def persist(self, etype: str, payload: dict[str, Any]) -> int:
+        if self.o.session and self.o.session_id:
+            return self.o.session.append(self.o.session_id, etype, payload)
+        return 0
+
+    def append(self, message: Message) -> None:
+        self.messages.append(message)
+        if message.role == "tool":
+            seq = self.persist("tool_result", {"tool_call_id": message.tool_call_id, "output": message.content, "ok": not message.is_error})
+        else:
+            seq = self.persist("message", {
+                "role": message.role, "content": message.content,
+                "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in message.tool_calls],
+            })
+        self.seqs.append(seq)
+
+    def result(self, answer: str, **kw: Any) -> Result:
+        return Result(final_answer=answer, turns=self.turns, messages=list(self.messages), **kw)
+
+    def summarize(self, middle: list[Message]) -> str:
+        if self.o.summarize:
+            return self.o.summarize(middle)
+        request = [Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=render_transcript(middle))]
+        return self.provider.complete(request, []).text
+
+    def maybe_compact(self, exposed: list[dict[str, Any]]) -> None:
+        limit = threshold(self.o.context_window)
+        if not limit or estimate_tokens(self.messages, exposed) <= limit:
+            return
+        plan = self.ctx.state.get("plan", [])
+        res = compact(self.messages, preserve_last=self.o.preserve_last, summarize=self.summarize,
+                      preserved_state=format_plan(plan) if plan else "")
+        if not res.compacted:
+            return
+        system_end = sum(1 for m in self.messages if m.role == "system")
+        through = self.seqs[system_end + res.removed - 1]
+        summary_seq = self.persist("compaction", {"summary": res.summary, "through_seq": through})
+        self.messages = res.messages
+        self.seqs = [*self.seqs[:system_end], summary_seq, *self.seqs[system_end + res.removed:]]
+        self.emit({"type": "compaction", "removed": res.removed})
+
+    def decide(self, name: str, args: dict[str, Any]) -> tuple[bool, str]:
+        tool = self.o.registry.get(name)
+        if tool is None:
+            return False, f"unknown tool {name!r}"
+        decision = self.o.policy.evaluate(tool, args)
+        if decision.action == Action.ALLOW:
+            return True, decision.reason
+        if decision.action == Action.DENY:
+            return False, decision.reason
+        request = {"tool": name, "args": args, "reason": decision.reason, "risk": decision.risk.level, "categories": decision.risk.categories}
+        self.emit({"type": "permission_request", **request})
+        if self.o.on_permission is None:
+            return False, f"no interactive approver; {decision.reason}"
+        choice = self.o.on_permission(request)
+        self.emit({"type": "permission_decision", "tool": name, "decision": choice})
+        if choice == "allow_session":
+            self.o.policy.grant_session(name)
+        if choice in ("allow", "allow_session"):
+            return True, "approved"
+        return False, "approval declined"
+
+    def execute(self, call: ToolCall) -> tuple[ToolResult, bool]:
+        try:
+            args = json.loads(call.arguments or "{}")
+            if not isinstance(args, dict):
+                raise ValueError("arguments must be a JSON object")
+        except ValueError as e:
+            return ToolResult.error(f"Error: invalid JSON arguments for {call.name}: {e}"), False
+        self.emit({"type": "tool_call", "id": call.id, "name": call.name, "args": args})
+        self.guards.observe_tool_call(call.name)
+        if call.name == "ask_user" and self.o.on_ask_user:
+            return self.ask_user(args), False
+        allowed, reason = self.decide(call.name, args)
+        if not allowed:
+            return ToolResult.error(f"Error: {call.name} denied: {reason}"), True
+        res = self.o.registry.run(call.name, args, self.ctx)
+        if call.name == "update_plan" and res.ok:
+            self.persist("plan", {"items": self.ctx.state.get("plan", [])})
+        return res, False
+
+    def ask_user(self, args: dict[str, Any]) -> ToolResult:
+        try:
+            questions = parse_questions(args)
+        except ValueError as e:
+            return ToolResult.error(f"Error: invalid arguments for ask_user: {e}")
+        answers = self.o.on_ask_user(questions)
+        return ToolResult.success("\n".join(f"Q: {q['question']}\nA: {a}" for q, a in zip(questions, answers)))
+
+    def incomplete_reason(self, text: str) -> str:
+        pending = pending_items(self.ctx.state)
+        if pending:
+            return f"{len(pending)} plan item(s) still pending"
+        if ends_with_continuation_cue(text):
+            return "the message ends mid-step"
+        return ""
+
+    def finish_without_tools(self, completion: Completion) -> Result | None:
+        text = completion.text
+        if self.guards.observe_turn(text, 0):
+            return self.result(no_output_stop_answer(self.turns), stop_reason="no_output")
+        if not text.strip():
+            self.append(Message(role="user", content=EMPTY_TURN_NUDGE))
+            return None
+        if not self.o.require_completion_signal:
+            return self.result(text)
+        reason = self.incomplete_reason(text)
+        if not reason:
+            return self.result(text)
+        if self.nudges < MAX_CONTINUE_NUDGES:
+            self.nudges += 1
+            self.append(Message(role="user", content=continue_nudge(reason)))
+            return None
+        return self.result(text, incomplete=True, incomplete_reason=reason)
+
+    def run_tools(self, completion: Completion) -> Result | None:
+        calls = completion.tool_calls
+        self.guards.observe_turn(completion.text, len(calls))
+        followups: list[str] = []
+        for index, call in enumerate(calls):
+            if not call.name:
+                self.append(Message(role="tool", content=DROPPED_TOOL_CALL_NOTICE, tool_call_id=call.id, is_error=True))
+                continue
+            res, denied = self.execute(call)
+            self.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
+            self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
+            outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
+            if outcome.hint:
+                tool = self.o.registry.get(call.name)
+                followups.append(tool_failure_hint(call.name, json.dumps(tool.parameters if tool else {}), res.output))
+            if outcome.stop:
+                for rest in calls[index + 1:]:
+                    self.append(Message(role="tool", content=ABORTED_TOOL_RESULT, tool_call_id=rest.id, is_error=True))
+                return self.result(tool_failure_stop_answer(call.name, outcome.count), stop_reason="tool_failure_loop")
+        for reminder in (self.guards.tool_only_reminder(completion.text, len(calls)),
+                         self.guards.stale_plan_reminder(bool(pending_items(self.ctx.state)))):
+            if reminder:
+                followups.append(reminder)
+        for text in followups:
+            self.append(Message(role="user", content=text))
+        return None
+
+    def final_answer_after_max_turns(self) -> Result:
+        self.append(Message(role="user", content=MAX_TURNS_FINAL_ANSWER_PROMPT))
+        final = self.provider.complete(self.messages, [])
+        self.append(Message(role="assistant", content=final.text))
+        if final.text:
+            self.emit({"type": "text", "text": final.text})
+        headless = self.o.require_completion_signal
+        return self.result(final.text or "Reached the turn limit without a final answer.",
+                           incomplete=headless, incomplete_reason="turn limit reached" if headless else "", stop_reason="max_turns")
+
+    def run(self, prompt: str) -> Result:
+        o = self.o
+        self.messages = [Message(role="system", content=o.system_prompt), *o.history]
+        self.seqs = [0] * len(self.messages)
+        self.append(Message(role="user", content=prompt))
+        for turn in range(max(1, o.max_turns)):
+            self.turns = turn + 1
+            exposed = o.registry.definitions(o.policy.visible)
+            self.maybe_compact(exposed)
+            completion = self.provider.complete(self.messages, exposed)
+            self.emit({"type": "usage", "input_tokens": completion.usage.input_tokens, "output_tokens": completion.usage.output_tokens})
+            self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
+            if completion.text:
+                self.emit({"type": "text", "text": completion.text})
+            outcome = self.run_tools(completion) if completion.tool_calls else self.finish_without_tools(completion)
+            if outcome is not None:
+                return outcome
+        return self.final_answer_after_max_turns()
+
+
+def run(prompt: str, provider: Provider, options: Options) -> Result:
+    return _Run(provider, options).run(prompt)
