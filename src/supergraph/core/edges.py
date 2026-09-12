@@ -350,9 +350,16 @@ class EdgeMatrices:
 
         return np.concatenate((base, np.array(dynamic, dtype=np.int32)))
 
+    def neighbors_out_typed(self, node_idx: int) -> list[tuple[int, str]]:
+        out: list[tuple[int, str]] = []
+        for etype in self.edge_types:
+            for nb in self.neighbors_out(node_idx, etype):
+                out.append((int(nb), etype))
+        return out
+
     def neighbors_in(self, node_idx: int, edge_type: str) -> np.ndarray:
         base = np.array([], dtype=np.int32)
-        
+
         base_matrix = None
         if edge_type in self._typed:
             if edge_type not in self._transpose_cache:

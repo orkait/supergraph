@@ -251,3 +251,13 @@ class TestMatchQuery:
         assert "fn_parse" in bound_ids
         assert "fn_run" in bound_ids
         assert len(r.data["edges"]) > 0
+
+    def test_match_untyped_reports_stored_edge_kind(self, graph):
+        r = execute(graph, 'MATCH ("fn_main") -[]-> (b)')
+        by_target = {e["target"]: e["kind"] for e in r.data["edges"]}
+        assert by_target["fn_helper"] == "calls"
+        assert by_target["cls_app"] == "uses"
+
+    def test_match_typed_reports_stored_edge_kind(self, graph):
+        r = execute(graph, 'MATCH ("fn_main") -[kind = "uses"]-> (b)')
+        assert [e["kind"] for e in r.data["edges"]] == ["uses"]

@@ -111,10 +111,13 @@ class PatternHandlers:
 
             for i, slot in enumerate(current_slots):
                 source_nid = self.store._slot_to_id(slot)
-                neighbors = self.store.edge_matrices.neighbors_out(slot, edge_type)
+                em = self.store.edge_matrices
+                if edge_type is None:
+                    neighbors = em.neighbors_out_typed(slot)
+                else:
+                    neighbors = [(int(nb), edge_type) for nb in em.neighbors_out(slot, edge_type)]
 
-                for nb in neighbors:
-                    nb = int(nb)
+                for nb, nb_kind in neighbors:
                     nid = self.store._slot_to_id(nb)
                     if nid is None:
                         continue
@@ -137,7 +140,7 @@ class PatternHandlers:
                         new_path.append(("_bound", nid))
 
                     new_edge_trail = list(edge_trails[i]) + [
-                        {"source": source_nid, "target": nid, "kind": edge_type or ""}
+                        {"source": source_nid, "target": nid, "kind": nb_kind}
                     ]
 
                     new_paths.append(new_path)
