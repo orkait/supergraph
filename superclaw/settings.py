@@ -57,7 +57,20 @@ class Limits:
     hook_error_chars: int = 200
 
     tool_output_bytes: int = 64 * 1024
+    tool_output_tokens: int = 10_000
+    read_file_tokens: int = 25_000
+    truncation_notice_tokens: int = 60
+    chars_per_token: int = 4
+    budget_head_share: float = 0.6
+    budget_head_lines: int = 10
+    budget_tail_lines: int = 16
+    budget_failure_context_before: int = 2
+    budget_failure_context_after: int = 3
+    diff_preview_bytes: int = 48 * 1024
+    binary_sniff_bytes: int = 8192
     read_file_bytes: int = 256 * 1024
+    read_file_lines: int = 2000
+    read_line_chars: int = 2000
     list_directory_entries: int = 500
     list_directory_depth: int = 2
     list_directory_max_depth: int = 5

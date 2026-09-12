@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
@@ -194,13 +194,14 @@ class _Run:
             before = self.o.hooks.dispatch("beforeTool", {"tool": call.name, "id": call.id, "args": args}, call.name)
             if before.blocked:
                 return ToolResult.error(f"Error: {call.name} blocked by hook {before.blocked_by}: {' '.join(before.context)}".rstrip(": ")), True
-        res = self.o.registry.run(call.name, args, self.ctx)
+        res = self.o.registry.run(call.name, args, self.ctx, call.id)
         if call.name == "update_plan" and res.ok:
             self.persist("plan", {"items": self.ctx.state.get("plan", [])})
         if self.o.hooks:
             after = self.o.hooks.dispatch("afterTool", {"tool": call.name, "id": call.id, "args": args, "ok": res.ok, "output": res.output[:LIMITS.hook_output_chars]}, call.name)
             if after.context:
                 res.output += "\n\n[hook] " + "\n[hook] ".join(after.context)
+                res = self.o.registry.finalize(call.name, args, res, self.ctx, call.id)
         return res, False
 
     def ask_user(self, args: dict[str, Any]) -> ToolResult:
@@ -262,7 +263,9 @@ class _Run:
         res, denied = self.execute(call)
         self.loaded.update(res.meta.get("load_tools", []))
         self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
-        self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
+        self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,
+                   "display": asdict(res.display), "artifact": res.artifact.path if res.artifact else "",
+                   "diagnostics": asdict(res.diagnostics) if res.diagnostics else {}})
         outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
         if not outcome.hint:
             return outcome, ""
