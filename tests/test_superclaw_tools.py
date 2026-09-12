@@ -181,22 +181,26 @@ class TestFileTools:
         assert (ws / "README.md").read_text() == "# readme\n"
 
     def test_write_file_overwrite_when_asked(self, reg, ctx, ws):
+        reg.run("read_file", {"path": "README.md"}, ctx)
         res = reg.run("write_file", {"path": "README.md", "content": "new", "overwrite": True}, ctx)
         assert res.ok
         assert (ws / "README.md").read_text() == "new"
 
     def test_edit_file_replaces_unique_match(self, reg, ctx, ws):
+        reg.run("read_file", {"path": "src/a.py"}, ctx)
         res = reg.run("edit_file", {"path": "src/a.py", "old_string": "beta", "new_string": "BETA"}, ctx)
         assert res.ok
         assert (ws / "src" / "a.py").read_text() == "alpha\nBETA\ngamma\n"
         assert res.changed_files == ["src/a.py"]
 
     def test_edit_file_not_found_is_error(self, reg, ctx):
+        reg.run("read_file", {"path": "src/a.py"}, ctx)
         res = reg.run("edit_file", {"path": "src/a.py", "old_string": "delta", "new_string": "x"}, ctx)
         assert not res.ok
         assert "not found" in res.output
 
     def test_edit_file_ambiguous_requires_replace_all(self, reg, ctx, ws):
+        reg.run("read_file", {"path": "src/a.py"}, ctx)
         res = reg.run("edit_file", {"path": "src/a.py", "old_string": "a", "new_string": ""}, ctx)
         assert not res.ok
         assert "5 times" in res.output

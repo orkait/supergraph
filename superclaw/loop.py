@@ -32,6 +32,13 @@ from superclaw.verifier import verify
 
 DEFAULT_MAX_TURNS = 12
 ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
+OWN_STATE_TOOLS = {"update_plan", "ask_user", "memory_note", "write_file", "edit_file"}
+
+
+def label_untrusted(tool: str, output: str) -> str:
+    if tool in OWN_STATE_TOOLS or output.startswith("Error:"):
+        return output
+    return f'<untrusted source="{tool}">\n{output}\n</untrusted>'
 
 
 @dataclass
@@ -230,7 +237,7 @@ class _Run:
             if repeated := self.guards.observe_identical(call.name, call.arguments):
                 followups.append(repeated)
             res, denied = self.execute(call)
-            self.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
+            self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
             self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
             outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
             if outcome.hint:

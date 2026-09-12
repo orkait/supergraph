@@ -69,6 +69,7 @@ class ReadFile(Tool):
         if target.is_dir():
             return Result.error(f"Error: {args['path']} is a directory; use list_directory")
         data = target.read_bytes()
+        ctx.files.record(target, data)
         truncated = len(data) > MAX_READ_BYTES
         text = data[:MAX_READ_BYTES].decode("utf-8", errors="replace")
         lines = text.split("\n")
@@ -91,10 +92,11 @@ class WriteFile(Tool):
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Path of the file to write."},
+            "description": {"type": "string", "description": "Why this file is written, one short line."},
             "content": {"type": "string", "description": "Full file contents to write."},
-            "overwrite": {"type": "boolean", "description": "Allow overwriting an existing file.", "default": False},
+            "overwrite": {"type": "boolean", "description": "Allow overwriting an existing file you have read this session.", "default": False},
         },
-        "required": ["path", "content"],
+        "required": ["path", "description", "content"],
         "additionalProperties": False,
     }
     safety = _write("Creates or overwrites a file.")
@@ -102,10 +104,14 @@ class WriteFile(Tool):
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         target = jail(ctx.workspace, args["path"])
         rel = relative(ctx.workspace, target)
-        if target.exists() and not args.get("overwrite"):
-            return Result.error(f"Error: {rel} already exists; pass overwrite=true to replace it")
+        if target.exists():
+            if not args.get("overwrite"):
+                return Result.error(f"Error: {rel} already exists; pass overwrite=true to replace it")
+            if problem := ctx.files.conflict(target, target.read_bytes()):
+                return Result.error(f"Error: {rel}: {problem}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(args["content"])
+        ctx.files.record(target, args["content"].encode())
         return Result.success(f"Wrote {len(args['content'])} chars to {rel}", changed_files=[rel])
 
 
@@ -115,12 +121,13 @@ class EditFile(Tool):
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path of the file to edit."},
+            "path": {"type": "string", "description": "Path of the file to edit. Read it first; the call fails otherwise."},
+            "description": {"type": "string", "description": "Why this edit is made, one short line."},
             "old_string": {"type": "string", "description": "Exact string to replace."},
             "new_string": {"type": "string", "description": "Replacement string. May be empty."},
             "replace_all": {"type": "boolean", "description": "Replace every occurrence instead of requiring uniqueness.", "default": False},
         },
-        "required": ["path", "old_string", "new_string"],
+        "required": ["path", "description", "old_string", "new_string"],
         "additionalProperties": False,
     }
     safety = _write("Edits an existing file in place.")
@@ -133,7 +140,10 @@ class EditFile(Tool):
         old = args["old_string"]
         if old == "":
             return Result.error("Error: old_string must not be empty")
-        text = target.read_text()
+        data = target.read_bytes()
+        if problem := ctx.files.conflict(target, data):
+            return Result.error(f"Error: {rel}: {problem}")
+        text = data.decode("utf-8", errors="replace")
         count = text.count(old)
         if count == 0:
             return Result.error(f"Error: old_string not found in {rel}")
@@ -141,7 +151,9 @@ class EditFile(Tool):
             return Result.error(
                 f"Error: old_string matches {count} times in {rel}; include more surrounding context or pass replace_all=true"
             )
-        target.write_text(text.replace(old, args["new_string"]))
+        updated = text.replace(old, args["new_string"])
+        target.write_text(updated)
+        ctx.files.record(target, updated.encode())
         return Result.success(f"Replaced {count} occurrence(s) in {rel}", changed_files=[rel])
 
 

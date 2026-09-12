@@ -53,7 +53,7 @@ def test_tool_round_trip_and_session_persistence(ws):
     assert res.final_answer == "it says hello"
     assert res.turns == 2
     assert [m.role for m in res.messages] == ["system", "user", "assistant", "tool", "assistant"]
-    assert res.messages[3].content == "1→hello"
+    assert "1→hello" in res.messages[3].content
     assert [e["type"] for e in store.events(sid)] == ["message", "message", "tool_result", "message"]
     assert store.replay(sid)[1].tool_calls[0].name == "read_file"
     gs.close()
