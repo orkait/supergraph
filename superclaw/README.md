@@ -33,7 +33,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Labels what it did not write | tool output arrives in `<untrusted source=…>` blocks the prompt ranks below the user; secrets (API keys, tokens, JWTs, private keys, auth headers, `*_password=` values) are scrubbed at the tool boundary before the model sees them |
 | Runs commands | `bash` inside a `bubblewrap` sandbox: read-only root, writable workspace and `/tmp`, no network, `~/.ssh` `~/.aws` `~/.gnupg` masked; destructive and network commands classified and gated; `require_escalated` with a `justification` runs on the host after approval |
 | Plans | `update_plan`, persisted per session and restored on resume |
-| Remembers | `memory_search` `memory_note` over the graph, plus automatic recall into every run |
+| Remembers | `memory_search` `memory_note` over the graph, plus automatic recall into every run. `memory_note` files only what the user stated or selected (`origin`), refuses inferences, secrets and any instruction that would stop a future session raising a concern, and can carry an `expires_days` TTL; recall shows each fact's age and the prompt says a remembered path or flag must be checked before it is recommended |
 | Loads skills lazily | `SKILL.md` files listed by name and description only; the body loads on `skill` |
 | Asks | `ask_user` with options and a recommended default |
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
