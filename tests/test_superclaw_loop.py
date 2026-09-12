@@ -133,12 +133,14 @@ def test_completion_gates_nudge_then_stop_and_the_verifier_can_fail(ws):
 
 
 def test_pressure_prunes_old_results_before_paying_for_a_summary(ws):
-    (ws / "big.txt").write_text("\n".join("y" * 20 for _ in range(3000)))
-    events, briefs = [], []
-    provider = Scripted(*[read(f"c{i}", "big.txt") for i in range(3)], Completion(text="ok"))
-    res = run("go", provider, options(ws, context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: briefs.append(b) or "SUMMARY", on_event=events.append))
-    assert [e["type"] for e in events if e["type"] in ("prune", "compaction")][:1] == ["prune"]
-    assert any("middle pruned" in m.content for m in res.messages if m.role == "tool") and res.final_answer == "ok"
+    for i in range(3):
+        (ws / f"big{i}.txt").write_text("\n".join(f"y{i}" * 10 for _ in range(3000)))
+    events = []
+    provider = Scripted(read("c0", "big0.txt"), read("c1", "big0.txt"), read("c2", "big1.txt"), read("c3", "big2.txt"), read("c4", "big0.txt"), Completion(text="ok"))
+    res = run("go", provider, options(ws, context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=events.append))
+    assert [e["type"] for e in events if e["type"] in ("prune", "compaction")][:2] == ["prune", "compaction"]
+    outputs = {e["id"]: e["output"] for e in events if e["type"] == "tool_result"}
+    assert "1→y0" in outputs["c0"] and "already in your context" in outputs["c1"] and "1→y0" in outputs["c4"] and res.final_answer == "ok"
     provider = Scripted(*[read(f"c{i}") for i in range(4)], Completion(text="ok"))
     res = run("go", provider, options(ws, context_window=600, reserve_tokens=100, keep_tokens=40, summarize=lambda b: "SUMMARY"))
     assert any(m.content.startswith(SUMMARY_LABEL) and "SUMMARY" in m.content for m in res.messages) and res.final_answer == "ok"

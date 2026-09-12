@@ -85,7 +85,12 @@ def test_jail_admits_inside_paths_and_refuses_every_escape(ws, tmp_path_factory)
 
 def test_read_file_numbers_pages_and_clips_lines(reg, ctx, ws):
     assert reg.run("read_file", {"path": "src/a.py"}, ctx).output == "1→alpha\n2→beta\n3→gamma"
-    assert reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1}, ctx).output == "2→beta\n[1 more lines; call read_file with offset=3 to continue]"
+    assert reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1}, ctx).output == "src/a.py lines 2-2 are already in your context (sent unchanged as lines 1-3); use them, or pass force=true to re-send."
+    assert reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1, "force": True}, ctx).output == "2→beta\n[1 more lines; call read_file with offset=3 to continue]"
+    (ws / "src" / "a.py").write_text("alpha\nbeta\ngamma\ndelta\n")
+    assert reg.run("read_file", {"path": "src/a.py", "offset": 4}, ctx).output == "4→delta"
+    ctx.files.evict({ctx.files.cursor})
+    assert reg.run("read_file", {"path": "src/a.py", "offset": 4}, ctx).output == "4→delta"
     assert "not found" in reg.run("read_file", {"path": "src/zzz.py"}, ctx).output
     assert "escapes" in reg.run("read_file", {"path": "../x"}, ctx).output
     (ws / "big.txt").write_text("\n".join(["x" * 3000] + [f"l{i}" for i in range(LIMITS.read_file_lines + 5)]))

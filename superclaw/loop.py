@@ -109,6 +109,7 @@ class _Run:
     def append(self, message: Message) -> None:
         self.messages.append(message)
         self.meter.append(message)
+        self.ctx.files.cursor = len(self.messages)
         if message.role == "tool":
             seq = self.persist("tool_result", {"tool_call_id": message.tool_call_id, "output": message.content, "ok": not message.is_error})
         else:
@@ -148,6 +149,7 @@ class _Run:
         system_end = sum(1 for m in self.messages if m.role == "system")
         through = self.seqs[system_end + res.removed - 1]
         summary_seq = self.persist("compaction", {"summary": res.summary, "through_seq": through})
+        self.ctx.files.compacted(system_end, res.removed)
         self.messages = res.messages
         self.seqs = [*self.seqs[:system_end], summary_seq, *self.seqs[system_end + res.removed:]]
         self.meter.reset()
@@ -159,6 +161,7 @@ class _Run:
             self.messages[index].content = content
             self.persist("prune", {"seq": self.seqs[index], "output": content})
         if pruned:
+            self.ctx.files.evict({index for index, _ in pruned})
             self.meter.reset()
             self.emit({"type": "prune", "results": len(pruned)})
         return len(pruned)

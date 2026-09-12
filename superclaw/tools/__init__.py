@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -79,16 +79,54 @@ class Result:
         return cls(False, output, **kw)
 
 
+@dataclass(frozen=True)
+class Window:
+    start: int
+    end: int
+    digest: str
+    message: int
+
+    def covers(self, start: int, end: int) -> bool:
+        return self.start <= start and end <= self.end
+
+
 class FileTracker:
     def __init__(self) -> None:
         self._hashes: dict[Path, str] = {}
+        self._windows: dict[Path, list[Window]] = {}
+        self.cursor = 0
 
     @staticmethod
     def _hash(content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
 
     def record(self, path: Path, content: bytes) -> None:
-        self._hashes[path] = self._hash(content)
+        digest = self._hash(content)
+        if self._hashes.get(path) != digest:
+            self._windows.pop(path, None)
+        self._hashes[path] = digest
+
+    def shown(self, path: Path, start: int, end: int) -> None:
+        self._windows.setdefault(path, []).append(Window(start, end, self._hashes[path], self.cursor))
+
+    def in_context(self, path: Path, start: int, end: int, current: bytes) -> Window | None:
+        digest = self._hash(current)
+        return next((w for w in self._windows.get(path, []) if w.digest == digest and w.covers(start, end)), None)
+
+    def evict(self, messages: set[int]) -> None:
+        self._rewrite(lambda w: None if w.message in messages else w)
+
+    def compacted(self, system_end: int, removed: int) -> None:
+        cut = system_end + removed
+        self._rewrite(lambda w: None if w.message < cut else replace(w, message=w.message - removed + 1))
+
+    def _rewrite(self, fn: Callable[[Window], Window | None]) -> None:
+        for path in list(self._windows):
+            kept = [moved for w in self._windows[path] if (moved := fn(w)) is not None]
+            if kept:
+                self._windows[path] = kept
+            else:
+                del self._windows[path]
 
     def seen(self, path: Path) -> bool:
         return path in self._hashes
@@ -207,6 +245,7 @@ class Registry:
         budgeted = budget_output(boundary, category, self._budget)
         res.output = budgeted.text
         if budgeted.truncated:
+            ctx.files.evict({ctx.files.cursor})
             if self._spill and res.artifact is None:
                 res.artifact = Artifact(str(self._spill.save(ctx.session_id, name, call_id, boundary)), complete=True)
             res.output += truncation_notice(budgeted, res.artifact)
