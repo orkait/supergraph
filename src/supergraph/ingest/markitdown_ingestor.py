@@ -14,7 +14,7 @@ class MarkItDownIngestor(Ingestor):
         except ImportError as e:
             raise ImportError(
                 "MarkItDownIngestor requires the `ingest` extra. "
-                "Install with: pip install 'supergraph[ingest]'"
+                "Install with: pip install 'supergraphdb[ingest]'"
             ) from e
 
         kwargs = {}

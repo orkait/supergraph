@@ -117,7 +117,7 @@ def test_whisper_ingestor_surfaces_missing_extra(tmp_path, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     ing = wi.WhisperIngestor()
-    with pytest.raises(ImportError, match=r"supergraph\[audio\]"):
+    with pytest.raises(ImportError, match=r"supergraphdb\[audio\]"):
         ing.convert(str(wav))
 
 
@@ -134,7 +134,7 @@ def test_real_whisper_transcription(fixture_name, expected_keywords):
     try:
         import faster_whisper  # noqa
     except ImportError:
-        pytest.skip("supergraph[audio] not installed")
+        pytest.skip("supergraphdb[audio] not installed")
     from supergraph.ingest.whisper_ingestor import WhisperIngestor
     ing = WhisperIngestor()
     r = ing.convert(str(clip), model="tiny")
@@ -153,7 +153,7 @@ def test_real_router_dispatches_wav_to_whisper():
     try:
         import faster_whisper  # noqa
     except ImportError:
-        pytest.skip("supergraph[audio] not installed")
+        pytest.skip("supergraphdb[audio] not installed")
     from supergraph.ingest.router import ingest_file
     r = ingest_file(str(clip))
     assert r.parser_used == "whisper"

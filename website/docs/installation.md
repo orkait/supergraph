@@ -8,8 +8,11 @@ sidebar_position: 2
 ## Core
 
 ```bash
-pip install supergraph
+pip install supergraphdb
 ```
+
+The distribution is `supergraphdb`; the import package is `supergraph`. The
+plain name was already taken on PyPI by an unrelated project.
 
 Covers the agentic DB contract out of the box: `REMEMBER` / `RECALL` (model2vec embedder), `SYS CRON` (croniter), `VAULT SYNC` (pyyaml), plus the numpy / scipy / usearch / lark / msgspec / psutil / threadpoolctl foundation. No torch, no PDF parser, no HTTP server.
 
@@ -17,24 +20,24 @@ Covers the agentic DB contract out of the box: `REMEMBER` / `RECALL` (model2vec 
 
 ```bash
 # PDF / DOCX / HTML ingestion (+200 MB)
-pip install 'supergraph[ingest]'
+pip install 'supergraphdb[ingest]'
 
 # Local VLM sidecar for scanned PDFs or image captioning (+80 MB wheel, ~1.5 GB weights on first use)
-pip install 'supergraph[vision]'
+pip install 'supergraphdb[vision]'
 
 # Speech-to-text (wav/mp3/flac/m4a)
-pip install 'supergraph[audio]'
+pip install 'supergraphdb[audio]'
 
 # GPU acceleration for NER (Linux x86_64, CUDA 12)
-pip install 'supergraph[gpu]'
+pip install 'supergraphdb[gpu]'
 
 # Pro profile: spec-driven, calibrated agentic-memory deployment
 # (bundles ingest + vision + audio + embedders-extra + gpu plus
 # huggingface-hub + tokenizers + onnxruntime). See "Pro mode" guide.
-pip install 'supergraph[pro]'
+pip install 'supergraphdb[pro]'
 
 # Everything heavy
-pip install 'supergraph[ingest,vision,playground]'
+pip install 'supergraphdb[ingest,vision,playground]'
 ```
 
 ## All extras
@@ -42,7 +45,7 @@ pip install 'supergraph[ingest,vision,playground]'
 | Extra | What it adds |
 |---|---|
 | `ingest` | markitdown + pymupdf + pymupdf4llm (PDF/DOCX/HTML to markdown) |
-| `ingest-pro` | docling (heavier PDF w/ tables + OCR; ~1 GB via torch). For CPU-only: `pip install 'supergraph[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu` |
+| `ingest-pro` | docling (heavier PDF w/ tables + OCR; ~1 GB via torch). For CPU-only: `pip install 'supergraphdb[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu` |
 | `vision` | llama-cpp-python[server] + huggingface-hub (local VLM sidecar, SmolVLM2-2.2B Q4_K_M ~1.5 GB on first use) |
 | `audio` | faster-whisper (in-process speech-to-text; tiny/base models ~40-150 MB on first use) |
 | `embedders-extra` | fastembed + llama-cpp-python (alternate embedder backends; model2vec is default and core) |

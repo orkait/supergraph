@@ -18,7 +18,7 @@ class FastEmbedEmbedder(Embedder):
         except ImportError as e:
             raise ImportError(
                 "FastEmbedEmbedder requires fastembed. "
-                "Install with: pip install 'supergraph[embedders-extra]'"
+                "Install with: pip install 'supergraphdb[embedders-extra]'"
             ) from e
 
         kwargs: dict = dict(model_name=model_name)

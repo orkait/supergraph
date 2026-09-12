@@ -16,7 +16,7 @@ class PyMuPDF4LLMIngestor(Ingestor):
         except ImportError as e:
             raise ImportError(
                 "PyMuPDF4LLMIngestor requires the `ingest` extra. "
-                "Install with: pip install 'supergraph[ingest]'"
+                "Install with: pip install 'supergraphdb[ingest]'"
             ) from e
 
         page_chunks = pymupdf4llm.to_markdown(file_path, page_chunks=True)

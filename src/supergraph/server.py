@@ -17,7 +17,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "supergraph.server requires the `playground` extra. "
-        "Install with: pip install 'supergraph[playground]'"
+        "Install with: pip install 'supergraphdb[playground]'"
     ) from e
 
 from supergraph import SuperGraph

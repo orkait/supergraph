@@ -23,7 +23,7 @@ def _get_model(model_size: str, device: str, compute_type: str):
         except ImportError as e:
             raise ImportError(
                 "WhisperIngestor requires the `stt` extra. "
-                "Install with: pip install 'supergraph[audio]'"
+                "Install with: pip install 'supergraphdb[audio]'"
             ) from e
         _model_cache[key] = WhisperModel(model_size, device=device, compute_type=compute_type)
     return _model_cache[key]

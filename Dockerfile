@@ -7,7 +7,7 @@
 # Build:   docker build --cpus=8 --memory=16g -t supergraph:latest .
 # Run:     docker run --cpus=8 --memory=16g -p 7200:7200 -v gs-data:/data supergraph:latest
 #
-# Built FROM LOCAL SOURCE. It used to install `supergraph[playground]==<ver>`
+# Built FROM LOCAL SOURCE. It used to install `supergraphdb[playground]==<ver>`
 # from PyPI, which cannot work: the distribution is named supergraph only from
 # 0.7.0 and has never been published under that name. Source keeps this file
 # buildable from any checkout and matches Dockerfile.cloud-cpu.

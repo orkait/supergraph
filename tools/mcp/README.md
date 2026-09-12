@@ -21,7 +21,7 @@ calls into DSL.
 ## Install
 
 ```bash
-uv pip install 'supergraph[mcp]'
+uv pip install 'supergraphdb[mcp]'
 ```
 
 This installs the `mcp` Python SDK and registers a `supergraph-mcp`
@@ -108,7 +108,7 @@ crashing the transport - the agent can recover and retry.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `missing dep 'mcp'` on stderr | install ran without `[mcp]` extra | `uv pip install 'supergraph[mcp]'` |
+| `missing dep 'mcp'` on stderr | install ran without `[mcp]` extra | `uv pip install 'supergraphdb[mcp]'` |
 | Tool calls hang on first use | embedder model downloading from HF (~30 MB) | wait for first call to finish; subsequent calls are fast |
 | `gs_count_nodes` always returns 0 after `gs_remember` | WAL not yet flushed to nodes table | run `sg_execute("SYS COMMIT")` or wait for periodic flush |
 | `sg_answer` returns garbage / errors | not in Pro mode, no Bonsai loaded | set `SUPERGRAPH_PROFILE=pro` and ensure Bonsai gguf is reachable |

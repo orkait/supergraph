@@ -24,7 +24,7 @@ class VisionHandler:
             if resolved is None:
                 raise RuntimeError(
                     "No vision endpoint available. Either:\n"
-                    "  1. pip install 'supergraph[vision]' (bundles a local sidecar)\n"
+                    "  1. pip install 'supergraphdb[vision]' (bundles a local sidecar)\n"
                     "  2. set SUPERGRAPH_VISION_URL to an OpenAI-compatible /v1 URL\n"
                     "  3. run `supergraph vision serve` to start the sidecar manually"
                 )

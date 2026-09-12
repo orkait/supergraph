@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "supergraph"
+name = "supergraphdb"
 version = "0.7.0"
 description = "Agentic brain DB - the cognitive layer for AI agents"
 readme = "README.md"
@@ -33,7 +33,7 @@ dependencies = [
     "msgspec>=0.18",
     "psutil>=5.9",
     "threadpoolctl>=3.1",
-    # Tiny, high-leverage. Bundling so that `pip install supergraph` delivers
+    # Tiny, high-leverage. Bundling so that `pip install supergraphdb` delivers
     # the agentic DB contract out of the box:
     #   - model2vec: default embedder (REMEMBER / RECALL / LEXICAL SEARCH),
     #     ~40 MB wheel + ~30 MB model downloaded on first use.
@@ -91,7 +91,7 @@ ingest = [
 ]
 # Heavier ingest backend. docling adds ~1 GB (pulls torch). Install with
 # CPU-only torch when you do not need GPU:
-#     pip install 'supergraph[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu
+#     pip install 'supergraphdb[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu
 # VisionHandler uses stdlib urllib against any OpenAI-compatible endpoint -
 # no openai Python SDK dep needed.
 ingest-pro = [
@@ -134,16 +134,16 @@ vision = [
 # Pro: aggregate of every extra needed to drive the slotted ProSpec
 # (jina-v5-small embedder + jina-v3 reranker + Bonsai NL->DSL ingest +
 # vision/audio sidecars + GPU). Adds NO new pip deps; this is a wrapper
-# so users can `pip install 'supergraph[pro]'` instead of stringing
+# so users can `pip install 'supergraphdb[pro]'` instead of stringing
 # extras together. See `supergraph pro check / setup / probe / status`
 # and src/supergraph/pro.py.
 pro = [
-    "supergraph[ingest]",
-    "supergraph[vision]",
-    "supergraph[audio]",
-    "supergraph[embedders-extra]",
-    "supergraph[gpu]",
-    "supergraph[mcp]",
+    "supergraphdb[ingest]",
+    "supergraphdb[vision]",
+    "supergraphdb[audio]",
+    "supergraphdb[embedders-extra]",
+    "supergraphdb[gpu]",
+    "supergraphdb[mcp]",
     "tokenizers>=0.15",
     "onnxruntime>=1.17",
     "huggingface-hub>=0.24",
@@ -159,10 +159,10 @@ pro = [
 #   (cloud media replaces them), embedders-extra (llama-cpp / GGUF, CPU-slow),
 #   ingest-pro (docling pulls torch ~1 GB).
 cloud-cpu = [
-    "supergraph[cloud]",
-    "supergraph[ingest]",
-    "supergraph[playground]",
-    "supergraph[mcp]",
+    "supergraphdb[cloud]",
+    "supergraphdb[ingest]",
+    "supergraphdb[playground]",
+    "supergraphdb[mcp]",
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
     "huggingface-hub>=0.24",
@@ -172,10 +172,10 @@ cloud-cpu = [
 # onnxruntime-gpu (dead without CUDA) + docling (torch ~1 GB) + local VLM/whisper
 # /4B-GGUF (CPU-slow). On Railway use [cloud-cpu] instead.
 all = [
-    "supergraph[pro]",
-    "supergraph[cloud]",
-    "supergraph[ingest-pro]",
-    "supergraph[playground]",
+    "supergraphdb[pro]",
+    "supergraphdb[cloud]",
+    "supergraphdb[ingest-pro]",
+    "supergraphdb[playground]",
 ]
 [tool.setuptools.package-dir]
 "" = "src"
@@ -222,14 +222,14 @@ testpaths = ["tests"]
 addopts = "-n 4 --timeout=60 --dist loadgroup"
 markers = [
     "needs_embedder: embedder test (model2vec is now core, kept for compat)",
-    "needs_fastembed: requires supergraph[embedders-extra] (fastembed)",
-    "needs_ingest: requires supergraph[ingest]",
+    "needs_fastembed: requires supergraphdb[embedders-extra] (fastembed)",
+    "needs_ingest: requires supergraphdb[ingest]",
     "needs_vault: vault test (pyyaml is now core, kept for compat)",
     "needs_scheduler: scheduler test (croniter is now core, kept for compat)",
-    "needs_playground: requires supergraph[playground]",
-    "needs_gpu: requires supergraph[gpu]",
-    "needs_vision: requires supergraph[vision]",
-    "needs_audio: requires supergraph[audio]",
+    "needs_playground: requires supergraphdb[playground]",
+    "needs_gpu: requires supergraphdb[gpu]",
+    "needs_vision: requires supergraphdb[vision]",
+    "needs_audio: requires supergraphdb[audio]",
 ]
 
 [tool.bumpversion]

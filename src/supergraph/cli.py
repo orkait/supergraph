@@ -58,7 +58,7 @@ def cmd_playground(args: argparse.Namespace) -> None:
     except ImportError:
         print(
             "Missing dependencies. Install with:\n"
-            "  pip install supergraph[playground]",
+            "  pip install supergraphdb[playground]",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -118,7 +118,7 @@ def cmd_vision(args: argparse.Namespace) -> None:
     except ImportError:
         print(
             "Missing dependencies. Install with:\n"
-            "  pip install 'supergraph[vision]'",
+            "  pip install 'supergraphdb[vision]'",
             file=sys.stderr,
         )
         sys.exit(1)

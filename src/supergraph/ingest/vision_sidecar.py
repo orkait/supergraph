@@ -166,7 +166,7 @@ def download_weights(
     except ImportError as e:
         raise ImportError(
             "Vision sidecar requires the `vision` extra. "
-            "Install with: pip install 'supergraph[vision]'"
+            "Install with: pip install 'supergraphdb[vision]'"
         ) from e
 
     s = resolve_spec(spec)

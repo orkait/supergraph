@@ -43,7 +43,7 @@ def _make_builtin_ingestor(name: str) -> Ingestor:
     if name == "audio":
         raise ValueError(
             "Audio ingestion requires docling with the ASR extra. "
-            "Install with: pip install 'supergraph[ingest]' 'docling[asr]'"
+            "Install with: pip install 'supergraphdb[ingest]' 'docling[asr]'"
         )
     raise ValueError(f"Unknown built-in ingestor: {name!r}")
 

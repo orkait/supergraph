@@ -21,8 +21,8 @@ class LlamaCppEmbedder(Embedder):
         except ImportError as e:
             raise ImportError(
                 "LlamaCppEmbedder requires llama-cpp-python. "
-                "Install with: pip install 'supergraph[embedders-extra]' "
-                "(or 'supergraph[vision]' which ships the same wheel)."
+                "Install with: pip install 'supergraphdb[embedders-extra]' "
+                "(or 'supergraphdb[vision]' which ships the same wheel)."
             ) from e
 
         self._model = Llama(

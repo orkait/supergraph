@@ -50,7 +50,7 @@ def resolve_bonsai_gguf(
         from huggingface_hub import hf_hub_download
     except ImportError as e:
         raise RuntimeError(
-            "huggingface-hub not installed; pip install 'supergraph[pro]'"
+            "huggingface-hub not installed; pip install 'supergraphdb[pro]'"
         ) from e
 
     fname = f"Ternary-Bonsai-4B-{q}.gguf"

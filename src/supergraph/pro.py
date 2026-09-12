@@ -376,7 +376,7 @@ def check_extras_installed(spec: ProSpec, host: HostSnapshot) -> None:
             "supergraph pro spec requires the following pip distributions "
             "which are not installed: "
             + ", ".join(missing)
-            + ". Install via: pip install 'supergraph[pro]'",
+            + ". Install via: pip install 'supergraphdb[pro]'",
             missing_dists=missing,
         )
 

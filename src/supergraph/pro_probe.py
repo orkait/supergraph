@@ -317,7 +317,7 @@ class FastembedProbe(Probe):
             from fastembed import TextEmbedding
         except ImportError as e:
             raise RuntimeError(
-                "fastembed not installed; pip install 'supergraph[embedders-extra]'"
+                "fastembed not installed; pip install 'supergraphdb[embedders-extra]'"
             ) from e
         TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
         try:
@@ -378,7 +378,7 @@ class JinaV3RerankerProbe(Probe):
             from huggingface_hub import hf_hub_download
         except ImportError as e:
             raise RuntimeError(
-                "huggingface-hub not installed; pip install 'supergraph[pro]'"
+                "huggingface-hub not installed; pip install 'supergraphdb[pro]'"
             ) from e
         from supergraph.config import SuperGraphConfig
         cfg = SuperGraphConfig()
@@ -453,7 +453,7 @@ class BonsaiProbe(Probe):
             from huggingface_hub import hf_hub_download
         except ImportError as e:
             raise RuntimeError(
-                "huggingface-hub not installed; pip install 'supergraph[pro]'"
+                "huggingface-hub not installed; pip install 'supergraphdb[pro]'"
             ) from e
         repo = "superkaiii/Ternary-Bonsai-4B-GGUF"
         fname = f"Ternary-Bonsai-4B-{self._quant.upper()}.gguf"
@@ -599,7 +599,7 @@ class WhisperProbe(Probe):
             from faster_whisper import WhisperModel
         except ImportError as e:
             raise RuntimeError(
-                "faster-whisper not installed; pip install 'supergraph[audio]'"
+                "faster-whisper not installed; pip install 'supergraphdb[audio]'"
             ) from e
         WhisperModel(self._model_size, device="cpu", compute_type="int8")
         try:
@@ -667,7 +667,7 @@ class VisionSidecarProbe(Probe):
             from supergraph.ingest import vision_sidecar as vs
         except ImportError as e:
             raise RuntimeError(
-                "vision sidecar deps missing; pip install 'supergraph[vision]'"
+                "vision sidecar deps missing; pip install 'supergraphdb[vision]'"
             ) from e
         model_path, mmproj_path = vs.download_weights(self._model)
         return int((model_path.stat().st_size + mmproj_path.stat().st_size) / (1024 * 1024))

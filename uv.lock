@@ -5044,7 +5044,7 @@ wheels = [
 ]
 
 [[package]]
-name = "supergraph"
+name = "supergraphdb"
 version = "0.7.0"
 source = { editable = "." }
 dependencies = [
@@ -5209,20 +5209,20 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16" },
     { name = "scipy", specifier = ">=1.10" },
-    { name = "supergraph", extras = ["audio"], marker = "extra == 'pro'" },
-    { name = "supergraph", extras = ["cloud"], marker = "extra == 'all'" },
-    { name = "supergraph", extras = ["cloud"], marker = "extra == 'cloud-cpu'" },
-    { name = "supergraph", extras = ["embedders-extra"], marker = "extra == 'pro'" },
-    { name = "supergraph", extras = ["gpu"], marker = "extra == 'pro'" },
-    { name = "supergraph", extras = ["ingest"], marker = "extra == 'cloud-cpu'" },
-    { name = "supergraph", extras = ["ingest"], marker = "extra == 'pro'" },
-    { name = "supergraph", extras = ["ingest-pro"], marker = "extra == 'all'" },
-    { name = "supergraph", extras = ["mcp"], marker = "extra == 'cloud-cpu'" },
-    { name = "supergraph", extras = ["mcp"], marker = "extra == 'pro'" },
-    { name = "supergraph", extras = ["playground"], marker = "extra == 'all'" },
-    { name = "supergraph", extras = ["playground"], marker = "extra == 'cloud-cpu'" },
-    { name = "supergraph", extras = ["pro"], marker = "extra == 'all'" },
-    { name = "supergraph", extras = ["vision"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["audio"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["cloud"], marker = "extra == 'all'" },
+    { name = "supergraphdb", extras = ["cloud"], marker = "extra == 'cloud-cpu'" },
+    { name = "supergraphdb", extras = ["embedders-extra"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["gpu"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["ingest"], marker = "extra == 'cloud-cpu'" },
+    { name = "supergraphdb", extras = ["ingest"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["ingest-pro"], marker = "extra == 'all'" },
+    { name = "supergraphdb", extras = ["mcp"], marker = "extra == 'cloud-cpu'" },
+    { name = "supergraphdb", extras = ["mcp"], marker = "extra == 'pro'" },
+    { name = "supergraphdb", extras = ["playground"], marker = "extra == 'all'" },
+    { name = "supergraphdb", extras = ["playground"], marker = "extra == 'cloud-cpu'" },
+    { name = "supergraphdb", extras = ["pro"], marker = "extra == 'all'" },
+    { name = "supergraphdb", extras = ["vision"], marker = "extra == 'pro'" },
     { name = "threadpoolctl", specifier = ">=3.1" },
     { name = "tokenizers", marker = "extra == 'cloud-cpu'", specifier = ">=0.15" },
     { name = "tokenizers", marker = "extra == 'dev'", specifier = ">=0.15" },

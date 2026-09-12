@@ -209,7 +209,7 @@ class TestCheckExtras:
         with pytest.raises(ProExtraNotInstalled) as excinfo:
             check_extras_installed(spec, host)
         assert "llama-cpp-python" in excinfo.value.missing_dists
-        assert "supergraph[pro]" in str(excinfo.value)
+        assert "supergraphdb[pro]" in str(excinfo.value)
 
 
 class TestResolve:

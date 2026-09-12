@@ -67,7 +67,7 @@ def _fitz():
         import fitz
     except ImportError as e:
         raise MediaUnsupported(
-            "PDF understanding needs pymupdf: install supergraph[ingest]"
+            "PDF understanding needs pymupdf: install supergraphdb[ingest]"
         ) from e
     return fitz
 

@@ -21,19 +21,22 @@ Status: v0.6.0, alpha.
 ## 📦 Install
 
 ```bash
-pip install supergraph
+pip install supergraphdb
 ```
+
+The distribution is `supergraphdb`; the import package is `supergraph`. The
+plain name was already taken on PyPI by an unrelated project.
 
 Core ships with [model2vec](https://github.com/MinishLab/model2vec) as the default embedder. Swap for Jina v5, bge-*, EmbeddingGemma, or any ONNX / GGUF model via `supergraph install-embedder`. PDFs, images, audio, GPU, and the web UI are opt-in extras.
 
 ```bash
-pip install 'supergraph[ingest]'       # PDF / DOCX / HTML
-pip install 'supergraph[vision]'       # local VLM for images + scanned PDFs
-pip install 'supergraph[audio]'        # faster-whisper speech-to-text
-pip install 'supergraph[playground]'   # FastAPI web UI
-pip install 'supergraph[gpu]'          # onnxruntime-gpu, Linux x86_64, CUDA 12
-pip install 'supergraph[mcp]'          # Model Context Protocol server (supergraph-mcp)
-pip install 'supergraph[pro]'          # one-shot agentic memory bundle (see Pro mode below)
+pip install 'supergraphdb[ingest]'       # PDF / DOCX / HTML
+pip install 'supergraphdb[vision]'       # local VLM for images + scanned PDFs
+pip install 'supergraphdb[audio]'        # faster-whisper speech-to-text
+pip install 'supergraphdb[playground]'   # FastAPI web UI
+pip install 'supergraphdb[gpu]'          # onnxruntime-gpu, Linux x86_64, CUDA 12
+pip install 'supergraphdb[mcp]'          # Model Context Protocol server (supergraph-mcp)
+pip install 'supergraphdb[pro]'          # one-shot agentic memory bundle (see Pro mode below)
 ```
 
 Full extras matrix: [Installation](website/docs/installation.md).
@@ -256,10 +259,10 @@ BonsaiIngestor(model_path=..., n_gpu_layers=-1)
 
 ## ✨ Pro mode
 
-`pip install 'supergraph[pro]'` bundles ingest + vision + audio + embedders-extra + gpu plus huggingface-hub / tokenizers / onnxruntime. Pair it with a one-time calibration to get spec-driven validation and a calibrated Bonsai ingestor without writing the device-detection / sizing / fallback glue yourself.
+`pip install 'supergraphdb[pro]'` bundles ingest + vision + audio + embedders-extra + gpu plus huggingface-hub / tokenizers / onnxruntime. Pair it with a one-time calibration to get spec-driven validation and a calibrated Bonsai ingestor without writing the device-detection / sizing / fallback glue yourself.
 
 ```bash
-pip install 'supergraph[pro]'
+pip install 'supergraphdb[pro]'
 supergraph pro setup        # download every component, probe each on this host
 supergraph pro status       # inspect host + spec + resolved knobs
 ```
@@ -314,7 +317,7 @@ Resource limits in `docker-compose.yml` cap each container at 8 CPUs / 16 GB RAM
 supergraph ships a Model Context Protocol server that exposes the store as agent-callable tools (Claude Desktop, Cursor, any MCP-aware client). No playground HTTP server required - the server holds an in-process `SuperGraph()` and translates typed tool calls into DSL.
 
 ```bash
-pip install 'supergraph[mcp]'   # adds the mcp Python SDK
+pip install 'supergraphdb[mcp]'   # adds the mcp Python SDK
 supergraph-mcp                  # stdio server, ready for Claude Desktop
 ```
 

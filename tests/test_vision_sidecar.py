@@ -175,5 +175,5 @@ def test_download_weights_surfaces_missing_extra(vlm_cache, monkeypatch):
         return real_import(name, *a, **kw)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    with pytest.raises(ImportError, match="supergraph\\[vision\\]"):
+    with pytest.raises(ImportError, match="supergraphdb\\[vision\\]"):
         vs.download_weights()

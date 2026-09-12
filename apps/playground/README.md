@@ -6,7 +6,7 @@ Interactive browser-based workbench for the supergraph DSL. Write queries, execu
 ## Quick Start
 
 ```bash
-pip install supergraph[playground]
+pip install supergraphdb[playground]
 supergraph playground
 ```
 

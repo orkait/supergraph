@@ -34,7 +34,7 @@ try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     sys.stderr.write(
-        "missing dep 'mcp'. install with: uv pip install 'supergraph[mcp]'\n"
+        "missing dep 'mcp'. install with: uv pip install 'supergraphdb[mcp]'\n"
     )
     raise
 

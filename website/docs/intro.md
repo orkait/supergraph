@@ -11,7 +11,7 @@ Memory infrastructure for AI agents. Nodes and edges with a typed DSL. Retrieve 
 ## 60-second start
 
 ```bash
-pip install supergraph
+pip install supergraphdb
 ```
 
 ```python
