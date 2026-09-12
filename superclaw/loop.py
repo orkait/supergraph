@@ -49,6 +49,7 @@ class Options:
     system_prompt: str = ""
     history: list[Message] = field(default_factory=list)
     max_turns: int = DEFAULT_MAX_TURNS
+    token_budget: int = 0
     context_window: int = 0
     preserve_last: int = 6
     require_completion_signal: bool = False
@@ -79,6 +80,7 @@ class _Run:
         self.messages: list[Message] = []
         self.seqs: list[int] = []
         self.turns = 0
+        self.tokens_used = 0
         self.nudges = 0
         self.promise_nudged = False
         self.objective = ""
@@ -282,10 +284,15 @@ class _Run:
         self.append(Message(role="user", content=prompt))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1
+            if o.token_budget and self.tokens_used >= o.token_budget:
+                self.emit({"type": "budget", "used": self.tokens_used, "budget": o.token_budget})
+                return self.result(f"Stopped: the run's token budget of {o.token_budget} was reached after {self.tokens_used} tokens.",
+                                   incomplete=True, incomplete_reason="token budget reached", stop_reason="budget")
             exposed = o.registry.definitions(o.policy.visible)
             self.maybe_compact(exposed)
             completion = self.complete(exposed)
-            self.emit({"type": "usage", "input_tokens": completion.usage.input_tokens, "output_tokens": completion.usage.output_tokens})
+            self.tokens_used += completion.usage.total
+            self.emit({"type": "usage", "input_tokens": completion.usage.input_tokens, "output_tokens": completion.usage.output_tokens, "run_total": self.tokens_used})
             self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
             if completion.text:
                 self.emit({"type": "text", "text": completion.text})

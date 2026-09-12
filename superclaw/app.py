@@ -8,6 +8,7 @@ from typing import Any, Callable
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
+from superclaw.intent import classify
 from superclaw.loop import Options, Result, run
 from superclaw.memory import Memory
 from superclaw.policy import Mode, Policy
@@ -57,6 +58,8 @@ class Runtime:
     model: str
     max_turns: int = 12
     context_window: int = DEFAULT_CONTEXT_WINDOW
+    token_budget: int = 0
+    intent_gate: bool = False
 
     @property
     def mode(self) -> Mode:
@@ -97,7 +100,7 @@ def system_prompt_for(rt: Runtime, prompt: str) -> str:
     return build_system_prompt(PromptInputs(
         cwd=rt.workspace, mode=rt.mode, skills=load_skills(default_roots(rt.workspace)),
         memory=rt.memory.recall(prompt), user_guidelines=user_guidelines_path(),
-        provider=rt.model.split("/", 1)[0], model=rt.model,
+        provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
     ))
 
 
@@ -121,6 +124,10 @@ def run_once(
     require_completion: bool = False,
     verify: bool = False,
 ) -> Result:
+    if rt.intent_gate:
+        rt.policy.request_kind = classify(rt.provider, prompt)
+        if on_event:
+            on_event({"type": "intent", "kind": rt.policy.request_kind.value})
     system_prompt = system_prompt_for(rt, prompt)
     previous = rt.store.last_prompt(sid)
     if previous and previous.get("hash") != prompt_hash(system_prompt) and on_event:
@@ -128,7 +135,8 @@ def run_once(
     return run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
         system_prompt=system_prompt, history=rt.store.replay(sid),
-        max_turns=rt.max_turns, context_window=rt.context_window, require_completion_signal=require_completion, verify=verify,
+        max_turns=rt.max_turns, token_budget=rt.token_budget, context_window=rt.context_window,
+        require_completion_signal=require_completion, verify=verify,
         on_event=on_event, on_permission=on_permission, on_ask_user=on_ask_user,
         session=rt.store, session_id=sid,
     ))

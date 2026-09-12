@@ -74,6 +74,8 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `128000` |
 | Turn limit | `--max-turns` | `12` |
+| Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
+| Intent gate | `--intent-gate` | off; one narrow model call classifies the request as `answer`, `diagnose`, `change` or `monitor`, and `answer` hides writes, shell and network while `diagnose` hides writes |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
 | Personal guidelines | `~/.config/superclaw/SUPERCLAW.md` | none |
 | Project guidelines | `AGENTS.md`, `SUPERCLAW.md` or `.superclaw/AGENTS.md`, walked from the git root to the cwd | none |
