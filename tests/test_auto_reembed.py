@@ -1,11 +1,9 @@
-"""Test that UPDATE NODE auto-re-embeds when embed field changes."""
 import numpy as np
-from graphstore import GraphStore
-from graphstore.embedding.base import Embedder
+from supergraph import SuperGraph
+from supergraph.embedding.base import Embedder
 
 
 class DeterministicEmbedder(Embedder):
-    """Embedder that returns hash-based vectors. Same text = same vector."""
     @property
     def name(self): return "deterministic"
     @property
@@ -28,27 +26,22 @@ class DeterministicEmbedder(Embedder):
 
 
 def test_update_embed_field_re_embeds():
-    """Updating an EMBED field should produce a new vector."""
-    gs = GraphStore(embedder=DeterministicEmbedder())
+    gs = SuperGraph(embedder=DeterministicEmbedder())
     gs.execute('SYS REGISTER NODE KIND "concept" REQUIRED text:string EMBED text')
     gs.execute('CREATE NODE "c1" kind = "concept" text = "old meaning"')
 
-    # Get the old vector
     slot = gs._store.id_to_slot[gs._store.string_table.intern("c1")]
     old_vec = gs._vector_store.get_vector(slot).copy()
 
-    # Update the embed field
     gs.execute('UPDATE NODE "c1" SET text = "completely different meaning"')
 
-    # Vector should have changed
     new_vec = gs._vector_store.get_vector(slot)
     assert not np.allclose(old_vec, new_vec), "Vector should change after updating embed field"
     gs.close()
 
 
 def test_update_non_embed_field_does_not_reembed():
-    """Updating a non-EMBED field should NOT re-embed."""
-    gs = GraphStore(embedder=DeterministicEmbedder())
+    gs = SuperGraph(embedder=DeterministicEmbedder())
     gs.execute('SYS REGISTER NODE KIND "concept" REQUIRED text:string OPTIONAL score:int EMBED text')
     gs.execute('CREATE NODE "c2" kind = "concept" text = "some meaning" score = 1')
 
@@ -63,8 +56,7 @@ def test_update_non_embed_field_does_not_reembed():
 
 
 def test_update_without_schema_does_not_crash():
-    """UPDATE on node without registered kind should not crash."""
-    gs = GraphStore(embedder=DeterministicEmbedder())
+    gs = SuperGraph(embedder=DeterministicEmbedder())
     gs.execute('CREATE NODE "plain" kind = "generic" name = "test"')
     gs.execute('UPDATE NODE "plain" SET name = "updated"')
     node = gs.execute('NODE "plain"')
@@ -74,8 +66,8 @@ def test_update_without_schema_does_not_crash():
 
 def test_embedder_mismatch_blocks_remember(tmp_path):
     import pytest
-    from graphstore import GraphStore
-    from graphstore.core.errors import GraphStoreError
+    from supergraph import SuperGraph
+    from supergraph.core.errors import SuperGraphError
 
     class StubEmb:
         name = "stub-A"
@@ -91,7 +83,7 @@ def test_embedder_mismatch_blocks_remember(tmp_path):
         name = "stub-B"
 
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path), embedder=StubEmb())
+    gs = SuperGraph(path=str(path), embedder=StubEmb())
     try:
         gs.execute('SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text')
         gs.execute('CREATE NODE "a" kind = "doc" text = "hi"')
@@ -99,9 +91,9 @@ def test_embedder_mismatch_blocks_remember(tmp_path):
     finally:
         gs.close()
 
-    gs2 = GraphStore(path=str(path), embedder=StubEmbB())
+    gs2 = SuperGraph(path=str(path), embedder=StubEmbB())
     try:
-        with pytest.raises(GraphStoreError, match="SYS REEMBED"):
+        with pytest.raises(SuperGraphError, match="SYS REEMBED"):
             gs2.execute('REMEMBER "hi" LIMIT 5')
     finally:
         gs2.close()

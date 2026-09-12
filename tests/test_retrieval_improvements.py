@@ -1,22 +1,13 @@
-"""Tests for retrieval improvements: RRF fusion, type-weighted scoring,
-nucleus expansion, and multiplicative temporal decay.
 
-Uses FixedEmbedder + SYS REGISTER to get vectors into the store, matching
-the pattern in test_remember_signals.py and test_integration_fixtures.py.
-"""
-
-import tempfile
 
 import numpy as np
-import pytest
 
-from graphstore import GraphStore
-from graphstore.algos.fusion import rrf_remember_fusion
-from graphstore.embedding.base import Embedder
+from supergraph import SuperGraph
+from supergraph.algos.fusion import rrf_remember_fusion
+from supergraph.embedding.base import Embedder
 
 
 class FixedEmbedder(Embedder):
-    """Deterministic embedder - same text always produces same vector."""
     @property
     def name(self): return "fixed"
     @property
@@ -39,7 +30,6 @@ class FixedEmbedder(Embedder):
 
 
 class KeywordEmbedder(Embedder):
-    """Low-dimensional embedder that clusters by topic keyword."""
 
     @property
     def name(self): return "keyword"
@@ -63,8 +53,7 @@ class KeywordEmbedder(Embedder):
 
 
 def _make_gs(**kwargs):
-    """Create a GraphStore with FixedEmbedder + fact schema."""
-    gs = GraphStore(embedder=FixedEmbedder(), **kwargs)
+    gs = SuperGraph(embedder=FixedEmbedder(), **kwargs)
     gs.execute('SYS REGISTER NODE KIND "fact" REQUIRED claim:string EMBED claim')
     gs.execute('SYS REGISTER NODE KIND "decision" REQUIRED claim:string EMBED claim')
     gs.execute('SYS REGISTER NODE KIND "entity" REQUIRED claim:string EMBED claim')
@@ -73,16 +62,13 @@ def _make_gs(**kwargs):
     return gs
 
 
-def _event_at_for(gs: GraphStore, node_id: str) -> int | None:
+def _event_at_for(gs: SuperGraph, node_id: str) -> int | None:
     slot = gs._store.id_to_slot[gs._store.string_table.intern(node_id)]
     col = gs._store.columns.get_column("__event_at__", gs._store._next_slot)
     if col is None:
         return None
     data, present, _ = col
     return int(data[slot]) if present[slot] else None
-
-
-# ── RRF fusion unit tests ──────────────────────────────────────────────
 
 
 class TestRRFFusion:
@@ -121,8 +107,6 @@ class TestRRFFusion:
         assert fused[1] > fused[2] > fused[3] > fused[4]
 
     def test_rrf_consensus_beats_single_signal(self):
-        """Candidate ranked moderately across all signals should beat one
-        ranked high on one signal but absent from others."""
         n = 20
         candidates = np.array([1, 2])
         sig1 = np.zeros(n); sig1[1] = 1.0; sig1[2] = 0.5
@@ -148,33 +132,30 @@ class TestRRFFusion:
         assert fused_low_k[0] > fused_high_k[0]
 
 
-# ── Config wiring ──────────────────────────────────────────────────────
-
-
 class TestConfigWiring:
     def test_tuned_defaults_promoted(self):
-        gs = GraphStore(embedder=FixedEmbedder())
+        gs = SuperGraph(embedder=FixedEmbedder())
         assert gs._executor._fusion_method == "weighted"
-        assert gs._executor._nucleus_expansion is False  # changed in pipeline refactor
+        assert gs._executor._nucleus_expansion is False
         assert gs._executor._search_oversample == 16
         gs.close()
 
     def test_fusion_method_wired(self):
-        gs = GraphStore(embedder=FixedEmbedder(), fusion_method="weighted")
+        gs = SuperGraph(embedder=FixedEmbedder(), fusion_method="weighted")
         assert gs._executor._fusion_method == "weighted"
         gs.close()
 
     def test_rrf_k_wired(self):
-        gs = GraphStore(embedder=FixedEmbedder(), rrf_k=30.0)
+        gs = SuperGraph(embedder=FixedEmbedder(), rrf_k=30.0)
         assert gs._executor._rrf_k == 30.0
         gs.close()
 
     def test_nucleus_expansion_wired(self):
-        gs = GraphStore(embedder=FixedEmbedder(), nucleus_expansion=True)
+        gs = SuperGraph(embedder=FixedEmbedder(), nucleus_expansion=True)
         assert gs._executor._nucleus_expansion is True
         gs.close()
 
     def test_nucleus_off_by_default(self):
-        gs = GraphStore(embedder=FixedEmbedder())
+        gs = SuperGraph(embedder=FixedEmbedder())
         assert gs._executor._nucleus_expansion is False
         gs.close()

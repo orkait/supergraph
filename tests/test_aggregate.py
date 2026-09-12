@@ -1,11 +1,10 @@
-"""Tests for AGGREGATE NODES queries."""
 import pytest
-from graphstore import GraphStore
-from graphstore.core.errors import AggregationError
+from supergraph import SuperGraph
+from supergraph.core.errors import AggregationError
 
 
 def make_graph():
-    g = GraphStore(ceiling_mb=256)
+    g = SuperGraph(ceiling_mb=256)
     g.execute('SYS REGISTER NODE KIND "memory" REQUIRED topic:string, importance:float, score:int')
     for i in range(100):
         topic = f"topic_{i % 5}"
@@ -65,7 +64,7 @@ class TestAggregateGlobal:
         assert result.data[0]["SUM(score)"] == sum(range(100))
 
     def test_empty_result(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('SYS REGISTER NODE KIND "x" REQUIRED score:int')
         result = g.execute('AGGREGATE NODES WHERE kind = "x" SELECT COUNT()')
         assert result.count == 1
@@ -99,13 +98,13 @@ class TestAggregateOrderLimit:
 
 class TestAggregateErrors:
     def test_non_columnarized_group_by_raises(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "x"')
         with pytest.raises(AggregationError):
             g.execute('AGGREGATE NODES GROUP BY nonexistent SELECT COUNT()')
 
     def test_non_columnarized_agg_field_raises(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "x"')
         with pytest.raises(AggregationError):
             g.execute('AGGREGATE NODES SELECT SUM(nonexistent)')

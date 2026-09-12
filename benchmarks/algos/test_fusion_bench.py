@@ -1,8 +1,6 @@
-"""Fusion primitives micro-benchmarks."""
 
-import numpy as np
 
-from graphstore.algos.fusion import (
+from supergraph.algos.fusion import (
     normalize_bm25,
     recency_decay,
     rrf_fuse,

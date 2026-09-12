@@ -1,9 +1,3 @@
-"""Shared fixtures for algo benchmarks.
-
-Every fixture is deterministic (fixed seeds) so runs are reproducible
-across machines and commits. Sizes scale in powers of 10 so perf curves
-are visible at a glance.
-"""
 
 from __future__ import annotations
 
@@ -20,7 +14,6 @@ def _rng(seed_offset: int = 0) -> np.random.Generator:
 
 
 def _make_random_graph(n: int, avg_degree: int, seed_offset: int = 0) -> csr_matrix:
-    """Random directed graph with approximately avg_degree out-edges per node."""
     rng = _rng(seed_offset)
     total_edges = n * avg_degree
     sources = rng.integers(0, n, total_edges, dtype=np.int32)

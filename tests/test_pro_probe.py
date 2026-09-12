@@ -1,24 +1,12 @@
-"""Tests for graphstore.pro_probe: probe registry, orchestrator,
-helpers. Real model probes are slow + need network; those are smoke
-covered by tests/test_pro_probe_live.py (skipped by default).
-"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
-from graphstore import pro_probe
-from graphstore.pro import (
+from supergraph import pro_probe
+from supergraph.pro import (
     CalibrationCache, CalibrationEntry, HostSnapshot, ProSpec,
 )
-
-
-# ---------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------
 
 
 def _host(**overrides) -> HostSnapshot:
@@ -46,34 +34,21 @@ def _entry(cid: str) -> CalibrationEntry:
     )
 
 
-# ---------------------------------------------------------------------
-# Registry
-# ---------------------------------------------------------------------
-
-
 class TestRegistry:
     def test_every_pro_spec_component_has_a_probe(self):
-        """Critical contract: ProSpec.component_ids() for every legal
-        slot combination must resolve to a registered probe. If a slot
-        gains a new value without a matching probe the resolver will
-        emit calibration_source=missing forever."""
         registered = set(pro_probe.list_probable())
-        # Defaults
         assert set(ProSpec().component_ids()) <= registered
-        # Vision opt-in variants
         for v in ("smolvlm2-2.2b", "qwen-vl-3b"):
             ids = ProSpec(vision=v).component_ids()
             assert any(i.startswith("vision:") for i in ids)
             assert all(i in registered for i in ids), (
                 f"unregistered for vision={v}: {set(ids) - registered}"
             )
-        # Audio opt-in variants
         for a in ("whisper-tiny", "whisper-base", "whisper-small"):
             ids = ProSpec(audio=a).component_ids()
             assert all(i in registered for i in ids), (
                 f"unregistered for audio={a}: {set(ids) - registered}"
             )
-        # Bonsai matrix
         for q in ("tq1_0", "tq2_0"):
             for s in ("lite", "full"):
                 ids = ProSpec(bonsai_quant=q, bonsai_skill=s).component_ids()
@@ -84,16 +59,10 @@ class TestRegistry:
     def test_list_probable_is_sorted_and_stable(self):
         ids = pro_probe.list_probable()
         assert ids == sorted(ids)
-        assert pro_probe.list_probable() == ids  # idempotent
-
-
-# ---------------------------------------------------------------------
-# Orchestrator
-# ---------------------------------------------------------------------
+        assert pro_probe.list_probable() == ids
 
 
 class _FakeProbe(pro_probe.Probe):
-    """In-memory probe that records its calls + returns a canned entry."""
 
     def __init__(self, cid: str, fail_in: str | None = None,
                  disk_mb: int = 42):
@@ -134,9 +103,7 @@ class TestOrchestratorErrorIsolation:
         assert {r.component_id for r in summary.successes} == {"a", "c"}
         assert {r.component_id for r in summary.failures} == {"b"}
         assert "download failed" in summary.failures[0].error
-        # Even though "b" failed, its measure() must not have been called.
         assert bad.measure_called is False
-        # Good probes ran.
         assert good_a.measure_called is True
         assert good_c.measure_called is True
 
@@ -177,8 +144,6 @@ class TestOrchestratorCacheUpdate:
         summary = pro_probe.probe_components(
             ["a", "b", "c"], host=_host(), cache_dir=tmp_path,
         )
-        # Cache must hold both successes; the failed probe should not
-        # have written a partial entry.
         host_sig = _host().host_signature()
         cache = CalibrationCache.load(host_sig, cache_dir=tmp_path)
         assert "a" in cache.components
@@ -186,9 +151,6 @@ class TestOrchestratorCacheUpdate:
         assert "b" not in cache.components
 
     def test_cache_survives_partial_progress(self, tmp_path, monkeypatch):
-        """Simulate a crash mid-suite: run probes, stop after probe 'a',
-        then re-run. The cache from the first run must still hold 'a'.
-        """
         good_a = _FakeProbe("a")
         registry = {"a": lambda: good_a}
         monkeypatch.setattr(pro_probe, "_REGISTRY", registry)
@@ -196,7 +158,6 @@ class TestOrchestratorCacheUpdate:
         s1 = pro_probe.probe_components(["a"], host=_host(), cache_dir=tmp_path)
         assert s1.all_ok is True
 
-        # Now reload cache + verify entry is durable.
         cache = CalibrationCache.load(_host().host_signature(), cache_dir=tmp_path)
         assert "a" in cache.components
         assert cache.components["a"].extra.get("probed") is True
@@ -243,23 +204,15 @@ class TestSkipProbe:
         assert summary.all_ok is True
         assert good.download_called is True
         assert good.measure_called is False
-        # Cache entry marked as download-only.
         cache = CalibrationCache.load(_host().host_signature(), cache_dir=tmp_path)
         assert cache.components["a"].extra.get("download_only") is True
 
 
-# ---------------------------------------------------------------------
-# Measurement helpers
-# ---------------------------------------------------------------------
-
-
 class TestMeasurementHelpers:
     def test_process_rss_mb_returns_positive(self):
-        # Any live Python process has at least a few MB resident.
         assert pro_probe._process_rss_mb() >= 1
 
     def test_vram_free_mb_zero_or_positive(self):
-        # Must not raise even when nvidia-smi is missing.
         v = pro_probe._vram_free_mb()
         assert v >= 0
 
@@ -268,13 +221,11 @@ class TestMeasurementHelpers:
 
         def _work():
             calls[0] += 1
-            # Sleep for a deterministic interval; return constant tokens.
             import time
             time.sleep(0.01)
             return 100
 
         tps = pro_probe._measure_callable_tps(_work, n_iters=3)
-        # 100 tokens / ~0.01s = ~10000 tps. Loose bound to dodge jitter.
         assert tps > 100
         assert calls[0] == 3
 
@@ -284,40 +235,30 @@ class TestMeasurementHelpers:
 
 
 def test_probe_lazy_import_symbols_exist():
-    """Probe download()/measure() lazily import runtime symbols, so a rename
-    there only surfaces at live `pro setup`, not in unit tests. Assert the
-    symbols the jina embedder + reranker probes depend on exist - regression
-    guard for the stale-import bugs (get_install_dir / LlamaCppReranker / rerank)."""
-    from graphstore.registry.installer import (  # noqa: F401
+    from supergraph.registry.installer import (  # noqa: F401
         install_embedder,
         load_installed_embedder,
     )
-    from graphstore.embedding.reranker import GGUFReranker
+    from supergraph.embedding.reranker import GGUFReranker
 
-    # JinaV3RerankerProbe.measure() calls reranker.score(query, documents)
     assert hasattr(GGUFReranker, "score")
 
 
 def test_all_probe_lazy_symbols_resolve():
-    """Static guard for the probe lazy-import bug class: every graphstore symbol
-    a probe imports inside download()/measure(), or calls as <module>.<attr>, must
-    exist. In-method imports hide renames from normal tests until live `pro setup`.
-    Caught: jina get_install_dir / LlamaCppReranker / .rerank() and vision pull_model.
-    Skips modules whose import fails on an ABSENT OPTIONAL DEP (not a stale symbol)."""
     import ast
     import importlib
-    import graphstore.pro_probe as pp
+    import supergraph.pro_probe as pp
 
     tree = ast.parse(open(pp.__file__).read())
     problems = []
     alias_to_mod = {}
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("graphstore"):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("supergraph"):
             try:
                 mod = importlib.import_module(node.module)
             except ImportError:
-                continue  # optional dep missing - not a stale-symbol bug
+                continue
             for a in node.names:
                 alias_to_mod[a.asname or a.name] = f"{node.module}.{a.name}"
                 if not hasattr(mod, a.name):

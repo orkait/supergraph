@@ -1,15 +1,14 @@
-"""End-to-end tests for system DSL: DSL string -> parse -> SystemExecutor -> verify Result."""
 
 import time
 import pytest
 
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor_system import SystemExecutor
-from graphstore.persistence.database import open_database
-from graphstore.core.errors import GraphStoreError
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor_system import SystemExecutor
+from supergraph.persistence.database import open_database
+from supergraph.core.errors import SuperGraphError
 
 
 @pytest.fixture
@@ -38,10 +37,6 @@ def execute_sys(store, schema, query, conn=None):
     executor = SystemExecutor(runtime)
     return executor.execute(ast)
 
-
-# =============================================
-# SYS STATS
-# =============================================
 
 class TestSysStats:
     def test_stats_all(self, setup):
@@ -94,10 +89,6 @@ class TestSysStats:
         assert r.data["wal_entries"] == 0
 
 
-# =============================================
-# SYS KINDS
-# =============================================
-
 class TestSysKinds:
     def test_kinds_empty(self, setup):
         store, schema = setup
@@ -118,10 +109,6 @@ class TestSysKinds:
         assert r.count == 1
 
 
-# =============================================
-# SYS EDGE KINDS
-# =============================================
-
 class TestSysEdgeKinds:
     def test_edge_kinds_after_register(self, setup):
         store, schema = setup
@@ -134,10 +121,6 @@ class TestSysEdgeKinds:
         assert "calls" in r.data
         assert r.count == 1
 
-
-# =============================================
-# SYS DESCRIBE
-# =============================================
 
 class TestSysDescribe:
     def test_describe_node_kind(self, setup):
@@ -161,10 +144,6 @@ class TestSysDescribe:
         assert r.data is None
         assert r.count == 0
 
-
-# =============================================
-# SYS REGISTER / UNREGISTER
-# =============================================
 
 class TestSysRegister:
     def test_register_node_kind(self, setup):
@@ -204,10 +183,6 @@ class TestSysRegister:
         assert schema.list_node_kinds() == []
 
 
-# =============================================
-# SYS CHECKPOINT / REBUILD / CLEAR
-# =============================================
-
 class TestSysMaintenance:
     def test_checkpoint(self, setup):
         store, schema = setup
@@ -219,7 +194,6 @@ class TestSysMaintenance:
         store.add_index("name")
         r = execute_sys(store, schema, "SYS REBUILD INDICES")
         assert r.kind == "ok"
-        # After rebuild, index should still work
         slots = store.query_by_index("name", "a")
         assert len(slots) == 1
 
@@ -230,7 +204,6 @@ class TestSysMaintenance:
 
     def test_clear_log(self, setup_with_db):
         store, schema, conn = setup_with_db
-        # Insert a log entry
         conn.execute(
             "INSERT INTO query_log (timestamp, query, elapsed_us, result_count) "
             "VALUES (?, ?, ?, ?)",
@@ -246,10 +219,6 @@ class TestSysMaintenance:
         assert row[0] == 0
 
 
-# =============================================
-# SYS WAL
-# =============================================
-
 class TestSysWal:
     def test_wal_status_no_conn(self, setup):
         store, schema = setup
@@ -260,7 +229,6 @@ class TestSysWal:
 
     def test_wal_status_with_conn(self, setup_with_db):
         store, schema, conn = setup_with_db
-        # Insert a WAL entry
         conn.execute(
             "INSERT INTO wal (timestamp, statement) VALUES (?, ?)",
             (time.time(), 'CREATE NODE "x" kind = "test"'),
@@ -277,10 +245,6 @@ class TestSysWal:
         r = execute_sys(store, schema, "SYS WAL REPLAY")
         assert r.kind == "ok"
 
-
-# =============================================
-# SYS EXPLAIN
-# =============================================
 
 class TestSysExplain:
     def test_explain_traverse(self, setup):
@@ -309,13 +273,8 @@ class TestSysExplain:
         assert r.data["type"] == "index_lookup"
 
 
-# =============================================
-# Query log operations (SLOW / FREQUENT / FAILED)
-# =============================================
-
 class TestQueryLog:
     def _insert_log_entries(self, conn):
-        """Insert sample query log entries for testing."""
         now = time.time()
         entries = [
             (now - 100, 'NODE "fn_a"', 500, 1, None),
@@ -340,7 +299,6 @@ class TestQueryLog:
         r = execute_sys(store, schema, "SYS SLOW QUERIES LIMIT 3", conn=conn)
         assert r.kind == "log_entries"
         assert r.count == 3
-        # Should be ordered by elapsed_us DESC
         assert r.data[0]["elapsed_us"] >= r.data[1]["elapsed_us"]
         assert r.data[1]["elapsed_us"] >= r.data[2]["elapsed_us"]
 
@@ -357,7 +315,6 @@ class TestQueryLog:
         r = execute_sys(store, schema, "SYS FREQUENT QUERIES LIMIT 2", conn=conn)
         assert r.kind == "log_entries"
         assert r.count == 2
-        # Most frequent should be first
         assert r.data[0]["count"] >= r.data[1]["count"]
 
     def test_frequent_queries_no_conn(self, setup):
@@ -372,7 +329,6 @@ class TestQueryLog:
         r = execute_sys(store, schema, "SYS FAILED QUERIES LIMIT 5", conn=conn)
         assert r.kind == "log_entries"
         assert r.count == 2
-        # All entries should have an error
         for entry in r.data:
             assert entry["error"] is not None
 
@@ -383,33 +339,26 @@ class TestQueryLog:
         assert r.data == []
 
 
-# =============================================
-# Unknown command
-# =============================================
-
 class TestUnknownCommand:
     def test_unknown_raises(self, setup):
         store, schema = setup
         executor = SystemExecutor(RuntimeState(store=store, schema=schema))
-        with pytest.raises(GraphStoreError, match="Unknown system command"):
+        with pytest.raises(SuperGraphError, match="Unknown system command"):
             executor.execute("not an AST node")
 
 
 def test_executor_base_split_integrity():
-    """All ExecutorBase helpers must be accessible from Executor after split."""
-    from graphstore.dsl.executor import Executor
-    from graphstore.core.store import CoreStore
-    from graphstore.core.schema import SchemaRegistry
-    from graphstore.core.runtime import RuntimeState
+    from supergraph.dsl.executor import Executor
+    from supergraph.core.store import CoreStore
+    from supergraph.core.schema import SchemaRegistry
+    from supergraph.core.runtime import RuntimeState
     store = CoreStore()
     schema = SchemaRegistry()
     ex = Executor(RuntimeState(store=store, schema=schema))
-    # VisibilityMixin
     assert hasattr(ex, '_compute_live_mask')
     assert hasattr(ex, '_resolve_slot')
     assert hasattr(ex, '_is_slot_visible')
     assert hasattr(ex, '_apply_ttl')
-    # FilteringMixin
     assert hasattr(ex, '_eval_where')
     assert hasattr(ex, '_try_column_filter')
     assert hasattr(ex, '_try_column_nodes')

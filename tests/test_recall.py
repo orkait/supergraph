@@ -1,12 +1,11 @@
-"""Tests for graph intelligence: RECALL, PROPAGATE, COUNTERFACTUAL, SNAPSHOT, CONTEXT."""
 import pytest
-from graphstore import GraphStore
-from graphstore.core.errors import NodeNotFound
+from supergraph import SuperGraph
+from supergraph.core.errors import NodeNotFound
 
 
 class TestRecall:
     def test_recall_returns_connected_nodes(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "cue" kind = "concept" name = "Paris"')
         g.execute('CREATE NODE "m1" kind = "memory" name = "Eiffel"')
         g.execute('CREATE NODE "m2" kind = "memory" name = "Louvre"')
@@ -20,7 +19,7 @@ class TestRecall:
         assert "m3" not in ids
 
     def test_recall_with_where(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "cue" kind = "concept"')
         g.execute('CREATE NODE "m1" kind = "memory"')
         g.execute('CREATE NODE "m2" kind = "other"')
@@ -30,7 +29,7 @@ class TestRecall:
         assert all(n["kind"] == "memory" for n in result.data)
 
     def test_recall_has_activation_score(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "cue" kind = "concept"')
         g.execute('CREATE NODE "m1" kind = "memory"')
         g.execute('CREATE EDGE "cue" -> "m1" kind = "r"')
@@ -39,12 +38,12 @@ class TestRecall:
         assert "_activation_score" in result.data[0]
 
     def test_recall_nonexistent_raises(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         with pytest.raises(NodeNotFound):
             g.execute('RECALL FROM "nonexistent" DEPTH 1 LIMIT 10')
 
     def test_recall_depth_2(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "a" kind = "concept"')
         g.execute('CREATE NODE "b" kind = "memory"')
         g.execute('CREATE NODE "c" kind = "memory"')
@@ -52,10 +51,10 @@ class TestRecall:
         g.execute('CREATE EDGE "b" -> "c" kind = "r"')
         result = g.execute('RECALL FROM "a" DEPTH 2 LIMIT 10')
         ids = [n["id"] for n in result.data]
-        assert "c" in ids  # reachable at depth 2
+        assert "c" in ids
 
     def test_recall_reaches_incoming_neighbors_from_sink_node(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "msg" kind = "memory" content = "Caroline moved from Sweden"')
         g.execute('CREATE NODE "ent" kind = "entity" name = "Caroline"')
         g.execute('CREATE EDGE "msg" -> "ent" kind = "mentions"')
@@ -64,7 +63,7 @@ class TestRecall:
         assert "msg" in ids
 
     def test_recall_spreads_bidirectionally(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "a" kind = "concept"')
         g.execute('CREATE NODE "b" kind = "concept"')
         g.execute('CREATE NODE "c" kind = "concept"')
@@ -77,7 +76,7 @@ class TestRecall:
 
 class TestPropagate:
     def test_propagate_updates_descendants(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('SYS REGISTER NODE KIND "belief" REQUIRED confidence:float')
         g.execute('CREATE NODE "root" kind = "belief" confidence = 0.9')
         g.execute('CREATE NODE "child" kind = "belief" confidence = 0.5')
@@ -88,24 +87,23 @@ class TestPropagate:
 
 class TestCounterfactual:
     def test_what_if_does_not_commit(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "b1" kind = "belief" value = "x"')
         g.execute('CREATE NODE "c1" kind = "conclusion"')
         g.execute('CREATE EDGE "b1" -> "c1" kind = "supports"')
         result = g.execute('WHAT IF RETRACT "b1"')
         assert result.data["affected_count"] >= 1
-        # Original still exists
         assert g.execute('NODE "b1"').data is not None
 
     def test_what_if_nonexistent_raises(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         with pytest.raises(NodeNotFound):
             g.execute('WHAT IF RETRACT "nonexistent"')
 
 
 class TestSnapshot:
     def test_snapshot_and_rollback(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" value = "original"')
         g.execute('SYS SNAPSHOT "before"')
         g.execute('UPDATE NODE "n1" SET value = "modified"')
@@ -114,44 +112,41 @@ class TestSnapshot:
         assert g.execute('NODE "n1"').data["value"] == "original"
 
     def test_snapshots_list(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('SYS SNAPSHOT "snap1"')
         g.execute('SYS SNAPSHOT "snap2"')
         result = g.execute('SYS SNAPSHOTS')
         assert len(result.data) >= 2
 
     def test_rollback_to_nonexistent_raises(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         with pytest.raises(Exception):
             g.execute('SYS ROLLBACK TO "nonexistent"')
 
 
 class TestBindContext:
     def test_context_isolates_creates(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "global" kind = "fact" name = "visible"')
         g.execute('BIND CONTEXT "session-1"')
         g.execute('CREATE NODE "local" kind = "hypothesis" name = "maybe"')
-        # Only context nodes visible while bound
         result = g.execute('NODES')
         assert len(result.data) == 1
         assert result.data[0]["id"] == "local"
 
     def test_discard_context_deletes_nodes(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "global" kind = "fact" name = "keep"')
         g.execute('BIND CONTEXT "session-1"')
         g.execute('CREATE NODE "local" kind = "temp" name = "discard"')
         g.execute('DISCARD CONTEXT "session-1"')
-        # Back to global view, local deleted
         result = g.execute('NODES')
         assert len(result.data) == 1
         assert result.data[0]["id"] == "global"
 
 
 def test_combined_transpose_cached():
-    """get_combined_transpose() must return the same object on repeated calls."""
-    from graphstore.core.edges import EdgeMatrices
+    from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {}), (1, 2, {})]}, num_nodes=3)
     t1 = em.get_combined_transpose()
@@ -160,8 +155,7 @@ def test_combined_transpose_cached():
 
 
 def test_combined_transpose_invalidated_on_rebuild():
-    """Rebuild must invalidate the combined transpose cache."""
-    from graphstore.core.edges import EdgeMatrices
+    from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {})]}, num_nodes=2)
     t1 = em.get_combined_transpose()
@@ -171,8 +165,7 @@ def test_combined_transpose_invalidated_on_rebuild():
 
 
 def test_combined_spread_matrix_cached():
-    """Spread matrix cache should be stable across repeated calls."""
-    from graphstore.core.edges import EdgeMatrices
+    from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {}), (1, 2, {})]}, num_nodes=3)
     s1 = em.get_combined_spread()
@@ -181,8 +174,7 @@ def test_combined_spread_matrix_cached():
 
 
 def test_combined_spread_matrix_invalidated_on_rebuild():
-    """Spread matrix cache must refresh after rebuild."""
-    from graphstore.core.edges import EdgeMatrices
+    from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {})]}, num_nodes=2)
     s1 = em.get_combined_spread()

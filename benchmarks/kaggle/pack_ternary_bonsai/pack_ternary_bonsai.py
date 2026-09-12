@@ -1,27 +1,3 @@
-"""Kaggle kernel: re-quantize Ternary-Bonsai-4B from unpacked FP16 to TQ1_0 GGUF.
-
-Why here: the conversion needs ~17 GB peak disk + a llama.cpp build. Doing it on
-Kaggle keeps it off the dev machine and publishes the result to HF Hub so every
-GraphStore dev pulls the same artifact.
-
-Inputs (Kaggle kernel config):
-  - dataset_sources: ["superkaiii/hf-token-private"]  (provides HF_TOKEN file)
-  - enable_internet: true
-  - enable_gpu: false                                   (conversion is CPU-bound)
-
-Flow:
-  1. Read HF write token from /kaggle/input/hf-token-private/HF_TOKEN
-  2. Download prism-ml/Ternary-Bonsai-4B-unpacked (FP16 safetensors, ~8 GB)
-  3. Clone + build llama.cpp llama-quantize
-  4. convert_hf_to_gguf.py  ->  F16 GGUF (~8 GB)
-  5. llama-quantize TQ1_0   ->  ~1 GB GGUF, the pack step
-  6. Upload result to superkaiii/Ternary-Bonsai-4B-TQ1_0-GGUF on HF Hub
-  7. Delete intermediates so peak disk stays under 20 GB Kaggle quota
-
-Output (Kaggle kernel):
-  /kaggle/working/Ternary-Bonsai-4B-TQ1_0.gguf      (also on HF Hub after upload)
-  /kaggle/working/pack_report.json                  (sizes + checksums)
-"""
 from __future__ import annotations
 
 import hashlib
@@ -46,7 +22,6 @@ REPORT = WORKING / "pack_report.json"
 
 
 def run(cmd: list[str] | str, **kw) -> None:
-    """Shell command with live output. Raises on nonzero exit."""
     shell = isinstance(cmd, str)
     print(f"$ {cmd if shell else ' '.join(cmd)}", flush=True)
     subprocess.run(cmd, check=True, shell=shell, **kw)
@@ -61,12 +36,9 @@ def sha256(path: Path) -> str:
 
 
 def load_hf_token() -> str:
-    """Find HF token matching the kaggle_benchmark.py pattern."""
-    # Primary: same path the working kernel uses.
     primary = Path("/kaggle/input/hf-token-private/hf_token.txt")
     if primary.exists():
         return primary.read_text().strip()
-    # Fallback: glob recursively in case Kaggle mounts at a nested path.
     for name in ("hf_token.txt", "HF_TOKEN", "token"):
         hits = list(Path("/kaggle/input").rglob(name))
         if hits:
@@ -115,7 +87,6 @@ def main() -> None:
         TARGET_QUANT,
     ])
 
-    # Drop intermediates aggressively to stay under the Kaggle 20 GB working quota.
     if F16_GGUF.exists():
         F16_GGUF.unlink()
     shutil.rmtree(SRC_DIR, ignore_errors=True)

@@ -1,6 +1,6 @@
 import numpy as np
 
-from graphstore.algos.sort import topk_from_column, topk_slot_order
+from supergraph.algos.sort import topk_from_column, topk_slot_order
 
 
 def test_topk_slot_order_descending_respects_offset_and_limit():

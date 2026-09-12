@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useGraphStore, type LayoutDirection } from '@/hooks/useGraphStore'
+import { useSuperGraph, type LayoutDirection } from '@/hooks/useSuperGraph'
 
 interface Props {
   open: boolean
@@ -23,8 +23,8 @@ interface Props {
 }
 
 export function SettingsDialog({ open, onOpenChange }: Props) {
-  const config = useGraphStore((s) => s.config)
-  const updateConfig = useGraphStore((s) => s.updateConfig)
+  const config = useSuperGraph((s) => s.config)
+  const updateConfig = useSuperGraph((s) => s.updateConfig)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-card border-border text-foreground max-w-lg w-full p-6">

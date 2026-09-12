@@ -1,23 +1,15 @@
-"""Hits every defensive error / NotImplemented / dunder path not already
-exercised by happy-path tests. Pushes coverage toward 100%.
-"""
 from __future__ import annotations
 
 import pytest
 
-from graphstore import q, F, P, agg, Time, EvolveWhen, EvolveThen, Query
-from graphstore.query.filters import F as _F, _Leaf, _Degree
-from graphstore.query.runtime import _COMPILERS
-from graphstore.query.escape import dsl_field_ref, dsl_variable, dsl_node_ref
-from graphstore.query.time_expr import TimeExpr, Time as _Time
+from supergraph import q, F, P, agg, Time, EvolveWhen, EvolveThen, Query
+from supergraph.query.filters import F as _F, _Leaf, _Degree
+from supergraph.query.escape import dsl_field_ref, dsl_variable, dsl_node_ref
+from supergraph.query.time_expr import Time as _Time
 
-
-# -- F algebra defensive paths ---------------------------------------------
 
 class TestFOperatorsWithWrongType:
     def test_and_with_non_F_returns_notimplemented(self):
-        # Python's operator protocol: returning NotImplemented from __and__
-        # makes Python try the right-hand type; if also fails -> TypeError.
         with pytest.raises(TypeError):
             _ = F.eq("k", "m") & 42
 
@@ -28,7 +20,7 @@ class TestFOperatorsWithWrongType:
 
 class TestFBaseRaises:
     def test_base_to_dsl_raises(self):
-        base = _F()  # instantiate raw base class
+        base = _F()
         with pytest.raises(NotImplementedError):
             base.to_dsl()
 
@@ -83,10 +75,9 @@ class TestFFromDictBadKeys:
             F.from_dict({"__not__": "not-a-dict"})
 
     def test_from_dict_multiple_and_keys(self):
-        # Multi-entry dict compiles to AND
         f = F.from_dict({"k": "m", "x__gt": 0.5})
         out = f.to_dsl()
-        assert "kind" not in out  # wasn't asked for
+        assert "kind" not in out
         assert "k = \"m\"" in out
         assert "x > 0.5" in out
 
@@ -95,8 +86,6 @@ class TestFFromDictBadKeys:
         assert "a = 1" in f.to_dsl()
         assert "b = 2" in f.to_dsl()
 
-
-# -- Escape helper defensive paths -----------------------------------------
 
 class TestEscapeHelpers:
     def test_field_ref_empty_raises(self):
@@ -128,16 +117,12 @@ class TestEscapeHelpers:
             dsl_node_ref(42)  # type: ignore[arg-type]
 
 
-# -- TimeExpr dunder -------------------------------------------------------
-
 class TestTimeExprRepr:
     def test_repr(self):
         t = _Time.now()
         assert "TimeExpr" in repr(t)
         assert "NOW" in repr(t)
 
-
-# -- Pattern defensive paths -----------------------------------------------
 
 class TestPatternTo:
     def test_to_multi_step_pattern_rejected(self):
@@ -161,8 +146,6 @@ class TestPatternTo:
         dsl = p.to_dsl()
         assert 'WHERE kind = "fn"' in dsl
 
-
-# -- Query runtime defensive paths -----------------------------------------
 
 class TestQueryUnknownCompiler:
     def test_compile_unknown_verb_raises(self):
@@ -222,13 +205,10 @@ class TestQueryWithKwargNoneRemovesModifier:
 
 class TestQueryReprBadCompile:
     def test_repr_handles_compile_error(self):
-        # A Query with an unregistered verb compiles-errors; repr must not raise
         bad = Query(_verb="definitely_not_registered", _params={}, _kind="read")
         r = repr(bad)
         assert "compile-error" in r or "Query" in r
 
-
-# -- Verbs defensive paths -------------------------------------------------
 
 class TestVerbDefensive:
     def test_ingest_empty_file_raises(self):
@@ -313,7 +293,7 @@ class TestSysDefensive:
 
     def test_clear_bad_target(self):
         with pytest.raises(ValueError):
-            q.sys.clear("EDGES")  # grammar: only LOG/CACHE
+            q.sys.clear("EDGES")
 
     def test_wal_bad_action(self):
         with pytest.raises(ValueError):
@@ -456,7 +436,7 @@ class TestEvolveValidation:
 
 class TestRegisterVerbValidation:
     def test_register_verb_bad_name(self):
-        from graphstore.query import register_verb
+        from supergraph.query import register_verb
         with pytest.raises(ValueError):
             register_verb("not a valid identifier")(lambda: None)
 

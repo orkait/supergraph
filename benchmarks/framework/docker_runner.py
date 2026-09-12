@@ -1,14 +1,8 @@
-"""Docker entrypoint for the benchmark framework.
-
-Reads benchmark config from CLI args, runs against the mounted dataset
-at /data, and writes results to /results inside the container.
-"""
 
 from __future__ import annotations
 
 import argparse
 import os
-import signal
 import sys
 from pathlib import Path
 
@@ -19,7 +13,6 @@ from .runners.runner import run_benchmark
 
 
 def _is_mount(path: str) -> bool:
-    """Check if a path is a mount point (volume-backed in Docker)."""
     try:
         with open("/proc/mounts") as f:
             mounts = f.read()
@@ -30,7 +23,7 @@ def _is_mount(path: str) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="docker_runner")
-    p.add_argument("--system", default="graphstore")
+    p.add_argument("--system", default="supergraph")
     p.add_argument("--dataset", default="longmemeval", choices=["longmemeval"])
     p.add_argument("--data-path", default="/data/longmemeval")
     p.add_argument("--variant", default="s", choices=["s", "m", "l"])
@@ -49,7 +42,7 @@ def main() -> int:
     p.add_argument("--embedder-model-dir", default=None,
                    help="local dir for onnx embedder (tokenizer.json + onnx/*.onnx)")
     p.add_argument("--embedder-cache-dir", default=None,
-                   help="graphstore registry cache root (for --embedder installed)")
+                   help="supergraph registry cache root (for --embedder installed)")
     p.add_argument("--embedder-output-dims", type=int, default=None)
     p.add_argument("--embedder-max-length", type=int, default=512)
     p.add_argument("--embedder-pooling", default="mean",
@@ -91,7 +84,6 @@ def main() -> int:
     p.add_argument("--entity-model-dir", default=None,
                    help="dsl.entity_model_dir - local dir for ONNX entity extractor")
 
-    # Adapter query strategy (how the adapter calls REMEMBER/RECALL)
     p.add_argument("--retrieval-depth", type=int, default=None,
                    help="REMEMBER candidate multiplier (LIMIT k*depth)")
     p.add_argument("--recall-depth", type=int, default=None,
@@ -101,7 +93,6 @@ def main() -> int:
     p.add_argument("--recency-boost-k", type=int, default=None,
                    help="multiplier for recency-sorted results in knowledge-update")
 
-    # GraphStore engine config (mirrors graphstore.json, overrides config chain)
     p.add_argument("--remember-weights", default=None,
                    help="dsl.remember_weights - 3 or 4 comma-separated fusion weights (vec,bm25,recency[,graph])")
     p.add_argument("--search-oversample", type=int, default=None,
@@ -116,7 +107,6 @@ def main() -> int:
                    help="dsl.rrf_k - RRF ranking constant (default 60)")
     args = p.parse_args()
 
-    # --- Validate args early ---
 
     if not args.embedder_model:
         if args.embedder_model_dir:
@@ -151,7 +141,6 @@ def main() -> int:
         print(f"warning: {args.out_dir} is not a mounted volume - results will be lost when container exits", file=sys.stderr)
         print(f"hint: add -v $(pwd)/results:{args.out_dir} to your docker run command", file=sys.stderr)
 
-    # --- Load dataset ---
 
     if args.dataset != "longmemeval":
         print(f"unknown dataset {args.dataset}", file=sys.stderr)
@@ -178,7 +167,6 @@ def main() -> int:
         print("warning: 0 records after filtering - nothing to benchmark", file=sys.stderr)
         return 0
 
-    # --- Build adapter ---
 
     adapter_cls = get_adapter(args.system)
     adapter_config = {
@@ -204,7 +192,6 @@ def main() -> int:
         "reranker_onnx_file": args.reranker_onnx_file,
         "reranker_projector_path": args.reranker_projector_path,
     }
-    # Only pass tuning knobs the user explicitly set (otherwise adapter/graphstore defaults apply)
     for attr, key in [
         ("retrieval_depth", "retrieval_depth"),
         ("recall_depth", "recall_depth"),
@@ -223,7 +210,6 @@ def main() -> int:
         if val is not None:
             adapter_config[key] = val
 
-    # Validate entity_model_dir if passed
     if "entity_model_dir" in adapter_config and adapter_config["entity_model_dir"]:
         ent_dir = Path(adapter_config["entity_model_dir"])
         if not ent_dir.exists():
@@ -236,10 +222,8 @@ def main() -> int:
     print(f"system: {adapter.name} v{adapter.version}")
     print(f"config: {adapter_config}")
 
-    # Strip non-serializable objects from config before passing to runner
     serializable_config = {k: v for k, v in adapter_config.items() if not k.startswith("_")}
 
-    # --- Run benchmark with partial-result safety ---
 
     def _save_results(result, tag_suffix=""):
         out_dir.mkdir(parents=True, exist_ok=True)

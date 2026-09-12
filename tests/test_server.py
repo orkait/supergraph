@@ -1,17 +1,15 @@
-"""Tests for the FastAPI playground server."""
 
 import pytest
 
-import graphstore.server as server_module
-from graphstore.server import app
-from graphstore.core.store import CoreStore
+import supergraph.server as server_module
+from supergraph.server import app
+from supergraph.core.store import CoreStore
 
 from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
 def _reset_store():
-    """Reset the module-level store before each test."""
     server_module._store = None
     yield
     server_module._store = None
@@ -20,11 +18,6 @@ def _reset_store():
 @pytest.fixture
 def client():
     return TestClient(app)
-
-
-# ------------------------------------------------------------------
-# POST /api/execute
-# ------------------------------------------------------------------
 
 
 class TestExecute:
@@ -64,11 +57,6 @@ class TestExecute:
         assert body["kind"] == "error"
 
 
-# ------------------------------------------------------------------
-# POST /api/execute-batch
-# ------------------------------------------------------------------
-
-
 class TestExecuteBatch:
     def test_execute_batch(self, client):
         resp = client.post(
@@ -85,11 +73,6 @@ class TestExecuteBatch:
         assert len(body) == 2
         assert body[0]["kind"] == "node"
         assert body[1]["kind"] == "node"
-
-
-# ------------------------------------------------------------------
-# GET /api/graph
-# ------------------------------------------------------------------
 
 
 class TestGetGraph:
@@ -117,11 +100,6 @@ class TestGetGraph:
         assert edge["kind"] == "knows"
 
 
-# ------------------------------------------------------------------
-# POST /api/reset
-# ------------------------------------------------------------------
-
-
 class TestReset:
     def test_reset(self, client):
         client.post(
@@ -137,21 +115,11 @@ class TestReset:
         assert len(graph["edges"]) == 0
 
 
-# ------------------------------------------------------------------
-# POST /api/config
-# ------------------------------------------------------------------
-
-
 class TestConfig:
     def test_config(self, client):
         resp = client.post("/api/config", json={"ceiling_mb": 512})
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
-
-
-# ------------------------------------------------------------------
-# CoreStore.get_all_edges (unit test)
-# ------------------------------------------------------------------
 
 
 class TestGetAllEdges:

@@ -1,20 +1,19 @@
-"""Locks the evolution-engine wiring fixes, snapshot survival, and WAL replay surfacing."""
 import sqlite3
 
 import pytest
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 @pytest.mark.needs_embedder
 class TestSimilarityBufferWired:
     def test_buffer_shared_with_runtime(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         assert gs._runtime.similarity_buffer is gs._similarity_buffer
         gs.close()
 
     def test_similar_populates_buffer(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text'
         )
@@ -28,7 +27,7 @@ class TestSimilarityBufferWired:
         gs.close()
 
     def test_remember_populates_buffer(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text'
         )
@@ -41,7 +40,7 @@ class TestSimilarityBufferWired:
         gs.close()
 
     def test_avg_similarity_signal_reads_buffer(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text'
         )
@@ -62,7 +61,7 @@ class TestSimilarityBufferWired:
 
 class TestEdgeDensitySignal:
     def test_edge_density_returns_real_value(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(5):
             gs.execute(f'CREATE NODE "n{i}" kind = "test"')
         for i in range(4):
@@ -74,7 +73,7 @@ class TestEdgeDensitySignal:
         gs.close()
 
     def test_edge_density_zero_on_empty_graph(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         engine = gs._evolution_engine
         signals = engine.compute_signals()
         assert signals["edge_density"] == 0.0
@@ -84,12 +83,12 @@ class TestEdgeDensitySignal:
 @pytest.mark.needs_embedder
 class TestSimilarityThresholdWired:
     def test_default_is_none(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         assert gs._executor._similarity_threshold is None
         gs.close()
 
     def test_evolution_set_writes_to_executor(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS EVOLVE RULE "thresh" WHEN memory_pct >= 0 '
             'THEN SET similarity_threshold = 0.9 COOLDOWN 10'
@@ -100,7 +99,7 @@ class TestSimilarityThresholdWired:
         gs.close()
 
     def test_threshold_filters_similar_results(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text'
         )
@@ -123,12 +122,12 @@ class TestSimilarityThresholdWired:
 
 class TestDuplicateThresholdWired:
     def test_default_override_is_none(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         assert gs._sys_executor._duplicate_threshold_override is None
         gs.close()
 
     def test_evolution_set_writes_override(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute(
             'SYS EVOLVE RULE "dup" WHEN memory_pct >= 0 '
             'THEN SET duplicate_threshold = 0.99 COOLDOWN 10'
@@ -139,19 +138,19 @@ class TestDuplicateThresholdWired:
         gs.close()
 
     def test_dsl_explicit_threshold_still_wins(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs._sys_executor._duplicate_threshold_override = 0.99
         gs.close()
 
 
 class TestProtectedKindsWired:
     def test_default_is_none(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         assert gs._sys_executor._protected_kinds is None
         gs.close()
 
     def test_evolution_add_writes_to_sys_executor(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute(
             'SYS EVOLVE RULE "pk" WHEN memory_pct >= 0 '
             'THEN ADD protected_kinds "vip" COOLDOWN 10'
@@ -167,7 +166,7 @@ class TestProtectedKindsWired:
         gs.close()
 
     def test_evict_respects_runtime_protected_kinds(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs._sys_executor._protected_kinds = {"schema", "config", "system", "vip"}
 
         gs.execute('CREATE NODE "important" kind = "vip" data = "keep me"')
@@ -181,7 +180,7 @@ class TestProtectedKindsWired:
 
 class TestSnapshotSurvivesCompact:
     def test_snapshot_not_cleared_by_compact(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "x"')
         gs.execute('CREATE NODE "b" kind = "x"')
         gs.execute('SYS SNAPSHOT "pre"')
@@ -192,7 +191,7 @@ class TestSnapshotSurvivesCompact:
         gs.close()
 
     def test_rollback_after_compact_restores_deleted(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "keep" kind = "x"')
         gs.execute('CREATE NODE "also_keep" kind = "x"')
         gs.execute('CREATE NODE "gone" kind = "x"')
@@ -208,7 +207,7 @@ class TestSnapshotSurvivesCompact:
         gs.close()
 
     def test_rollback_preserves_edges_across_compact(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "x"')
         gs.execute('CREATE NODE "b" kind = "x"')
         gs.execute('CREATE NODE "c" kind = "x"')
@@ -227,18 +226,18 @@ class TestSnapshotSurvivesCompact:
 
 class TestWalReplayErrorSurfacing:
     def test_status_includes_replay_error_count_zero(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         status = gs.execute('SYS STATUS').data
         assert status.get("wal_replay_errors") == 0
         gs.close()
 
     def test_corrupt_wal_surfaces_replay_error(self, tmp_path):
         db_dir = tmp_path / "db"
-        gs = GraphStore(path=str(db_dir), embedder=None)
+        gs = SuperGraph(path=str(db_dir), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         gs.close()
 
-        conn = sqlite3.connect(str(db_dir / "graphstore.db"))
+        conn = sqlite3.connect(str(db_dir / "supergraph.db"))
         conn.execute(
             "INSERT INTO wal (timestamp, statement) VALUES (?, ?)",
             (0.0, "TOTALLY INVALID DSL $$$"),
@@ -246,7 +245,7 @@ class TestWalReplayErrorSurfacing:
         conn.commit()
         conn.close()
 
-        gs2 = GraphStore(path=str(db_dir), embedder=None)
+        gs2 = SuperGraph(path=str(db_dir), embedder=None)
         assert gs2._wal.replay_error_count == 1
         status = gs2.execute('SYS STATUS').data
         assert status["wal_replay_errors"] == 1
@@ -257,11 +256,11 @@ class TestWalReplayErrorSurfacing:
 
     def test_replay_errors_cleared_on_reopen(self, tmp_path):
         db_dir = tmp_path / "db"
-        gs = GraphStore(path=str(db_dir), embedder=None)
+        gs = SuperGraph(path=str(db_dir), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         gs.close()
 
-        conn = sqlite3.connect(str(db_dir / "graphstore.db"))
+        conn = sqlite3.connect(str(db_dir / "supergraph.db"))
         conn.execute(
             "INSERT INTO wal (timestamp, statement) VALUES (?, ?)",
             (0.0, "BAD STATEMENT"),
@@ -269,10 +268,10 @@ class TestWalReplayErrorSurfacing:
         conn.commit()
         conn.close()
 
-        gs2 = GraphStore(path=str(db_dir), embedder=None)
+        gs2 = SuperGraph(path=str(db_dir), embedder=None)
         assert gs2._wal.replay_error_count == 1
         gs2.close()
 
-        gs3 = GraphStore(path=str(db_dir), embedder=None)
+        gs3 = SuperGraph(path=str(db_dir), embedder=None)
         assert gs3._wal.replay_error_count == 0
         gs3.close()

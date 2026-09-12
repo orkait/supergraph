@@ -1,21 +1,21 @@
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Settings, BookOpen, Sun, Moon } from 'lucide-react'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { ExamplesDialog } from '@/components/ExamplesDialog'
 import { useState } from 'react'
 
 export function Toolbar() {
-  const isDark = useGraphStore((s) => s.config.isDark)
-  const updateConfig = useGraphStore((s) => s.updateConfig)
+  const isDark = useSuperGraph((s) => s.config.isDark)
+  const updateConfig = useSuperGraph((s) => s.updateConfig)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [examplesOpen, setExamplesOpen] = useState(false)
 
   return (
     <>
       <div className="h-10 border-b border-border px-3 flex items-center gap-1.5 bg-card/50">
-        <span className="text-sm font-semibold text-foreground mr-2">graphstore</span>
+        <span className="text-sm font-semibold text-foreground mr-2">supergraph</span>
         <Separator orientation="vertical" className="h-5" />
         <Button
           variant="ghost"

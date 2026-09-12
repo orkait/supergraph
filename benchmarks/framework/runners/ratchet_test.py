@@ -1,8 +1,3 @@
-"""Ratchet test runner for LoCoMo retrieval improvements.
-
-Runs 50Q (random 10/cat, seed=42) with configurable retrieval settings.
-Usage: uv run python3 -m benchmarks.framework.runners.ratchet_test --label baseline
-"""
 
 from __future__ import annotations
 
@@ -14,11 +9,11 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-os.environ['GRAPHSTORE_MODEL_CACHE_DIR'] = '/tmp/gs_models'
+os.environ['SUPERGRAPH_MODEL_CACHE_DIR'] = '/tmp/gs_models'
 
 from .locomo import run_locomo
 from ..datasets import load_locomo
-from ..adapters.graphstore_ import GraphStoreAdapter
+from ..adapters.supergraph_ import SuperGraphAdapter
 
 
 def run_test(label: str, config: dict, k: int = 10, reranker=None) -> dict:
@@ -37,7 +32,7 @@ def run_test(label: str, config: dict, k: int = 10, reranker=None) -> dict:
 
     print(f'[{label}] {len(sampled)} Qs (random 10/cat, seed=42)', flush=True)
 
-    adapter = GraphStoreAdapter(config=config)
+    adapter = SuperGraphAdapter(config=config)
     t0 = time.perf_counter()
     summary, details = run_locomo(adapter, ds, k=k, reranker=reranker)
     elapsed = time.perf_counter() - t0
@@ -48,7 +43,6 @@ def run_test(label: str, config: dict, k: int = 10, reranker=None) -> dict:
     print(f'  {"OVERALL":<20} n={summary["n_questions"]:<4} f1={summary["overall_f1"]:.4f}')
     print(flush=True)
 
-    # Save
     out_dir = Path('benchmarks/framework/results')
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f'ratchet_{label}.json'

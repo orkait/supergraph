@@ -1,6 +1,5 @@
-"""Text primitives micro-benchmarks."""
 
-from graphstore.algos.text import fts5_sanitize, tokenize_unicode
+from supergraph.algos.text import fts5_sanitize, tokenize_unicode
 
 
 class TestFts5Sanitize:

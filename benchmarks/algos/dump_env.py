@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""Environment manifest for autoresearch prompts.
-
-Queries the live Python environment for every package on the algos
-allowlist and reports exact installed versions. This is the context
-autoresearch feeds the LLM so rewrites don't hallucinate packages or
-pick wrong APIs.
-
-Contract:
-    - stdout = environment manifest in the chosen format (--markdown or --json)
-    - lists only packages that are actually importable AND pinned
-    - CORE packages are always required; missing → non-zero exit
-    - OPTIONAL packages report version if installed, 'not installed' otherwise
-
-Usage:
-    python -m benchmarks.algos.dump_env                # markdown (default)
-    python -m benchmarks.algos.dump_env --json         # json output
-    python -m benchmarks.algos.dump_env --compact      # one line per pkg
-    python -m benchmarks.algos.dump_env --allowlist    # print raw allowlist
-
-Autoresearch wiring:
-    - Run once per session to produce ENVIRONMENT.md
-    - Include the markdown as system/context prompt to the LLM
-    - LLM knows exact names + versions it can import
-"""
 
 from __future__ import annotations
 
@@ -100,13 +76,13 @@ def build_manifest() -> dict:
 
 def render_markdown(manifest: dict) -> str:
     lines = []
-    lines.append("# graphstore/algos - environment manifest")
+    lines.append("# supergraph/algos - environment manifest")
     lines.append("")
     lines.append(f"- python: **{manifest['python']}**")
     lines.append(f"- platform: {manifest['platform']}")
     lines.append("")
     lines.append("> This file lists the **exact packages and versions**")
-    lines.append("> available when rewriting a file in `graphstore/algos/`.")
+    lines.append("> available when rewriting a file in `supergraph/algos/`.")
     lines.append("> Do not import anything not listed here - the purity")
     lines.append("> gate will reject the patch.")
     lines.append("")
@@ -175,7 +151,9 @@ def render_compact(manifest: dict) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(
+        description="Dump the benchmark environment as JSON."
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--json",

@@ -24,10 +24,10 @@ RUN pip install llama-cpp-python \
         --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 && \
     pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
 
-COPY graphstore /repo/graphstore
+COPY supergraph /repo/supergraph
 COPY benchmarks /repo/benchmarks
 
 ENV PYTHONPATH=/repo
 
 ENTRYPOINT ["python", "-m", "benchmarks.framework.docker_runner"]
-CMD ["--system", "graphstore", "--dataset", "longmemeval", "--variant", "s"]
+CMD ["--system", "supergraph", "--dataset", "longmemeval", "--variant", "s"]

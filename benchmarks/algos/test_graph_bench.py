@@ -1,9 +1,6 @@
-"""Graph algorithm micro-benchmarks."""
 
-import numpy as np
-import pytest
 
-from graphstore.algos.graph import (
+from supergraph.algos.graph import (
     bfs_traverse,
     bidirectional_bfs,
     common_neighbors,

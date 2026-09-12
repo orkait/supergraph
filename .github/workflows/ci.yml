@@ -37,6 +37,11 @@ jobs:
         run: |
           pip install -e ".[dev,playground,ingest]"
 
+      - name: Lint (dead code gate)
+        # F401/F841 only, see [tool.ruff.lint] in pyproject. The library
+        # accumulated 116 of these before the gate existed.
+        run: ruff check .
+
       - name: Run tests
         # Fast suite only (slow tests marked via pytest.mark.slow).
         # Server tests rely on live ports and are excluded (test_server.py),

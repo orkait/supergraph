@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { useFlowStore } from '@/hooks/useFlowStore'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 
 const NAMED_KINDS = new Set(['function', 'class', 'module', 'service', 'database', 'queue', 'default'])
 const FALLBACK_NAMES = ['fallback-0', 'fallback-1', 'fallback-2']
@@ -27,8 +27,8 @@ export const CustomNode = memo(function CustomNode({ id, data }: NodeProps) {
   })
   const isHoverActive = useFlowStore((st) => st.hoveredNodeId != null)
 
-  const highlightedNodeIds = useGraphStore((st) => st.highlightedNodeIds)
-  const layoutMode = useGraphStore((st) => st.config.layoutMode)
+  const highlightedNodeIds = useSuperGraph((st) => st.highlightedNodeIds)
+  const layoutMode = useSuperGraph((st) => st.config.layoutMode)
 
   const isHoverDimmed = isHoverActive && !isHoverTarget && !isHoverNeighbor
   const isQueryHighlighted = highlightedNodeIds.has(id) || Boolean(data.highlighted)
@@ -41,7 +41,7 @@ export const CustomNode = memo(function CustomNode({ id, data }: NodeProps) {
   const childCount = (data.childCount as number) || 0
   const groupParentId = data.groupParentId as string | undefined
   const groupKind = data.groupKind as string | undefined
-  const toggleGroup = useGraphStore((st) => st.toggleGroup)
+  const toggleGroup = useSuperGraph((st) => st.toggleGroup)
 
   const scale = 1 + Math.min(degree * 0.08, 0.4)
   const minWidth = 140 + Math.min(degree * 8, 40)

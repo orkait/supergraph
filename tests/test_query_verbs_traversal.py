@@ -1,11 +1,7 @@
-"""PR 2: traversal verbs + remaining reads.
-
-Every verb: emit + parser roundtrip + at least one injection case.
-"""
 import pytest
 
-from graphstore import q, F
-from graphstore.dsl.parser import parse
+from supergraph import q, F
+from supergraph.dsl.parser import parse
 
 
 def _roundtrip(query_obj):

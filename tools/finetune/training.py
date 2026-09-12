@@ -8,16 +8,9 @@ from collections import Counter
 from dataclasses import dataclass
 from openai import AsyncOpenAI
 
-# ---------------------------------------------------------
-# 1. SETUP & CONFIGURATION
-# ---------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Load OpenRouter config from config.json
-# Model training.py targets by default. Override by setting OPENROUTER_TRAINING_MODEL
-# in /.env. Must be a model name available on the configured openrouter provider
-# (see tools/autoresearch/config.json -> providers.openrouter.models).
 _DEFAULT_TRAINING_MODEL = "deepseek/deepseek-v3.2:nitro"
 _TRAINING_TIMEOUT_S = 180
 
@@ -95,13 +88,6 @@ def _preview_sequence(value, limit=12):
     return value[:limit] + [f"...<{len(value) - limit} more>"]
 
 def load_openrouter_config():
-    """Resolve OpenRouter provider from the shared autoresearch config.
-
-    Single source of truth: tools/autoresearch/config.json + /.env.
-    No separate training_config.json. Picks the OpenRouter provider entry,
-    overrides the model with _DEFAULT_TRAINING_MODEL (or OPENROUTER_TRAINING_MODEL
-    env var if set), returns the shape the AsyncOpenAI client expects.
-    """
     from tools.autoresearch.providers import load_config, resolve_providers
 
     config = load_config()
@@ -126,7 +112,6 @@ def load_openrouter_config():
         "timeout": _TRAINING_TIMEOUT_S,
     }
 
-# The Locked-in 64-Label MoE Ontology
 ONTOLOGY = {
     "Group 1 (Software)": ["PROG_LANG", "FRAMEWORK", "API_ENDPOINT", "DATABASE", "CLOUD_SERVICE", "CLI_COMMAND", "EXCEPTION_TYPE", "IP_ADDRESS", "FILE_PATH", "SECURITY_PROTOCOL"],
     "Group 2 (Financial)": ["CURRENCY", "AMOUNT_NUM", "STOCK_TICKER", "BANK_NAME", "FINANCIAL_METRIC", "ASSET_CLASS", "INTEREST_RATE", "TAX_FORM", "MARKET_INDEX", "PAYMENT_METHOD"],
@@ -137,7 +122,6 @@ ONTOLOGY = {
     "Group 7 (Temporal/Event)": ["DATE", "TIME", "DURATION", "FREQUENCY", "HISTORICAL_EVENT", "URL", "NATURAL_DISASTER"]
 }
 
-# Flatten for strict BIO validation
 ALL_VALID_LABELS = [label for groups in ONTOLOGY.values() for label in groups]
 
 BATCHES = [
@@ -174,16 +158,12 @@ RULES:
 5. CRITICAL: Output ONLY JSON. No Chain-of-Thought. No reasoning. No explanations. No markdown. Just the JSON object.
 """
 
-# ---------------------------------------------------------
-# 2. VALIDATION & WAL LOGIC
-# ---------------------------------------------------------
 
 MIN_VALID_THRESHOLD = 0.5
 MAX_RETRIES = 3
 WAL_FILE = "wal.json"
 
 def validate_bio_logic(tokens, tags):
-    """Ensures lengths match and no labels were hallucinated."""
     if len(tokens) != len(tags):
         return False, f"Length mismatch: {len(tokens)} tokens vs {len(tags)} tags."
     
@@ -199,14 +179,12 @@ def validate_bio_logic(tokens, tags):
     return True, "Valid"
 
 def count_existing_sentences(filepath):
-    """Count lines in existing JSONL file."""
     if not os.path.exists(filepath):
         return 0
     with open(filepath, "r", encoding="utf-8") as f:
         return sum(1 for _ in f)
 
 def verify_sentence_quality(item):
-    """Verify single sentence has required fields and valid structure."""
     if not isinstance(item, dict):
         return False, "Item is not a dict"
     tokens = item.get("tokens", [])
@@ -219,7 +197,6 @@ def verify_sentence_quality(item):
 
 
 def build_validation_report(batch, sample_limit=3):
-    """Validate a model response batch and retain enough detail to debug failures."""
     valid_batch = []
     reason_counts = Counter()
     invalid_examples = []
@@ -273,7 +250,6 @@ def log_validation_report(task_id, attempt, report):
         )
 
 def load_wal():
-    """Load WAL state for resume capability."""
     if not os.path.exists(WAL_FILE):
         logger.info("[wal] no existing WAL at %s; starting fresh", os.path.abspath(WAL_FILE))
         return {"completed_tasks": [], "failed_tasks": [], "sentence_count": 0}
@@ -293,7 +269,6 @@ def load_wal():
             return {"completed_tasks": [], "failed_tasks": [], "sentence_count": 0}
 
 def save_wal(wal_state):
-    """Persist WAL state atomically."""
     temp_file = f"{WAL_FILE}.tmp"
     with open(temp_file, "w") as f:
         json.dump(wal_state, f, indent=2)
@@ -307,7 +282,6 @@ def save_wal(wal_state):
     )
 
 def mark_task_completed(wal_state, task_id, sentence_count):
-    """Mark task as completed in WAL."""
     if task_id not in wal_state["completed_tasks"]:
         wal_state["completed_tasks"].append(task_id)
     wal_state["sentence_count"] = sentence_count
@@ -315,22 +289,16 @@ def mark_task_completed(wal_state, task_id, sentence_count):
     save_wal(wal_state)
 
 def mark_task_failed(wal_state, task_id, error):
-    """Mark task as permanently failed in WAL."""
     if task_id not in wal_state["failed_tasks"]:
         wal_state["failed_tasks"].append({"task_id": task_id, "error": str(error)})
     logger.error("[Task %s] marking failed: %s", task_id, error)
     save_wal(wal_state)
 
-# ---------------------------------------------------------
-# 3. ASYNC WORKER (With Semaphore & Exponential Backoff)
-# ---------------------------------------------------------
 
 class GenerationError(Exception):
-    """Raised when generation fails after max retries."""
     pass
 
 async def generate_batch_with_retry(client, batch_config, task_id, semaphore, file_lock, timeout, output_file, wal_state, num_sentences=20):
-    """Executes API call asynchronously with concurrency limits and strict filtering."""
     
     backoff = 2
     narrative = random.choice(FORMATS)
@@ -468,9 +436,6 @@ async def generate_batch_with_retry(client, batch_config, task_id, semaphore, fi
         
         raise GenerationError(f"Task {task_id} failed after {MAX_RETRIES} retries: {last_error}")
 
-# ---------------------------------------------------------
-# 4. ORCHESTRATION & STATE MANAGEMENT
-# ---------------------------------------------------------
 
 async def main():
     try:

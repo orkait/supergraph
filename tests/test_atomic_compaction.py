@@ -2,16 +2,15 @@ import pytest
 import sqlite3
 import numpy as np
 from unittest.mock import patch
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.document.store import DocumentStore
-from graphstore.vector.store import VectorStore
-from graphstore.core.optimizer import compact_tombstones_safe
-from graphstore.persistence.database import open_database
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.document.store import DocumentStore
+from supergraph.vector.store import VectorStore
+from supergraph.core.optimizer import compact_tombstones_safe
+from supergraph.persistence.database import open_database
 
 def test_atomic_compaction_rollback_on_failure(tmp_path):
-    """Verify that if an error occurs mid-compaction, the atomic transaction rolls back."""
-    db_path = tmp_path / "graphstore.db"
+    db_path = tmp_path / "supergraph.db"
     docs_path = tmp_path / "documents.db"
     
     conn = open_database(str(db_path))
@@ -20,7 +19,6 @@ def test_atomic_compaction_rollback_on_failure(tmp_path):
     doc_store = DocumentStore(str(docs_path))
     vec_store = VectorStore(dims=3)
     
-    # Setup initial state
     slot0 = store._alloc_slot()
     slot1 = store._alloc_slot()
     slot2 = store._alloc_slot()
@@ -37,21 +35,16 @@ def test_atomic_compaction_rollback_on_failure(tmp_path):
     vec_store.add(slot1, np.array([0.4, 0.5, 0.6]))
     vec_store.add(slot2, np.array([0.7, 0.8, 0.9]))
     
-    # Delete the middle node to create a gap for compaction
     store.node_tombstones.add(slot1)
     
     def failing_checkpoint(*args, **kwargs):
         raise sqlite3.OperationalError("Simulated disk full or I/O error during final checkpoint!")
 
-    # Patch the checkpoint function where it is imported/used
-    with patch('graphstore.persistence.serializer.checkpoint', side_effect=failing_checkpoint):
+    with patch('supergraph.persistence.serializer.checkpoint', side_effect=failing_checkpoint):
         with pytest.raises(sqlite3.OperationalError, match="Simulated disk full"):
             compact_tombstones_safe(store, schema, conn, vec_store, doc_store)
             
-    # Verify that the databases were rolled back and nothing is corrupted
     
-    # 1. The document store should still have the original slots on disk because the ATTACH transaction rolled back
-    # Let's verify the disk rollback first by closing and reopening.
     conn.close()
     doc_store.close()
     

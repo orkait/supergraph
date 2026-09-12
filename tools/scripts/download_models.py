@@ -1,18 +1,8 @@
-"""Download models into ./models.
-
-Embedders use the registry installer.  NER, reranker and model2vec default
-are downloaded manually because they are not registered as embedders.
-
-Usage:
-    python -m tools.scripts.download_models
-    # or from project root:
-    uv run python3 tools/scripts/download_models.py
-"""
 
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
-from graphstore.registry.installer import install_embedder, set_cache_dir, is_installed
+from supergraph.registry.installer import install_embedder, set_cache_dir, is_installed
 
 MODELS_DIR = Path(__file__).parent.parent.parent / "models"
 MODELS_DIR.mkdir(exist_ok=True)
@@ -21,7 +11,6 @@ MODELS_DIR.mkdir(exist_ok=True)
 def download_all() -> None:
     set_cache_dir(MODELS_DIR)
 
-    # 1. Embedders (via registry installer)
     print("--- Installing embedders via registry ---")
     for model in [
         "jina-v5-nano-retrieval",
@@ -35,7 +24,6 @@ def download_all() -> None:
         else:
             print(f"  {model} already installed.")
 
-    # 2. NER: TinyBERT for entity extraction
     print("\n--- TinyBERT NER ---")
     ner_dir = MODELS_DIR / "tinybert-ner"
     ner_dir.mkdir(exist_ok=True)
@@ -48,7 +36,6 @@ def download_all() -> None:
     else:
         print("  Already present.")
 
-    # 3. Reranker: Jina v3 GGUF
     print("\n--- Jina Reranker v3 GGUF ---")
     reranker_dir = MODELS_DIR / "jina-reranker-v3"
     reranker_dir.mkdir(exist_ok=True)
@@ -61,7 +48,6 @@ def download_all() -> None:
     else:
         print("  Already present.")
 
-    # 4. model2vec default embedder
     print("\n--- model2vec default (M2V_base_output) ---")
     m2v_dir = MODELS_DIR / "m2v-base"
     m2v_dir.mkdir(exist_ok=True)

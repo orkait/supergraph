@@ -4,16 +4,13 @@ from scipy.sparse import csr_matrix
 import sys
 import os
 
-# Ensure we can import graphstore algos
 sys.path.insert(0, os.path.abspath("."))
-from graphstore.algos.spreading import spreading_activation
-from graphstore.algos.fusion import weighted_remember_fusion
+from supergraph.algos.fusion import weighted_remember_fusion
 
 def bench_hybrid_rag_logic():
     N = 10000
     E = 50000
     
-    # 1. Setup Mock Data
     src = np.random.randint(0, N, size=E, dtype=np.int32)
     tgt = np.random.randint(0, N, size=E, dtype=np.int32)
     data = np.ones(E, dtype=np.float32)
@@ -42,10 +39,9 @@ def bench_hybrid_rag_logic():
     seed_slots = vec_slots[:3]
     
     def proposed_expansion_single_pass():
-        # Optimized spreading: one activation vector with multiple seeds
         n = len(live_mask)
         activation = np.zeros(n, dtype=np.float32)
-        activation[seed_slots] = 1.0 # Multi-seed injection
+        activation[seed_slots] = 1.0
         
         live_f = live_mask.astype(np.float32)
         decay_f = np.float32(0.7)

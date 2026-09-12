@@ -1,27 +1,18 @@
-"""Tests for `graphstore pro` CLI subcommand.
-
-PR#3 ships read-only commands (check / status) end-to-end against a
-mocked calibration cache. setup / probe are stubs that print the manual
-fallback path; tested here to lock in the exit code (2) and the message
-shape so users see actionable hints instead of a stack trace.
-"""
 from __future__ import annotations
 
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
 
-GS = sys.executable  # use the venv python directly to dodge entry-point lookup
+GS = sys.executable
 
 
 def _run(args: list[str], cwd=None) -> subprocess.CompletedProcess:
-    """Run `python -m graphstore.cli pro <args>` capturing stdout+stderr."""
     return subprocess.run(
-        [GS, "-m", "graphstore.cli", "pro", *args],
+        [GS, "-m", "supergraph.cli", "pro", *args],
         cwd=cwd, capture_output=True, text=True, timeout=30,
     )
 
@@ -45,13 +36,6 @@ class TestProHelp:
             assert slot in r.stdout, f"missing flag {slot}"
 
 
-# Slot args that produce a spec whose required_dists() are guaranteed
-# present in the project's CI install (`pip install -e .[dev,playground,
-# ingest]`). Default ProSpec uses ingest_mode="bonsai" which pulls
-# llama-cpp-python (only in [vision] extra), so we explicitly pick
-# deterministic ingest + none for vision/audio/embedder paths that need
-# extras CI doesn't install. This isolates the tests to the calibration
-# phase (the actual subject) instead of the extras-check phase.
 _MINIMAL_DEPS_SPEC = [
     "--ingest-mode", "deterministic",
     "--embedder", "model2vec-256d",
@@ -61,7 +45,6 @@ _MINIMAL_DEPS_SPEC = [
 
 
 class TestProCheckEmptyCache:
-    """`pro check` against an empty cache: fits=False, exit 3."""
 
     def test_text_output_says_calibration_missing(self, tmp_path):
         r = _run(["check", "--cache-dir", str(tmp_path), *_MINIMAL_DEPS_SPEC])
@@ -98,8 +81,6 @@ class TestProCheckEmptyCache:
 
 
 class TestProCheckHostFields:
-    """JSON output must surface live host snapshot so callers can audit
-    what the resolver decided against."""
 
     def test_host_block_present(self, tmp_path):
         r = _run(["check", "--cache-dir", str(tmp_path), "--json",
@@ -117,15 +98,8 @@ class TestProCheckHostFields:
 
 
 class TestProCheckExtrasGate:
-    """Default spec needs llama-cpp-python (Bonsai ingest); CI's install
-    matrix may or may not have it. Either way we lock in the contract:
-    when extras are missing, exit 2 with structured error; when present,
-    proceed to calibration."""
 
     def test_extras_missing_exits_2_with_structured_error(self, tmp_path):
-        # Force a spec whose required_dists includes a definitely-absent
-        # package. embedder=fastembed-bge-small needs `fastembed` which
-        # is in [embedders-extra] only.
         r = _run([
             "check", "--cache-dir", str(tmp_path), "--json",
             "--embedder", "fastembed-bge-small",
@@ -138,23 +112,13 @@ class TestProCheckExtrasGate:
             assert data["error"] == "extra_not_installed"
             assert "fastembed" in data["missing_dists"]
         else:
-            # If [embedders-extra] happens to be installed, we'd reach
-            # calibration-missing instead. Both are valid path coverage.
             assert r.returncode == 3
 
 
 class TestProSetupExtrasGate:
-    """`pro setup` / `pro probe` exit 2 when the spec's required pip
-    distributions are not installed - the same gate `pro check` uses,
-    just before model downloads instead of after.
-    """
 
     @pytest.mark.parametrize("subcmd", ["setup", "probe"])
     def test_extras_missing_exits_2(self, subcmd):
-        # Embedder=fastembed-bge-small needs [embedders-extra]. May or
-        # may not be installed in any given CI matrix; either path is
-        # valid coverage (extras-missing → 2; extras present → either
-        # 0 or 1 depending on whether probes succeed).
         r = _run([subcmd, "--json",
                   "--embedder", "fastembed-bge-small",
                   "--ingest-mode", "deterministic",
@@ -167,16 +131,8 @@ class TestProSetupExtrasGate:
 
 
 class TestProSetupUnregisteredComponent:
-    """If a slot somehow maps to a component_id not in pro_probe's
-    registry, the orchestrator records it as a failure rather than
-    crashing the whole run."""
 
     def test_unregistered_component_recorded_as_failure(self, tmp_path):
-        # Use ner=none + embedder=model2vec-256d which IS registered;
-        # this just confirms the JSON schema for a successful path.
-        # Real "unregistered" coverage is exercised via test_pro_probe.py
-        # against pro_probe.probe_components directly.
-        # Here we just ensure the JSON shape is parseable for setup.
         r = _run(["setup", "--json",
                   "--cache-dir", str(tmp_path),
                   "--ingest-mode", "deterministic",
@@ -184,10 +140,6 @@ class TestProSetupUnregisteredComponent:
                   "--vision", "none", "--audio", "none",
                   "--reranker", "none", "--ner", "none"],
                  )
-        # Skip if not enough deps for the probe to actually run
-        # (different from extras-missing - this is "extras present
-        # but probe body errored due to network or environment").
-        # Either exit 0 or 1 is acceptable here; we just verify shape.
         assert r.returncode in (0, 1), f"unexpected rc={r.returncode}; stderr={r.stderr!r}"
         data = json.loads(r.stdout)
         assert "all_ok" in data

@@ -1,33 +1,4 @@
 #!/usr/bin/env python3
-"""Per-algo benchmark runner for Karpathy-style autoresearch.
-
-One file under improvement → many named metrics. Autoresearch
-picks which metric(s) to care about.
-
-Contract:
-    - Exit 0 on success
-    - Structured JSON at .benchmarks/metric_<algo>_summary.json
-    - Stdout prints one line per benchmark:
-          METRIC <benchmark_name> <mean_us>
-      plus a trailing:
-          METRIC_FILE graphstore/algos/<algo>.py
-    - All metrics are microseconds, lower is better
-    - Raw pytest-benchmark dump at .benchmarks/metric_<algo>.json
-
-Usage:
-    python -m benchmarks.algos.bench_one graph
-    python -m benchmarks.algos.bench_one graph --fast     # short per-bench budget
-    python -m benchmarks.algos.bench_one fusion --quiet   # suppress pytest chatter
-    python -m benchmarks.algos.bench_one graph --json     # stdout becomes pure JSON
-
-Autoresearch wiring example:
-    {
-        "file_under_improvement": "graphstore/algos/graph.py",
-        "metric_command": "python -m benchmarks.algos.bench_one graph --fast --json",
-        "metric_format": "json",
-        "metric_direction": "lower_is_better"
-    }
-"""
 
 from __future__ import annotations
 
@@ -39,14 +10,14 @@ from pathlib import Path
 
 
 ALGO_TO_FILE = {
-    "graph": "graphstore/algos/graph.py",
-    "compact": "graphstore/algos/compact.py",
-    "fusion": "graphstore/algos/fusion.py",
-    "materialization": "graphstore/algos/materialization.py",
-    "spreading": "graphstore/algos/spreading.py",
-    "eviction": "graphstore/algos/eviction.py",
-    "sort": "graphstore/algos/sort.py",
-    "text": "graphstore/algos/text.py",
+    "graph": "supergraph/algos/graph.py",
+    "compact": "supergraph/algos/compact.py",
+    "fusion": "supergraph/algos/fusion.py",
+    "materialization": "supergraph/algos/materialization.py",
+    "spreading": "supergraph/algos/spreading.py",
+    "eviction": "supergraph/algos/eviction.py",
+    "sort": "supergraph/algos/sort.py",
+    "text": "supergraph/algos/text.py",
 }
 
 ALGO_TO_BENCH = {
@@ -105,12 +76,6 @@ def run_bench(algo: str, fast: bool, quiet: bool) -> tuple[int, Path]:
 
 
 def _unique_name(fullname: str, short_name: str) -> str:
-    """Derive a stable unique metric key from pytest-benchmark fullname.
-
-    fullname example:
-        benchmarks/algos/test_graph_bench.py::TestBfsTraverse::test_1k_depth2
-    → TestBfsTraverse::test_1k_depth2
-    """
     if "::" in fullname:
         parts = fullname.split("::")
         return "::".join(parts[1:]) if len(parts) > 1 else fullname

@@ -1,0 +1,98 @@
+# supergraph - Pro CPU image (no GPU), built FROM LOCAL SOURCE for Railway.
+#
+# "Pro on CPU" here means:
+#   - Ternary-Bonsai NL->DSL ingest  (POST /api/ingest, n_gpu_layers=0)
+#   - TinyBERT NER entity extraction (CPU onnxruntime)
+#   - model2vec embedder             (REMEMBER / RECALL / LEXICAL fusion)
+# all on CPU: prebuilt CPU llama-cpp wheel + CPU onnxruntime, no CUDA.
+#
+# Why build from source (not PyPI supergraph==0.6.0): the published wheel has no
+# /api/ingest Bonsai endpoint and no NER-opt-in graceful-skip. This tree does.
+#
+# Why models live at /models, not /data: Railway mounts a managed volume at /data
+# which SHADOWS any image content baked there at runtime. Baking models under
+# /data would make them vanish on boot. /models stays part of the image layer.
+#
+# Reranker (jina-reranker-v3) and the jina-v3 embedder are intentionally omitted:
+# on CPU, model2vec is faster + ~20x smaller and reranking gives marginal lift.
+# Swap the embedder via SUPERGRAPH_* env + a rebuilt prefetch layer if needed.
+#
+# Build (capped builder per Rule 13 - buildx ignores --cpus/--memory):
+#   docker buildx build --builder supergraph-builder -f Dockerfile.pro-cpu \
+#       -t supergraph-pro-cpu:src .
+# Run:
+#   docker run --cpus=8 --memory=16g -p 7200:7200 supergraph-pro-cpu:src
+#
+# Skip the model prefetch (~1.4 GB) with --build-arg SKIP_MODEL_PREFETCH=1; the
+# first /api/ingest then downloads on demand into /models (so do this only for
+# fast local iteration, never for the Railway image).
+
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+
+FROM ${PYTHON_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    SUPERGRAPH_DB_PATH=/data \
+    SUPERGRAPH_HOST=0.0.0.0 \
+    SUPERGRAPH_PORT=7200 \
+    SUPERGRAPH_GPU=0 \
+    MODELS_DIR=/models \
+    HF_HOME=/models/hf \
+    SUPERGRAPH_BONSAI_GGUF=/models/bonsai/Ternary-Bonsai-4B-TQ1_0.gguf
+
+COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /usr/local/bin/
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# CPU wheels + model2vec (model2vec needed by the bake layer below).
+RUN uv pip install --system \
+        --extra-index-url "https://abetlen.github.io/llama-cpp-python/whl/cpu" \
+        "llama-cpp-python>=0.3" \
+    && uv pip install --system \
+        "onnxruntime>=1.17" "fastembed>=0.8" "tokenizers>=0.15" \
+        "huggingface-hub>=0.24" "model2vec>=0.4"
+
+# Bake models at /models BEFORE the source install, so editing supergraph code
+# only rebuilds the small install layer below - models stay cached (no 1.4GB redownload).
+ARG SKIP_MODEL_PREFETCH=0
+RUN if [ "$SKIP_MODEL_PREFETCH" = "0" ]; then \
+        mkdir -p /models/bonsai /models/tinybert-ner \
+        && python -c "from huggingface_hub import hf_hub_download; \
+            hf_hub_download('superkaiii/Ternary-Bonsai-4B-GGUF', \
+                'Ternary-Bonsai-4B-TQ1_0.gguf', local_dir='/models/bonsai')" \
+        && python -c "from huggingface_hub import snapshot_download; \
+            snapshot_download('onnx-community/TinyBERT-finetuned-NER-ONNX', \
+                local_dir='/models/tinybert-ner')" \
+        && python -c "from model2vec import StaticModel; \
+            StaticModel.from_pretrained('minishlab/M2V_base_output')" ; \
+    fi \
+    && rm -rf /root/.cache/pip /tmp/*
+
+# Build supergraph from this source tree (/api/ingest + NER/threads fixes).
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN uv pip install --system ".[playground,mcp]" \
+    && find /usr/local/lib/python3.12/site-packages -depth \
+        \( -type d \( -name '__pycache__' -o -name 'tests' -o -name 'test' \) \
+        -o -name '*.pyc' \) -exec rm -rf {} + 2>/dev/null || true
+
+COPY docker/entrypoint.sh /usr/local/bin/supergraph-entrypoint
+RUN chmod +x /usr/local/bin/supergraph-entrypoint \
+    && mkdir -p /data \
+    && rm -f /usr/local/bin/uv /usr/local/bin/uvx
+
+WORKDIR /root
+# No VOLUME directive: Railway rejects it and manages the /data mount itself.
+EXPOSE 7200
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import socket; s=socket.socket(); s.settimeout(3); \
+        s.connect(('127.0.0.1', 7200)); s.close()" || exit 1
+
+ENTRYPOINT ["/usr/local/bin/supergraph-entrypoint"]

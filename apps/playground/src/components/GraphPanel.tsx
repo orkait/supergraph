@@ -12,7 +12,7 @@ import '@xyflow/react/dist/style.css'
 import { CustomNode } from '@/components/graph/CustomNode'
 import { CustomEdge } from '@/components/graph/CustomEdge'
 import { CanvasControls } from '@/components/graph/CanvasControls'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 import { useFlowStore } from '@/hooks/useFlowStore'
 import { applyDagreLayout } from '@/components/graph/layout'
 import { collapseTransform, type GroupNodeData } from '@/components/graph/collapseTransform'
@@ -49,17 +49,17 @@ function getEdgeColor(kind: string): string {
 }
 
 export function GraphPanel() {
-  const graph = useGraphStore((s) => s.graph)
-  const config = useGraphStore((s) => s.config)
+  const graph = useSuperGraph((s) => s.graph)
+  const config = useSuperGraph((s) => s.config)
   const { showMinimap, isDark, nodesep, ranksep, layoutDirection } = config
   const { collapseThreshold } = config
-  const expandedGroups = useGraphStore((s) => s.expandedGroups)
-  const highlightedNodeIds = useGraphStore((s) => s.highlightedNodeIds)
-  const highlightedEdges = useGraphStore((s) => s.highlightedEdges)
-  const results = useGraphStore((s) => s.results)
+  const expandedGroups = useSuperGraph((s) => s.expandedGroups)
+  const highlightedNodeIds = useSuperGraph((s) => s.highlightedNodeIds)
+  const highlightedEdges = useSuperGraph((s) => s.highlightedEdges)
+  const results = useSuperGraph((s) => s.results)
   const lastResultKind = results.length > 0 ? results[0]?.result?.kind : undefined
   const isPathResult = lastResultKind === 'path' || lastResultKind === 'paths'
-  const loading = useGraphStore((s) => s.loading)
+  const loading = useSuperGraph((s) => s.loading)
 
   const nodes = useFlowStore((s) => s.nodes)
   const edges = useFlowStore((s) => s.edges)

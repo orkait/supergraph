@@ -1,8 +1,7 @@
-"""Spreading activation micro-benchmarks."""
 
 import numpy as np
 
-from graphstore.algos.spreading import spreading_activation
+from supergraph.algos.spreading import spreading_activation
 
 
 class TestSpreadingActivation:

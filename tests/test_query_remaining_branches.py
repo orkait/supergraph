@@ -1,13 +1,9 @@
-"""Hits the last ~38 uncovered branches. Targets happy-path branches
-that earlier tests didn't exercise (VECTOR clause, offset, with_()
-sub-branches, kind=None guards, typed order_by, etc.).
-"""
 from __future__ import annotations
 
 import pytest
 
-from graphstore import q, F, P, agg, EvolveThen
-from graphstore.dsl.parser import parse
+from supergraph import q, F, P, agg
+from supergraph.dsl.parser import parse
 
 
 def _rt(query_obj):
@@ -17,11 +13,10 @@ def _rt(query_obj):
 
 
 class TestWithKwargSetPaths:
-    """with_() set-path (value not None) for every modifier."""
 
     def test_with_where_sets(self):
         out = q.nodes().with_(where=F.eq("k", "m"))
-        assert 'WHERE kind = "m"' not in out.dsl()  # key is `k` not `kind`
+        assert 'WHERE kind = "m"' not in out.dsl()
         assert 'k = "m"' in out.dsl()
 
     def test_with_tokens_sets(self):
@@ -35,7 +30,6 @@ class TestWithKwargSetPaths:
 
 class TestReadsBranches:
     def test_nodes_kind_plus_where_dict(self):
-        # Exercises the combine path in reads.nodes
         dsl = _rt(q.nodes(kind="memory", where={"topic": "travel"}, limit=5))
         assert 'kind = "memory"' in dsl
         assert 'topic = "travel"' in dsl
@@ -60,7 +54,6 @@ class TestSysBranches:
         assert "LIMIT 5" in dsl
 
     def test_contradictions_non_dict_typed_ident(self):
-        # _format_typed_idents(list path) — register with list-style required
         dsl = _rt(q.sys.register_node_kind("k", required=["a", "b"]))
         assert "REQUIRED a, b" in dsl
 
@@ -118,10 +111,7 @@ class TestWriteValidationBranches:
             q.upsert_node("n1", kind="m", expires_in="1h", expires_at="2024")
 
     def test_delete_nodes_where_collapses_to_empty(self):
-        # Internal compiler path: delete_nodes() rejects None at build, but
-        # if an empty where dict snuck through, compile_where returns None
-        # and compiler raises. Reach it by directly calling compile path.
-        from graphstore.query.verbs.writes import _compile_delete_nodes
+        from supergraph.query.verbs.writes import _compile_delete_nodes
         with pytest.raises(ValueError, match="empty WHERE"):
             _compile_delete_nodes({"where": {}})
 
@@ -136,14 +126,13 @@ class TestWriteValidationBranches:
 
 class TestEvolveRunEmpty:
     def test_evolve_run_at_compile_time_raises(self):
-        # EvolveAction with empty tokens (constructed via direct class use)
-        from graphstore.query.evolve_expr import EvolveAction
+        from supergraph.query.evolve_expr import EvolveAction
         a = EvolveAction("run", None, ())
         with pytest.raises(ValueError, match="at least one identifier"):
             a.to_dsl()
 
     def test_evolve_unknown_kind(self):
-        from graphstore.query.evolve_expr import EvolveAction
+        from supergraph.query.evolve_expr import EvolveAction
         a = EvolveAction("bogus", None, None)
         with pytest.raises(ValueError, match="unknown"):
             a.to_dsl()
@@ -189,8 +178,7 @@ class TestUpsertExpires:
 
 class TestPatternToStepDirect:
     def test_to_accepts_bare_step(self):
-        # Cover the elif branch where step is _Step directly (not Pattern)
-        from graphstore.query.pattern import _Step
+        from supergraph.query.pattern import _Step
         right = _Step(bound_id=None, var_name="x", where=None)
         left = P.node("a")
         combined = left.to(right)

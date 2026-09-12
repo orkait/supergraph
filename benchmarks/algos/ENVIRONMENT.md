@@ -1,10 +1,10 @@
-# graphstore/algos - environment manifest
+# supergraph/algos - environment manifest
 
 - python: **3.10.20**
 - platform: Linux-6.17.0-20-generic-x86_64-with-glibc2.39
 
 > This file lists the **exact packages and versions**
-> available when rewriting a file in `graphstore/algos/`.
+> available when rewriting a file in `supergraph/algos/`.
 > Do not import anything not listed here - the purity
 > gate will reject the patch.
 
@@ -41,7 +41,7 @@
 
 ## Forbidden imports (purity gate rejects these)
 
-`asyncio`, `fastapi`, `graphstore`, `http`, `httpcore`, `httpx`, `logging`, `marshal`, `multiprocessing`, `os`, `pathlib`, `pickle`, `pytest`, `shelve`, `shutil`, `socket`, `sqlite3`, `ssl`, `starlette`, `subprocess`, `sys`, `tempfile`, `threading`, `urllib`, `urllib3`, `uvicorn`
+`asyncio`, `fastapi`, `supergraph`, `http`, `httpcore`, `httpx`, `logging`, `marshal`, `multiprocessing`, `os`, `pathlib`, `pickle`, `pytest`, `shelve`, `shutil`, `socket`, `sqlite3`, `ssl`, `starlette`, `subprocess`, `sys`, `tempfile`, `threading`, `urllib`, `urllib3`, `uvicorn`
 
 ## Rules
 

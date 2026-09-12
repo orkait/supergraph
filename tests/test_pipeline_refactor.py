@@ -1,22 +1,18 @@
-"""Integration tests for pipeline refactoring."""
-import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 class TestSentenceLevelIngest:
     def test_sentence_nodes_created(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "msg0" kind = "message" content = "Caroline moved from Sweden. She studied at KTH."')
 
-        # Check sentence child nodes exist
         sentences = g.execute('NODES WHERE kind = "sentence"')
         assert len(sentences.data) >= 2
         g.close()
 
     def test_message_has_vector_alongside_sentences(self):
-        """Message nodes get vectors AND sentence child nodes are created."""
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "msg0" kind = "message" content = "Hello world. Goodbye world."')
 
@@ -32,7 +28,7 @@ class TestSentenceLevelIngest:
 
 class TestThreeSignalFusion:
     def test_three_weight_fusion(self):
-        g = GraphStore(ceiling_mb=256, sentence_query_expansion=True)
+        g = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "m1" kind = "message" content = "Caroline moved to Sweden."')
         g.execute('CREATE NODE "m2" kind = "message" content = "The weather was great."')
@@ -48,8 +44,7 @@ class TestThreeSignalFusion:
 
 class TestRerankerIntegration:
     def test_reranker_not_configured(self):
-        """Without reranker, pipeline returns top-K from fusion."""
-        g = GraphStore(ceiling_mb=256, sentence_query_expansion=True)
+        g = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         for i in range(5):
             g.execute(f'CREATE NODE "m{i}" kind = "message" content = "Test message {i} about topic {i}."')
@@ -61,12 +56,12 @@ class TestRerankerIntegration:
 
 class TestNucleusExpansion:
     def test_nucleus_disabled_by_default(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         assert g._executor._nucleus_expansion is False
         g.close()
 
     def test_nucleus_returns_separate_meta(self):
-        g = GraphStore(ceiling_mb=256, nucleus_expansion=True)
+        g = SuperGraph(ceiling_mb=256, nucleus_expansion=True)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "m1" kind = "message" content = "First message about Caroline."')
         g.execute('CREATE NODE "m2" kind = "message" content = "Second message, she continued."')
@@ -74,6 +69,5 @@ class TestNucleusExpansion:
 
         result = g.execute('REMEMBER "Caroline" LIMIT 1')
         assert len(result.data) == 1
-        # Nucleus should be in meta, not in data
         assert "nucleus" in result.meta
         g.close()

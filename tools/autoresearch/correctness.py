@@ -1,19 +1,3 @@
-"""Correctness gate for the autoresearch ratchet.
-
-Candidate is compared to baseline on deterministic inputs BEFORE the benchmark
-runs. Any output drift rejects the candidate as a correctness failure.
-
-Design:
-  - Each algo has a list of (fn_name, args, kwargs) test cases that mirror
-    the shapes/invocations used by the benchmark tests (but smaller, for speed).
-  - Both baseline and candidate are loaded into isolated module namespaces,
-    their functions called on the same inputs, outputs compared deeply.
-  - Comparison is type-aware: numpy arrays via np.allclose, dicts recursively,
-    scipy sparse matrices via .toarray() + np.allclose.
-
-The baseline IS the oracle. If the baseline is wrong, correctness can't catch it.
-But any DEVIATION from baseline by the candidate is caught.
-"""
 
 from __future__ import annotations
 
@@ -32,7 +16,6 @@ def _rng(off: int = 0) -> np.random.Generator:
 
 
 def _random_graph(n: int, avg_degree: int, off: int = 0) -> csr_matrix:
-    """Mirror of benchmarks/algos/conftest.py::_make_random_graph."""
     rng = _rng(off)
     total = n * avg_degree
     s = rng.integers(0, n, total, dtype=np.int32)
@@ -40,10 +23,6 @@ def _random_graph(n: int, avg_degree: int, off: int = 0) -> csr_matrix:
     w = rng.random(total, dtype=np.float32) + 0.1
     return csr_matrix((w, (s, t)), shape=(n, n))
 
-
-# ---------------------------------------------------------------------------
-# Per-algo correctness test cases
-# ---------------------------------------------------------------------------
 
 def _inputs_spreading() -> list[tuple[str, tuple, dict]]:
     g = _random_graph(1_000, 10)
@@ -141,7 +120,6 @@ def _inputs_compact() -> list[tuple[str, tuple, dict]]:
         if t < n:
             mask_arr[t] = False
 
-    # Build an old_to_new mapping from the mask
     new_count = int(mask_arr.sum())
     old_to_new = np.full(n, -1, dtype=np.int32)
     live_slots = np.nonzero(mask_arr)[0]
@@ -183,10 +161,6 @@ _DISPATCH = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Module loading + output comparison
-# ---------------------------------------------------------------------------
-
 def _load_module(name: str, code: str) -> types.ModuleType:
     mod = types.ModuleType(name)
     mod.__dict__["__name__"] = name
@@ -195,7 +169,6 @@ def _load_module(name: str, code: str) -> types.ModuleType:
 
 
 def _to_array(x: Any) -> np.ndarray | None:
-    """Normalise array-like for comparison. Returns None if not comparable as array."""
     if isinstance(x, np.ndarray):
         return x
     if isinstance(x, spmatrix):
@@ -204,9 +177,7 @@ def _to_array(x: Any) -> np.ndarray | None:
 
 
 def _compare(a: Any, b: Any, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
-    """Deep structural comparison, type-aware."""
     if type(a) is not type(b):
-        # Allow numpy scalar vs Python scalar equality
         arr_a = _to_array(a)
         arr_b = _to_array(b)
         if arr_a is not None and arr_b is not None:
@@ -245,17 +216,9 @@ def _compare(a: Any, b: Any, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
-
 def check_correctness(candidate_code: str, baseline_code: str, algo: str) -> str | None:
-    """Return error message if candidate output differs from baseline on any case.
-
-    Returns None if all cases match.
-    """
     if algo not in _DISPATCH:
-        return None  # no correctness coverage for this algo - skip gate
+        return None
 
     try:
         baseline_mod = _load_module(f"{algo}_baseline_oracle", baseline_code)

@@ -1,31 +1,22 @@
-"""Tests for graphstore.persistence (database, serializer, deserializer)."""
 
 import time
 
 import pytest
 
-from graphstore.core.errors import VersionMismatch
-from graphstore.persistence.database import (
+from supergraph.core.errors import VersionMismatch
+from supergraph.persistence.database import (
     SCHEMA_VERSION,
     get_metadata,
     open_database,
     set_metadata,
 )
-from graphstore.persistence.deserializer import load
-from graphstore.persistence.serializer import checkpoint
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.store import CoreStore
-
-
-# ── Helpers ─────────────────────────────────────────────────────────
+from supergraph.persistence.deserializer import load
+from supergraph.persistence.serializer import checkpoint
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.store import CoreStore
 
 
 def _populated_store():
-    """Build a store with three nodes and two edges.
-
-    Nodes: alice (person), bob (person), acme (org)
-    Edges: alice -[knows]-> bob, alice -[works_at]-> acme
-    """
     s = CoreStore()
     s.put_node("alice", "person", {"age": 30, "city": "NYC"})
     s.put_node("bob", "person", {"age": 25, "city": "LA"})
@@ -36,16 +27,12 @@ def _populated_store():
 
 
 def _populated_schema():
-    """Build a schema with node and edge kinds."""
     schema = SchemaRegistry()
     schema.register_node_kind("person", required=["age"], optional=["city"])
     schema.register_node_kind("org", required=["industry"])
     schema.register_edge_kind("knows", from_kinds=["person"], to_kinds=["person"])
     schema.register_edge_kind("works_at", from_kinds=["person"], to_kinds=["org"])
     return schema
-
-
-# ── 1. database.py ─────────────────────────────────────────────────
 
 
 class TestOpenDatabase:
@@ -106,9 +93,6 @@ class TestMetadata:
         assert get_metadata(conn, "a") == "1"
         assert get_metadata(conn, "b") == "2"
         conn.close()
-
-
-# ── 2. Round-trip: serializer + deserializer ───────────────────────
 
 
 class TestRoundTripEmpty:
@@ -273,7 +257,7 @@ class TestRoundTripWithTombstones:
     def test_tombstoned_edges_not_restored(self, tmp_path):
         conn = open_database(tmp_path / "test.db")
         store = _populated_store()
-        store.delete_node("bob")  # cascade-deletes alice->bob edge
+        store.delete_node("bob")
 
         checkpoint(store, SchemaRegistry(), conn)
         loaded, _ = load(conn)
@@ -327,7 +311,6 @@ class TestRoundTripLargeStore:
         n = 150
         for i in range(n):
             store.put_node(f"node_{i}", "thing", {"index": i, "label": f"label_{i}"})
-        # Add some edges
         for i in range(n - 1):
             store.put_edge(f"node_{i}", f"node_{i+1}", "next")
 
@@ -337,14 +320,12 @@ class TestRoundTripLargeStore:
         assert loaded.node_count == n
         assert loaded.edge_count == n - 1
 
-        # Spot-check some nodes
         for i in [0, 50, 99, 149]:
             node = loaded.get_node(f"node_{i}")
             assert node is not None
             assert node["index"] == i
             assert node["label"] == f"label_{i}"
 
-        # Spot-check some edges
         edges = loaded.get_edges_from("node_0")
         assert len(edges) == 1
         assert edges[0]["target"] == "node_1"
@@ -352,9 +333,6 @@ class TestRoundTripLargeStore:
         edges = loaded.get_edges_from("node_149")
         assert edges == []
         conn.close()
-
-
-# ── 3. WAL behavior ───────────────────────────────────────────────
 
 
 class TestWALBehavior:
@@ -379,7 +357,6 @@ class TestWALBehavior:
 
     def test_wal_cleared_after_checkpoint(self, tmp_path):
         conn = open_database(tmp_path / "test.db")
-        # Insert WAL entries
         now = time.time()
         conn.execute(
             "INSERT INTO wal (timestamp, statement) VALUES (?, ?)",
@@ -390,7 +367,6 @@ class TestWALBehavior:
         rows = conn.execute("SELECT * FROM wal").fetchall()
         assert len(rows) == 1
 
-        # Checkpoint clears WAL
         store = CoreStore()
         store.put_node("alice", "person", {"age": 30})
         checkpoint(store, SchemaRegistry(), conn)
@@ -429,22 +405,17 @@ class TestWALBehavior:
         rows = conn.execute("SELECT seq FROM wal ORDER BY seq").fetchall()
         seqs = [r[0] for r in rows]
         assert seqs == sorted(seqs)
-        assert len(set(seqs)) == 5  # all unique
+        assert len(set(seqs)) == 5
         conn.close()
-
-
-# ── 4. Version check ──────────────────────────────────────────────
 
 
 class TestVersionCheck:
     def test_version_mismatch_raises(self, tmp_path):
         conn = open_database(tmp_path / "test.db")
-        # Write with current version
         store = CoreStore()
         store.put_node("x", "t", {})
         checkpoint(store, SchemaRegistry(), conn)
 
-        # Tamper the version
         conn.execute(
             "INSERT OR REPLACE INTO metadata VALUES (?, ?)",
             ("schema_version", "999"),
@@ -458,7 +429,6 @@ class TestVersionCheck:
 
     def test_fresh_database_returns_empty(self, tmp_path):
         conn = open_database(tmp_path / "test.db")
-        # No checkpoint, no version marker
         store, schema = load(conn)
         assert store.node_count == 0
         assert schema.list_node_kinds() == []
@@ -473,9 +443,6 @@ class TestVersionCheck:
         loaded, _ = load(conn)
         assert loaded.get_node("a")["v"] == 1
         conn.close()
-
-
-# ── 5. Query log ──────────────────────────────────────────────────
 
 
 class TestQueryLog:
@@ -534,7 +501,6 @@ class TestQueryLog:
         )
         conn.commit()
 
-        # Query recent (after t1)
         rows = conn.execute(
             "SELECT query FROM query_log WHERE timestamp > ? ORDER BY timestamp",
             (t1,),
@@ -559,7 +525,6 @@ class TestQueryLog:
         )
         conn.commit()
 
-        # Find slow queries (> 1000us)
         rows = conn.execute(
             "SELECT query FROM query_log WHERE elapsed_us > 1000"
         ).fetchall()
@@ -590,41 +555,31 @@ class TestQueryLog:
         conn.close()
 
 
-# ── 6. End-to-end verification ────────────────────────────────────
-
-
 class TestEndToEnd:
     def test_checkpoint_then_modify_then_reload_original(self, tmp_path):
-        """Create graph -> checkpoint -> modify in-memory -> new connection ->
-        load -> verify original (pre-modification) state."""
         db_path = tmp_path / "test.db"
 
-        # Create and checkpoint
         conn1 = open_database(db_path)
         store = _populated_store()
         schema = _populated_schema()
         checkpoint(store, schema, conn1)
         conn1.close()
 
-        # Modify the in-memory store (these changes are NOT checkpointed)
         store.put_node("dave", "person", {"age": 40})
         store.delete_node("bob")
-        assert store.node_count == 3  # alice, acme, dave
+        assert store.node_count == 3
 
-        # Reload from fresh connection
         conn2 = open_database(db_path)
         loaded, loaded_schema = load(conn2)
         conn2.close()
 
-        # Should see original state
-        assert loaded.node_count == 3  # alice, bob, acme
+        assert loaded.node_count == 3
         assert loaded.get_node("alice") is not None
         assert loaded.get_node("bob") is not None
         assert loaded.get_node("acme") is not None
-        assert loaded.get_node("dave") is None  # was not checkpointed
+        assert loaded.get_node("dave") is None
 
     def test_loaded_store_supports_queries(self, tmp_path):
-        """Operations on a loaded store work: query, get_edges."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
@@ -637,23 +592,19 @@ class TestEndToEnd:
         loaded, _ = load(conn2)
         conn2.close()
 
-        # Can query nodes
         all_nodes = loaded.get_all_nodes()
         assert len(all_nodes) == 3
 
         persons = loaded.get_all_nodes(kind="person")
         assert len(persons) == 2
 
-        # Can query by index
         nyc_slots = loaded.query_by_index("city", "NYC")
         assert len(nyc_slots) == 1
 
-        # Can query edges
         edges = loaded.get_edges_from("alice")
         assert len(edges) == 2
 
     def test_loaded_store_supports_mutations(self, tmp_path):
-        """Can add nodes/edges to a loaded store."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
@@ -664,7 +615,6 @@ class TestEndToEnd:
         conn2 = open_database(db_path)
         loaded, schema = load(conn2)
 
-        # Mutate the loaded store
         loaded.put_node("dave", "person", {"age": 40, "city": "SF"})
         assert loaded.node_count == 4
         assert loaded.get_node("dave")["age"] == 40
@@ -676,10 +626,8 @@ class TestEndToEnd:
         sources = {e["source"] for e in edges_to_alice}
         assert "dave" in sources
 
-        # Can re-checkpoint the mutated store
         checkpoint(loaded, schema, conn2)
 
-        # Reload and verify mutations persisted
         loaded2, _ = load(conn2)
         assert loaded2.node_count == 4
         assert loaded2.get_node("dave") is not None
@@ -687,11 +635,9 @@ class TestEndToEnd:
         conn2.close()
 
     def test_multiple_checkpoints(self, tmp_path):
-        """Multiple checkpoints overwrite correctly."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
-        # First checkpoint: just alice
         store = CoreStore()
         store.put_node("alice", "person", {"age": 30})
         checkpoint(store, SchemaRegistry(), conn)
@@ -699,7 +645,6 @@ class TestEndToEnd:
         loaded1, _ = load(conn)
         assert loaded1.node_count == 1
 
-        # Second checkpoint: alice + bob + edge
         store.put_node("bob", "person", {"age": 25})
         store.put_edge("alice", "bob", "knows")
         checkpoint(store, SchemaRegistry(), conn)
@@ -711,14 +656,12 @@ class TestEndToEnd:
         conn.close()
 
     def test_checkpoint_clears_stale_edge_blobs(self, tmp_path):
-        """When edge types are removed, old blobs are cleaned up."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
         store = _populated_store()
         checkpoint(store, SchemaRegistry(), conn)
 
-        # Delete all edges of type 'knows'
         store.delete_edge("alice", "bob", "knows")
         checkpoint(store, SchemaRegistry(), conn)
 
@@ -729,7 +672,6 @@ class TestEndToEnd:
         conn.close()
 
     def test_update_node_then_checkpoint(self, tmp_path):
-        """Node updates are captured by checkpoint."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
@@ -743,11 +685,10 @@ class TestEndToEnd:
         loaded, _ = load(conn)
         alice = loaded.get_node("alice")
         assert alice["age"] == 31
-        assert alice["promoted"] == 1  # booleans stored as int64 in columns
+        assert alice["promoted"] == 1
         conn.close()
 
     def test_delete_node_then_checkpoint(self, tmp_path):
-        """Node deletion is captured by checkpoint."""
         db_path = tmp_path / "test.db"
         conn = open_database(db_path)
 
@@ -760,11 +701,8 @@ class TestEndToEnd:
         loaded, _ = load(conn)
         assert loaded.node_count == 2
         assert loaded.get_node("bob") is None
-        assert loaded.edge_count == 1  # only alice->acme remains
+        assert loaded.edge_count == 1
         conn.close()
-
-
-# ── Column persistence ──────────────────────────────────────────────
 
 
 class TestColumnPersistence:
@@ -824,19 +762,17 @@ class TestColumnPersistence:
 
 
 def test_wal_manager_is_wired(tmp_path):
-    """GraphStore must have _wal attribute (WALManager)."""
-    from graphstore import GraphStore
-    gs = GraphStore(path=str(tmp_path))
-    assert hasattr(gs, '_wal'), "GraphStore must have _wal attribute (WALManager)"
-    from graphstore.wal import WALManager
+    from supergraph import SuperGraph
+    gs = SuperGraph(path=str(tmp_path))
+    assert hasattr(gs, '_wal'), "SuperGraph must have _wal attribute (WALManager)"
+    from supergraph.wal import WALManager
     assert isinstance(gs._wal, WALManager)
     gs.close()
 
 
 def test_wal_manager_no_inline_methods(tmp_path):
-    """Inline WAL methods must be deleted from GraphStore."""
-    from graphstore import GraphStore
-    gs = GraphStore(path=str(tmp_path))
+    from supergraph import SuperGraph
+    gs = SuperGraph(path=str(tmp_path))
     assert not hasattr(gs, '_wal_append'), "inline _wal_append must be deleted"
     assert not hasattr(gs, '_replay_wal'), "inline _replay_wal must be deleted"
     assert not hasattr(gs, '_maybe_auto_checkpoint'), "inline _maybe_auto_checkpoint must be deleted"
@@ -845,19 +781,18 @@ def test_wal_manager_no_inline_methods(tmp_path):
     gs.close()
 
 
-def test_graphstore_has_public_api():
-    """GraphStore must expose public methods so server.py does not need private access."""
-    from graphstore import GraphStore
-    gs = GraphStore()
+def test_supergraph_has_public_api():
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     assert hasattr(gs, 'get_all_nodes'), "missing get_all_nodes()"
     assert hasattr(gs, 'get_all_edges'), "missing get_all_edges()"
-    assert hasattr(GraphStore, 'cost_threshold'), "missing cost_threshold property"
-    assert hasattr(GraphStore, 'ceiling_mb'), "missing ceiling_mb property"
+    assert hasattr(SuperGraph, 'cost_threshold'), "missing cost_threshold property"
+    assert hasattr(SuperGraph, 'ceiling_mb'), "missing ceiling_mb property"
 
 
 def test_cost_threshold_property():
-    from graphstore import GraphStore
-    gs = GraphStore()
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     original = gs.cost_threshold
     gs.cost_threshold = 50_000
     assert gs.cost_threshold == 50_000
@@ -865,7 +800,7 @@ def test_cost_threshold_property():
 
 
 def test_ceiling_mb_property():
-    from graphstore import GraphStore
-    gs = GraphStore()
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     gs.ceiling_mb = 512
     assert gs.ceiling_mb == 512

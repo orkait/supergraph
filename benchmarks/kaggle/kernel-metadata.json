@@ -1,6 +1,6 @@
 {
-  "id": "superkaiii/graphstore-jina-v5-small",
-  "title": "GraphStore Jina V5 Small",
+  "id": "superkaiii/supergraph-jina-v5-small",
+  "title": "SuperGraph Jina V5 Small",
   "code_file": "kaggle_benchmark.py",
   "language": "python",
   "kernel_type": "script",

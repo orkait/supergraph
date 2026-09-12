@@ -1,8 +1,7 @@
-"""Compact primitives micro-benchmarks."""
 
 import numpy as np
 
-from graphstore.algos.compact import (
+from supergraph.algos.compact import (
     apply_slot_remap_to_edges,
     build_live_mask,
     slot_remap_plan,

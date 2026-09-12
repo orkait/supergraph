@@ -1,7 +1,6 @@
-"""Tests for columnar source-of-truth store operations."""
 import time
-from graphstore.core.store import CoreStore
-from graphstore import GraphStore
+from supergraph.core.store import CoreStore
+from supergraph import SuperGraph
 
 
 class TestMaterializeSlot:
@@ -39,7 +38,7 @@ class TestMaterializeSlot:
         store = CoreStore()
         slot = store.put_node("n1", "test", {"active": True})
         result = store._materialize_slot(slot)
-        assert result["active"] == 1  # bools stored as int64
+        assert result["active"] == 1
 
 
 class TestAutoTimestamps:
@@ -88,7 +87,7 @@ class TestAutoTimestamps:
 
 class TestLiveMask:
     def test_live_mask_excludes_tombstones(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "a"')
         g.execute('CREATE NODE "n2" kind = "test" name = "b"')
         g.execute('DELETE NODE "n1"')
@@ -97,40 +96,37 @@ class TestLiveMask:
         assert result.data[0]["id"] == "n2"
 
     def test_live_mask_excludes_expired(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "temp"')
-        # Manually expire: set __expires_at__ to past
-        g._store.columns.set_reserved(0, "__expires_at__", 1)  # epoch ms = 1 (long expired)
-        # Access executor's _compute_live_mask directly
-        from graphstore.dsl.executor import Executor
+        g._store.columns.set_reserved(0, "__expires_at__", 1)
+        from supergraph.dsl.executor import Executor
         ex = Executor(g._runtime)
         mask = ex._compute_live_mask(g._store._next_slot)
-        assert mask[0] == False  # expired node excluded
+        assert mask[0] == False
 
     def test_live_mask_excludes_retracted(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "fact" name = "test"')
         g._store.columns.set_reserved(0, "__retracted__", 1)
-        from graphstore.dsl.executor import Executor
+        from supergraph.dsl.executor import Executor
         ex = Executor(g._runtime)
         mask = ex._compute_live_mask(g._store._next_slot)
-        assert mask[0] == False  # retracted node excluded
+        assert mask[0] == False
 
     def test_live_mask_includes_active_nodes(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "active"')
-        from graphstore.dsl.executor import Executor
+        from supergraph.dsl.executor import Executor
         ex = Executor(g._runtime)
         mask = ex._compute_live_mask(g._store._next_slot)
         assert mask[0] == True
 
     def test_live_mask_includes_future_expiry(self):
-        g = GraphStore(ceiling_mb=256)
+        g = SuperGraph(ceiling_mb=256)
         g.execute('CREATE NODE "n1" kind = "test" name = "future"')
-        # Set expires_at to far future
-        future_ms = int(time.time() * 1000) + 86400000  # +1 day
+        future_ms = int(time.time() * 1000) + 86400000
         g._store.columns.set_reserved(0, "__expires_at__", future_ms)
-        from graphstore.dsl.executor import Executor
+        from supergraph.dsl.executor import Executor
         ex = Executor(g._runtime)
         mask = ex._compute_live_mask(g._store._next_slot)
-        assert mask[0] == True  # not expired yet
+        assert mask[0] == True

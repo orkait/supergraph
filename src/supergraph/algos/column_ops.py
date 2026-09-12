@@ -1,0 +1,122 @@
+
+from typing import Any, Callable
+
+import numpy as np
+
+__all__ = [
+    "INT64_SENTINEL",
+    "STR_SENTINEL",
+    "NUM_OPS",
+    "eval_mask",
+    "eval_mask_in",
+    "eval_and",
+    "eval_or",
+    "eval_not",
+]
+
+
+INT64_SENTINEL = np.iinfo(np.int64).min
+STR_SENTINEL = np.int32(-1)
+
+
+NUM_OPS: dict[str, Callable] = {
+    "=": np.equal,
+    "!=": np.not_equal,
+    ">": np.greater,
+    "<": np.less,
+    ">=": np.greater_equal,
+    "<=": np.less_equal,
+}
+
+
+def eval_mask(
+    col: np.ndarray,
+    presence: np.ndarray,
+    dtype_str: str,
+    op: str,
+    value: Any,
+    n: int,
+    intern_lookup: Callable[[str], int] | None = None,
+    has_string: Callable[[str], bool] | None = None,
+) -> np.ndarray | None:
+    col = col[:n]
+    presence = presence[:n]
+
+    if value is None:
+        if op == "=":
+            return ~presence
+        if op == "!=":
+            return presence.copy()
+        return None
+
+    if dtype_str == "int32_interned":
+        if not isinstance(value, str):
+            return None
+        if has_string is None or intern_lookup is None:
+            return None
+        if not has_string(value):
+            if op == "=":
+                return np.zeros(n, dtype=bool)
+            if op == "!=":
+                return presence.copy()
+            return None
+        int_val = intern_lookup(value)
+        if op == "=":
+            return (col == int_val) & presence
+        if op == "!=":
+            return (col != int_val) & presence
+        return None
+
+    fn = NUM_OPS.get(op)
+    if fn is None:
+        return None
+    return fn(col, value) & presence
+
+
+def eval_mask_in(
+    col: np.ndarray,
+    presence: np.ndarray,
+    dtype_str: str,
+    values: list,
+    n: int,
+    intern_lookup: Callable[[str], int] | None = None,
+    has_string: Callable[[str], bool] | None = None,
+) -> np.ndarray | None:
+    col = col[:n]
+    presence = presence[:n]
+
+    if dtype_str == "int32_interned":
+        if intern_lookup is None or has_string is None:
+            return None
+        int_vals = [
+            intern_lookup(v)
+            for v in values
+            if isinstance(v, str) and has_string(v)
+        ]
+        if not int_vals:
+            return np.zeros(n, dtype=bool)
+        return np.isin(col, int_vals) & presence
+
+    return np.isin(col, values) & presence
+
+
+def eval_and(masks: list[np.ndarray]) -> np.ndarray:
+    if not masks:
+        raise ValueError("eval_and requires at least one mask")
+    result = masks[0]
+    for m in masks[1:]:
+        result = result & m
+    return result
+
+
+def eval_or(masks: list[np.ndarray]) -> np.ndarray:
+    if not masks:
+        raise ValueError("eval_or requires at least one mask")
+    result = masks[0].copy()
+    for m in masks[1:]:
+        result = result | m
+    return result
+
+
+def eval_not(mask: np.ndarray, presence: np.ndarray) -> np.ndarray:
+    return (~mask) & presence

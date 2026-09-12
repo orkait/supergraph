@@ -1,11 +1,3 @@
-"""Adapter protocol for benchmarking agent memory systems.
-
-Every system under test implements the same four-method interface:
-    reset()         wipe memory, fresh state
-    ingest(session) add a conversation session
-    query(question) retrieve top-K memories
-    close()         release resources
-"""
 
 from __future__ import annotations
 
@@ -16,7 +8,7 @@ from typing import Any, Protocol
 
 @dataclass
 class Message:
-    role: str  # "user" | "assistant"
+    role: str
     content: str
     timestamp: float | None = None
 
@@ -41,11 +33,10 @@ class QueryResult:
     answer: str | None = None
     elapsed_ms: float = 0.0
     tokens_used: int = 0
-    raw: Any = None  # optional: per-system native result for debugging
+    raw: Any = None
 
 
 class MemoryAdapter(Protocol):
-    """Protocol every benchmarked system must satisfy."""
 
     name: str
     version: str
@@ -57,7 +48,6 @@ class MemoryAdapter(Protocol):
 
 
 class TimedOperation:
-    """Context manager that records elapsed wall-clock time in ms."""
 
     def __init__(self) -> None:
         self._start_ns = 0

@@ -1,6 +1,5 @@
-"""Walk/path anchor resolution in @-verb synthesis (cloud + local share this)."""
-from graphstore import GraphStore
-from graphstore.ingest.llm import synthesis as S
+from supergraph import SuperGraph
+from supergraph.ingest.llm import synthesis as S
 
 
 def _synth(gs, verb_line, msg_id):
@@ -10,25 +9,24 @@ def _synth(gs, verb_line, msg_id):
 
 
 def test_walk_anchor_no_double_prefix_when_unknown():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     stmts = _synth(gs, "@RECALL ent:unknown_person", "m1")
     recall = next(s for s in stmts if s.startswith("RECALL"))
-    assert "ent:ent:" not in recall                 # bug was ent:ent:
-    assert '"ent:unknown_person"' in recall          # single prefix fallback
+    assert "ent:ent:" not in recall
+    assert '"ent:unknown_person"' in recall
 
 
 def test_walk_anchor_resolves_cross_turn_entity():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
-    # entity created in a prior turn (hashed id), with a canonical_name
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "entity:abc123" kind = "entity" canonical_name = "Marie Curie"')
     stmts = _synth(gs, "@RECALL ent:marie_curie", "m2")
     recall = next(s for s in stmts if s.startswith("RECALL"))
     assert "ent:ent:" not in recall
-    assert "entity:abc123" in recall                 # resolved slug -> real hashed id
+    assert "entity:abc123" in recall
 
 
 def test_path_pair_resolves_both_anchors_cross_turn():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "entity:aaa" kind = "entity" canonical_name = "Marie Curie"')
     gs.execute('CREATE NODE "entity:bbb" kind = "entity" canonical_name = "Pierre Curie"')
     stmts = _synth(gs, "@PATH ent:marie_curie ent:pierre_curie", "m3")
@@ -38,6 +36,5 @@ def test_path_pair_resolves_both_anchors_cross_turn():
 
 
 def test_search_aliases_to_lexical():
-    # models frequently emit @SEARCH; alias it to @LEXICAL instead of dropping
     turn = S.parse_verb_output("@SEARCH radium isotopes")
     assert any(s.startswith('LEXICAL SEARCH "radium isotopes"') for s in turn.statements)

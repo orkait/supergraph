@@ -1,0 +1,437 @@
+
+from __future__ import annotations
+
+import time
+import logging
+
+import numpy as np
+
+from supergraph.core.errors import SuperGraphError
+from supergraph.core.types import Result
+from supergraph.dsl.ast_nodes import (
+    Condition,
+)
+
+logger = logging.getLogger(__name__)
+
+from supergraph.dsl.ast_nodes import (
+    SysCheckpoint,
+    SysClear,
+    SysContradictions,
+    SysEvict,
+    SysExpire,
+    SysLog,
+    SysOptimize,
+    SysRebuild,
+    SysRetain,
+    SysRollback,
+    SysSnapshot,
+    SysWal,
+)
+from supergraph.dsl.sys._registry import handles_sys
+
+
+class SysLifecycleHandlers:
+    @handles_sys(SysCheckpoint)
+    def _checkpoint(self, q: SysCheckpoint) -> Result:
+        return Result(kind="ok", data=None, count=0)
+
+    @handles_sys(SysRebuild)
+    def _rebuild(self, q: SysRebuild) -> Result:
+        self.store._rebuild_edges()
+        for field in list(self.store._indexed_fields):
+            self.store.add_index(field)
+        return Result(kind="ok", data=None, count=0)
+
+    @handles_sys(SysClear)
+    def _clear(self, q: SysClear) -> Result:
+        if q.target == "LOG":
+            if self.conn:
+                self.conn.execute("DELETE FROM query_log")
+                self.conn.commit()
+        elif q.target == "CACHE":
+            from supergraph.dsl.parser import clear_cache
+
+            clear_cache()
+            self.store.edge_matrices._cache.clear()
+            self.store.edge_matrices._transpose_cache.clear()
+        return Result(kind="ok", data=None, count=0)
+
+    @handles_sys(SysWal)
+    def _wal(self, q: SysWal) -> Result:
+        if q.action == "STATUS":
+            if self.conn:
+                row = self.conn.execute("SELECT COUNT(*) FROM wal").fetchone()
+                count = row[0]
+                size_row = self.conn.execute(
+                    "SELECT COALESCE(SUM(LENGTH(statement)), 0) FROM wal"
+                ).fetchone()
+                size = size_row[0]
+                return Result(
+                    kind="stats",
+                    data={"wal_entries": count, "wal_bytes": size},
+                    count=1,
+                )
+            return Result(
+                kind="stats", data={"wal_entries": 0, "wal_bytes": 0}, count=1
+            )
+        elif q.action == "REPLAY":
+            return Result(kind="ok", data=None, count=0)
+        return Result(kind="ok", data=None, count=0)
+
+    @handles_sys(SysLog)
+    def _log(self, q: SysLog) -> Result:
+        if not self.conn:
+            return Result(kind="log_entries", data=[], count=0)
+
+        sql = "SELECT id, timestamp, query, elapsed_us, result_count, error, tag, trace_id, source, phase FROM query_log"
+        params: list = []
+        conditions = []
+
+        if q.trace_id:
+            conditions.append("trace_id = ?")
+            params.append(q.trace_id)
+        if q.since:
+            import datetime
+            dt = datetime.datetime.fromisoformat(q.since)
+            conditions.append("timestamp >= ?")
+            params.append(dt.timestamp())
+
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+
+        sql += " ORDER BY timestamp DESC"
+
+        if q.limit:
+            sql += " LIMIT ?"
+            params.append(q.limit.value)
+        else:
+            sql += " LIMIT 50"
+
+        rows = self.conn.execute(sql, params).fetchall()
+        entries = [
+            {
+                "id": r[0], "timestamp": r[1], "query": r[2],
+                "elapsed_us": r[3], "result_count": r[4], "error": r[5],
+                "tag": r[6], "trace_id": r[7], "source": r[8], "phase": r[9],
+            }
+            for r in rows
+        ]
+        return Result(kind="log_entries", data=entries, count=len(entries))
+
+    @handles_sys(SysExpire)
+    def _expire(self, q: SysExpire) -> Result:
+        n = self.store._next_slot
+        if n == 0:
+            return Result(kind="ok", data={"expired": 0}, count=0)
+
+        mask = self.store.node_ids[:n] >= 0
+        if self.store.node_tombstones:
+            tomb_arr = np.array(list(self.store.node_tombstones), dtype=np.int32)
+            tomb_mask = np.zeros(n, dtype=bool)
+            valid = tomb_arr[tomb_arr < n]
+            if len(valid) > 0:
+                tomb_mask[valid] = True
+            mask = mask & ~tomb_mask
+
+        if q.where:
+            kind_filter = None
+            expr = q.where.expr
+            if isinstance(expr, Condition) and expr.field == "kind" and expr.op == "=":
+                kind_filter = expr.value
+            if kind_filter:
+                kind_mask = self.store._live_mask(kind_filter)
+                mask = mask & kind_mask
+
+        expires = self.store.columns.get_column("__expires_at__", n)
+        if expires is None:
+            return Result(kind="ok", data={"expired": 0}, count=0)
+
+        col, pres, _ = expires
+        now_ms = int(time.time() * 1000)
+        expired_mask = mask & pres & (col > 0) & (col < now_ms)
+
+        expired_slots = np.nonzero(expired_mask)[0]
+        if len(expired_slots) == 0:
+            return Result(kind="ok", data={"expired": 0}, count=0)
+
+        expired_count = 0
+        expired_slot_set = set()
+        for slot_idx in expired_slots:
+            slot = int(slot_idx)
+            nid_str_id = int(self.store.node_ids[slot])
+            if nid_str_id == -1:
+                continue
+
+            for field in self.store._indexed_fields:
+                if self.store.columns.has_column(field) and self.store.columns._presence[field][slot]:
+                    dtype = self.store.columns._dtypes[field]
+                    raw = self.store.columns._columns[field][slot]
+                    if dtype == "int32_interned":
+                        val = self.store.string_table.lookup(int(raw))
+                    elif dtype == "float64":
+                        val = float(raw)
+                    else:
+                        val = int(raw)
+                    idx_list = self.store.secondary_indices.get(field, {}).get(val, [])
+                    if slot in idx_list:
+                        idx_list.remove(slot)
+
+            self.store.columns.clear(slot)
+            self.store.node_tombstones.add(slot)
+            if nid_str_id in self.store.id_to_slot:
+                del self.store.id_to_slot[nid_str_id]
+            self.store._count -= 1
+            expired_slot_set.add(slot)
+            expired_count += 1
+
+        if self._vector_store:
+            for slot_idx in expired_slots:
+                slot = int(slot_idx)
+                self._vector_store.remove(slot)
+
+        if expired_slot_set:
+            any_removed = False
+            for etype in list(self.store._edges_by_type.keys()):
+                old_len = len(self.store._edges_by_type[etype])
+                self.store._edges_by_type[etype] = [
+                    (s, t, d) for s, t, d in self.store._edges_by_type[etype]
+                    if s not in expired_slot_set and t not in expired_slot_set
+                ]
+                if not self.store._edges_by_type[etype]:
+                    del self.store._edges_by_type[etype]
+                if len(self.store._edges_by_type.get(etype, [])) != old_len:
+                    any_removed = True
+
+            if any_removed:
+                self.store._edge_keys = {
+                    (s, t, k)
+                    for k, edges in self.store._edges_by_type.items()
+                    for s, t, _d in edges
+                }
+                self.store._edge_data_idx = {}
+                for k, edges in self.store._edges_by_type.items():
+                    kind_idx = {}
+                    for s, t, d in edges:
+                        kind_idx[(s, t)] = d
+                    if kind_idx:
+                        self.store._edge_data_idx[k] = kind_idx
+            self.store._edges_dirty = True
+            self.store._ensure_edges_built()
+
+        return Result(kind="ok", data={"expired": expired_count}, count=expired_count)
+
+    @handles_sys(SysContradictions)
+    def _contradictions(self, q: SysContradictions) -> Result:
+        n = self.store._next_slot
+        if n == 0:
+            return Result(kind="contradictions", data=[], count=0)
+
+        mask = self.store.compute_live_mask(n)
+
+        if q.where:
+            expr = q.where.expr
+            if isinstance(expr, Condition) and expr.field == "kind" and expr.op == "=":
+                kind_mask = self.store._live_mask(expr.value)
+                mask = mask & kind_mask
+
+        filtered_count = int(np.sum(mask))
+        if filtered_count == 0:
+            return Result(kind="contradictions", data=[], count=0)
+
+        group_field = q.group_by
+        value_field = q.field
+
+        if not self.store.columns.has_column(group_field):
+            return Result(kind="contradictions", data=[], count=0)
+        if not self.store.columns.has_column(value_field):
+            return Result(kind="contradictions", data=[], count=0)
+
+        group_col = self.store.columns._columns[group_field][:n][mask]
+        value_col = self.store.columns._columns[value_field][:n][mask]
+        group_dtype = self.store.columns._dtypes[group_field]
+        value_dtype = self.store.columns._dtypes[value_field]
+
+        unique_groups = np.unique(group_col)
+        contradictions = []
+        for gkey in unique_groups:
+            group_mask = group_col == gkey
+            values_in_group = value_col[group_mask]
+            unique_vals = np.unique(values_in_group)
+            if len(unique_vals) > 1:
+                if group_dtype == "int32_interned":
+                    group_name = self.store.string_table.lookup(int(gkey))
+                elif group_dtype == "float64":
+                    group_name = float(gkey)
+                else:
+                    group_name = int(gkey)
+                resolved_vals = []
+                for v in unique_vals:
+                    if value_dtype == "int32_interned":
+                        resolved_vals.append(self.store.string_table.lookup(int(v)))
+                    elif value_dtype == "float64":
+                        resolved_vals.append(float(v))
+                    else:
+                        resolved_vals.append(int(v))
+                contradictions.append({
+                    "group": group_name,
+                    "values": resolved_vals,
+                    "count": len(unique_vals),
+                })
+
+        return Result(kind="contradictions", data=contradictions, count=len(contradictions))
+
+    @handles_sys(SysSnapshot)
+    def _snapshot(self, q: SysSnapshot) -> Result:
+        store = self.store
+        store_snap = store.make_snapshot()
+        ns = store_snap.next_slot
+        vector_payload = None
+        vs = self._vector_store
+        if vs is not None and vs.count() > 0:
+            vector_payload = {
+                "index": vs.save(),
+                "presence": vs._has_vector[:ns].copy(),
+                "dims": vs.dims,
+            }
+        store._snapshots[q.name] = {
+            "store": store_snap,
+            "vector": vector_payload,
+        }
+        return Result(kind="ok", data={"snapshot": q.name}, count=1)
+
+    @handles_sys(SysRollback)
+    def _rollback(self, q: SysRollback) -> Result:
+        store = self.store
+        if q.name not in store._snapshots:
+            raise SuperGraphError(f"Snapshot not found: {q.name!r}")
+
+        snap = store._snapshots[q.name]
+
+        store.restore_snapshot(snap["store"])
+
+        vector_payload = snap.get("vector")
+        if vector_payload is not None:
+            from supergraph.vector.store import VectorStore
+            new_vs = VectorStore(dims=vector_payload["dims"], capacity=store._capacity)
+            new_vs.load(vector_payload["index"])
+            presence = vector_payload["presence"]
+            new_vs._has_vector[:len(presence)] = presence
+            self._runtime.vector_store = new_vs
+        else:
+            self._runtime.vector_store = None
+
+        store._rebuild_edges()
+
+        if self._document_store:
+            live = store.compute_live_mask(store._next_slot)
+            live_slots = set(int(s) for s in np.nonzero(live)[0])
+            try:
+                self._document_store.orphan_cleanup(live_slots)
+            except Exception as e:
+                logger.debug("orphan cleanup after rollback failed: %s", e, exc_info=True)
+
+        return Result(kind="ok", data={"rollback": q.name}, count=1)
+
+    @handles_sys(SysRetain)
+    def _retain(self, q: SysRetain) -> Result:
+        store = self.store
+        n = store._next_slot
+        if n == 0:
+            return Result(kind="ok", data={"archived": 0, "blob_deleted": 0}, count=0)
+
+        archive_cutoff_ms = int(time.time() * 1000) - self._retention.get("blob_archive_days", 90) * 86400000
+        delete_cutoff_ms = int(time.time() * 1000) - self._retention.get("blob_delete_days", 365) * 86400000
+
+        live = store.compute_live_mask(n)
+        created_col = store.columns.get_column("__created_at__", n)
+        blob_col = store.columns.get_column("__blob_state__", n)
+
+        if created_col is None or blob_col is None:
+            return Result(kind="ok", data={"archived": 0, "blob_deleted": 0}, count=0)
+
+        created_data, created_pres, _ = created_col
+        blob_data, blob_pres, _ = blob_col
+
+        warm_id = store.string_table.intern("warm") if "warm" in store.string_table else None
+        if warm_id is None:
+            return Result(kind="ok", data={"archived": 0, "blob_deleted": 0}, count=0)
+
+        archived_id = store.string_table.intern("archived") if "archived" in store.string_table else None
+        deleted_str_id = store.string_table.intern("deleted")
+
+        eligible = live & created_pres & blob_pres
+        warm_mask = eligible & (blob_data == warm_id) & (created_data < archive_cutoff_ms)
+        to_archive = np.nonzero(warm_mask)[0]
+
+        if len(to_archive) > 0:
+            archived_str_id = store.string_table.intern("archived")
+            store.columns._columns["__blob_state__"][to_archive] = archived_str_id
+        archived_count = len(to_archive)
+
+        deleted_count = 0
+        if archived_id is not None:
+            archive_mask = eligible & (blob_data == archived_id) & (created_data < delete_cutoff_ms)
+            to_delete = np.nonzero(archive_mask)[0]
+            if len(to_delete) > 0:
+                if self._document_store:
+                    for slot in to_delete:
+                        self._document_store.delete_document(int(slot))
+                store.columns._columns["__blob_state__"][to_delete] = deleted_str_id
+            deleted_count = len(to_delete)
+
+        return Result(kind="ok", data={
+            "archived": archived_count,
+            "blob_deleted": deleted_count,
+        }, count=archived_count + deleted_count)
+
+    @handles_sys(SysOptimize)
+    def _optimize(self, q: SysOptimize) -> Result:
+        from supergraph.core.optimizer import (
+            optimize_all, compact_tombstones_safe,
+            gc_strings, defrag_edges, cleanup_vectors, sweep_orphans, clear_caches,
+        )
+        target = q.target
+        if target is None:
+            data = optimize_all(
+                self.store, self._vector_store, self._document_store,
+                schema=self.schema, conn=self.conn,
+            )
+        elif target == "COMPACT":
+            data = compact_tombstones_safe(
+                self.store, self.schema, self.conn,
+                self._vector_store, self._document_store,
+            )
+        elif target == "STRINGS":
+            data = gc_strings(self.store)
+        elif target == "EDGES":
+            data = defrag_edges(self.store)
+        elif target == "VECTORS":
+            data = cleanup_vectors(self.store, self._vector_store)
+        elif target == "BLOBS":
+            data = sweep_orphans(self.store, self._document_store)
+        elif target == "CACHE":
+            data = clear_caches(self.store)
+        else:
+            raise SuperGraphError(f"Unknown optimize target: {target}")
+        return Result(kind="ok", data=data, count=1)
+
+    @handles_sys(SysEvict)
+    def _evict(self, q: SysEvict) -> Result:
+        from supergraph.core.optimizer import evict_oldest, evict_by_count
+
+        protected = self._protected_kinds
+
+        if q.limit:
+            data = evict_by_count(
+                self.store, q.limit.value, self._vector_store, self._document_store,
+                protected_kinds=protected,
+            )
+        else:
+            target = int(self.store._ceiling_bytes * self._eviction_target_ratio)
+            data = evict_oldest(
+                self.store, target, self._vector_store, self._document_store,
+                protected_kinds=protected,
+            )
+
+        return Result(kind="ok", data=data, count=data["evicted"])

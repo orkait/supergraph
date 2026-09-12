@@ -1,7 +1,6 @@
-"""Tests for DocumentStore SQLite storage."""
 import os
 import pytest
-from graphstore.document.store import DocumentStore
+from supergraph.document.store import DocumentStore
 
 
 @pytest.fixture
@@ -13,7 +12,7 @@ def doc_store(tmp_path):
 
 @pytest.fixture
 def temp_doc_store():
-    ds = DocumentStore()  # temp file
+    ds = DocumentStore()
     yield ds
     ds.close()
 
@@ -123,7 +122,6 @@ class TestBulkOps:
 
 
 class TestSearchText:
-    """Regression tests for FTS5 query sanitization."""
 
     def _seed(self, doc_store):
         doc_store.put_summary(1, "I live in Tokyo and work as a data scientist", doc_slot=0)

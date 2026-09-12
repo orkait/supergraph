@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { BaseEdge, getBezierPath, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react'
 import { useFlowStore } from '@/hooks/useFlowStore'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 
 const EDGE_COLORS: Record<string, string> = {
   calls: '#6a9fd8', extends: '#5aad7a', implements: '#9a80c8',
@@ -25,10 +25,10 @@ export const CustomEdge = memo(function CustomEdge(props: EdgeProps) {
 
   // Primitive selectors - stable, no unnecessary re-renders
   const hoveredNodeId = useFlowStore((st) => st.hoveredNodeId)
-  const highlightedEdges = useGraphStore((st) => st.highlightedEdges)
-  const highlightedNodeIds = useGraphStore((st) => st.highlightedNodeIds)
-  const showEdgeLabels = useGraphStore((st) => st.config.showEdgeLabels)
-  const layoutMode = useGraphStore((st) => st.config.layoutMode)
+  const highlightedEdges = useSuperGraph((st) => st.highlightedEdges)
+  const highlightedNodeIds = useSuperGraph((st) => st.highlightedNodeIds)
+  const showEdgeLabels = useSuperGraph((st) => st.config.showEdgeLabels)
+  const layoutMode = useSuperGraph((st) => st.config.layoutMode)
 
   // Cluster mode: straight lines (freeform). Dagre mode: bezier curves.
   const [edgePath, labelX, labelY] = layoutMode === 'cluster'

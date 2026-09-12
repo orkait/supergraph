@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import tempfile
 import time
@@ -10,9 +9,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
-# --- Download models if missing ---
 try:
     from tools.scripts.download_models import download_all
     download_all()
@@ -29,12 +27,8 @@ except ImportError:
 
 _EMBEDDER_UNSET = object()
 
-# ---------------------------------------------------------------------------
-# Native-ingest helpers
-# ---------------------------------------------------------------------------
 
 def _corpus_id_from_node_id(node_id: str) -> str:
-    """Strip :chunk:N or :section:N suffix produced by INGEST to get corpus_id."""
     for marker in (":chunk:", ":section:"):
         if marker in node_id:
             return node_id.split(marker, 1)[0]
@@ -46,18 +40,10 @@ def _safe_filename(corpus_id: str) -> str:
 
 
 def _format_session_for_ingest(item: CorpusItem) -> str:
-    """Format corpus text for graphstore INGEST.
-
-    Wraps the conversation in a minimal markdown structure so the heading
-    chunker produces one logical chunk for the whole session / turn.
-    Plain text (no headings) falls through to chunk_by_paragraph, which
-    splits on double newlines - also fine for conversations.
-    """
     return item.text
 
 
-def _ingest_corpus_item(gs: GraphStore, item: CorpusItem, ingest_dir: Path) -> None:
-    """Write item text to a .txt file and INGEST through graphstore's native pipeline."""
+def _ingest_corpus_item(gs: SuperGraph, item: CorpusItem, ingest_dir: Path) -> None:
     txt_path = ingest_dir / f"{_safe_filename(item.corpus_id)}.txt"
     txt_path.write_text(_format_session_for_ingest(item), encoding="utf-8")
     gs.execute(
@@ -68,7 +54,6 @@ def _ingest_corpus_item(gs: GraphStore, item: CorpusItem, ingest_dir: Path) -> N
 
 
 def _normalize_ranked_rows(rows: list[dict], item_by_id: dict[str, CorpusItem]) -> list[dict]:
-    """Map chunk/section node IDs back to corpus IDs and dedupe by corpus_id (first-seen wins)."""
     seen: set[str] = set()
     normalized: list[dict] = []
     for row in rows:
@@ -127,14 +112,7 @@ def build_corpus(entry: dict, granularity: str) -> list[CorpusItem]:
             if corpus_id in seen_corpus_ids:
                 continue
             seen_corpus_ids.add(corpus_id)
-            # Follow MemPalace's LongMemEval convention: embed only the user
-            # turns when building a session document. Assistant responses
-            # dilute the vector with chatter/rephrasing that isn't in the
-            # ground-truth answer signal. Filtering to user turns closed a
-            # ~3pp gap vs MemPalace's 96.6% R@5 benchmark number.
             user_turns = [turn["content"] for turn in session if turn.get("role") == "user"]
-            # Fall back to all turns if the dataset doesn't carry role labels
-            # (some LongMemEval variants omit them on older cleaned dumps).
             text = "\n".join(user_turns) if user_turns else "\n".join(t["content"] for t in session)
             items.append(
                 CorpusItem(
@@ -220,7 +198,7 @@ def _normalize_lexical_query(text: str) -> str:
     return " OR ".join(deduped)
 
 
-def _register_benchmark_kind(gs: GraphStore) -> None:
+def _register_benchmark_kind(gs: SuperGraph) -> None:
     gs.execute(
         'SYS REGISTER NODE KIND "benchmark_memory" '
         'REQUIRED text:string, session_id:string, session_date:string, question_id:string '
@@ -228,7 +206,7 @@ def _register_benchmark_kind(gs: GraphStore) -> None:
     )
 
 
-def _create_benchmark_node(gs: GraphStore, item: CorpusItem, question_id: str) -> None:
+def _create_benchmark_node(gs: SuperGraph, item: CorpusItem, question_id: str) -> None:
     fields = [
         f'CREATE NODE {_dsl_quote(item.corpus_id)}',
         'kind = "benchmark_memory"',
@@ -241,14 +219,12 @@ def _create_benchmark_node(gs: GraphStore, item: CorpusItem, question_id: str) -
         fields.append(f"turn_id = {item.turn_id}")
     fields.append(f'DOCUMENT {_dsl_quote(item.text)}')
     gs.execute(" ".join(fields))
-    # DOCUMENT auto-populates doc_fts BM25 for text content since PR #102.
 
 
 def _result_rows(result, item_by_id: dict[str, CorpusItem]) -> list[dict]:
     rows = []
     for node in result.data:
         corpus_id = node["id"]
-        # Native ingest returns chunk/section node IDs - strip the suffix to get corpus_id.
         item = item_by_id.get(corpus_id) or item_by_id.get(_corpus_id_from_node_id(corpus_id))
         if item is None:
             continue
@@ -280,7 +256,7 @@ def _fuse_rows(*row_groups: list[dict], top_k: int) -> list[dict]:
     return ranked[:top_k]
 
 
-def _run_retrieval(gs: GraphStore, item_by_id: dict[str, CorpusItem], question: str, mode: str, top_k: int) -> list[dict]:
+def _run_retrieval(gs: SuperGraph, item_by_id: dict[str, CorpusItem], question: str, mode: str, top_k: int) -> list[dict]:
     normalized_question = _normalize_lexical_query(question)
     if mode == "remember":
         result = gs.execute(f'REMEMBER {_dsl_quote(normalized_question)} LIMIT {top_k}')
@@ -347,12 +323,12 @@ def run_benchmark(
         items = build_corpus(entry, granularity=granularity)
         item_by_id = {item.corpus_id: item for item in items}
 
-        with tempfile.TemporaryDirectory(prefix="graphstore-longmemeval-") as tempdir:
+        with tempfile.TemporaryDirectory(prefix="supergraph-longmemeval-") as tempdir:
             tempdir_path = Path(tempdir)
             if embedder is _EMBEDDER_UNSET:
-                gs = GraphStore(path=tempdir)
+                gs = SuperGraph(path=tempdir)
             else:
-                gs = GraphStore(path=tempdir, embedder=embedder)
+                gs = SuperGraph(path=tempdir, embedder=embedder)
             try:
                 if ingest_mode == "native":
                     ingest_dir = tempdir_path / "ingest_files"
@@ -361,9 +337,6 @@ def run_benchmark(
                         _ingest_corpus_item(gs, item, ingest_dir)
                 else:
                     _register_benchmark_kind(gs)
-                    # Defer embeddings and flush in batches - critical for
-                    # transformer embedders (EmbeddingGemma, Harrier) where
-                    # per-call inference overhead dominates.
                     with gs.deferred_embeddings(batch_size=64):
                         for item in items:
                             _create_benchmark_node(gs, item, question_id=entry["question_id"])
@@ -469,61 +442,59 @@ def run_benchmark(
 
 
 def _resolve_embedder(name: str | None):
-    """Resolve --embedder CLI arg to an Embedder instance or sentinel."""
     if name is None or name == "default":
-        return _EMBEDDER_UNSET  # graphstore picks model2vec M2V_base_output
+        return _EMBEDDER_UNSET
 
     if name.startswith("model2vec:"):
         model_id = name[len("model2vec:"):]
-        from graphstore.embedding.model2vec_embedder import Model2VecEmbedder
+        from supergraph.embedding.model2vec_embedder import Model2VecEmbedder
         print(f"[embedder] loading model2vec: {model_id}", flush=True)
         return Model2VecEmbedder(model_name=model_id)
 
     if name in ("embeddinggemma", "embeddinggemma-256"):
-        from graphstore.registry.installer import load_installed_embedder, install_embedder, is_installed
+        from supergraph.registry.installer import load_installed_embedder, install_embedder, is_installed
         if not is_installed("embeddinggemma-300m"):
-            print("[embedder] embeddinggemma-300m not installed - running: graphstore install-embedder embeddinggemma-300m", flush=True)
+            print("[embedder] embeddinggemma-300m not installed - running: supergraph install-embedder embeddinggemma-300m", flush=True)
             install_embedder("embeddinggemma-300m")
         print("[embedder] loading embeddinggemma-300m (256d Matryoshka)", flush=True)
         return load_installed_embedder("embeddinggemma-300m", dims=256)
 
     if name == "embeddinggemma-768":
-        from graphstore.registry.installer import load_installed_embedder, install_embedder, is_installed
+        from supergraph.registry.installer import load_installed_embedder, install_embedder, is_installed
         if not is_installed("embeddinggemma-300m"):
-            print("[embedder] embeddinggemma-300m not installed - running: graphstore install-embedder embeddinggemma-300m", flush=True)
+            print("[embedder] embeddinggemma-300m not installed - running: supergraph install-embedder embeddinggemma-300m", flush=True)
             install_embedder("embeddinggemma-300m")
         print("[embedder] loading embeddinggemma-300m (768d full)", flush=True)
         return load_installed_embedder("embeddinggemma-300m", dims=768)
 
     if name in ("harrier", "harrier-0.6b"):
-        from graphstore.registry.installer import load_installed_embedder, install_embedder, is_installed
+        from supergraph.registry.installer import load_installed_embedder, install_embedder, is_installed
         if not is_installed("harrier-oss-v1-0.6b"):
-            print("[embedder] harrier-oss-v1-0.6b not installed - running: graphstore install-embedder harrier-oss-v1-0.6b", flush=True)
+            print("[embedder] harrier-oss-v1-0.6b not installed - running: supergraph install-embedder harrier-oss-v1-0.6b", flush=True)
             install_embedder("harrier-oss-v1-0.6b")
         print("[embedder] loading harrier-oss-v1-0.6b (1024d, last-token pooling)", flush=True)
         return load_installed_embedder("harrier-oss-v1-0.6b", dims=1024)
 
     if name in ("jina-v5-nano", "jina-v5-nano-retrieval"):
-        from graphstore.registry.installer import load_installed_embedder, install_embedder, is_installed
+        from supergraph.registry.installer import load_installed_embedder, install_embedder, is_installed
         if not is_installed("jina-v5-nano-retrieval"):
             print("[embedder] jina-v5-nano-retrieval not installed", flush=True)
             install_embedder("jina-v5-nano-retrieval")
         import os
-        gpu_flag = os.environ.get("GRAPHSTORE_GPU") == "1"
+        gpu_flag = os.environ.get("SUPERGRAPH_GPU") == "1"
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if gpu_flag else None
         print(f"[embedder] loading jina-v5-nano-retrieval (768d, {'GPU' if gpu_flag else 'CPU'})", flush=True)
         return load_installed_embedder("jina-v5-nano-retrieval", dims=768, providers=providers)
 
     if name.startswith("installed:"):
         model_id = name[len("installed:"):]
-        from graphstore.registry.installer import load_installed_embedder, is_installed, install_embedder
+        from supergraph.registry.installer import load_installed_embedder, is_installed, install_embedder
         if not is_installed(model_id):
-            print(f"[embedder] {model_id} not installed - running: graphstore install-embedder {model_id}", flush=True)
+            print(f"[embedder] {model_id} not installed - running: supergraph install-embedder {model_id}", flush=True)
             install_embedder(model_id)
         print(f"[embedder] loading installed model: {model_id}", flush=True)
-        # Use GPU if GRAPHSTORE_VECTOR_GPU_LAYERS is set
-        gpu_layers = int(os.environ.get("GRAPHSTORE_VECTOR_GPU_LAYERS", 0))
-        gpu_mem_limit = os.environ.get("GRAPHSTORE_GPU_MEM_LIMIT")
+        gpu_layers = int(os.environ.get("SUPERGRAPH_VECTOR_GPU_LAYERS", 0))
+        gpu_mem_limit = os.environ.get("SUPERGRAPH_GPU_MEM_LIMIT")
         if gpu_mem_limit:
             gpu_mem_limit = int(gpu_mem_limit)
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if gpu_layers != 0 else None
@@ -534,7 +505,6 @@ def _resolve_embedder(name: str | None):
             gpu_mem_limit=gpu_mem_limit
         )
 
-    # FastEmbed shortcuts - strong encoder models with pre-exported ONNX.
     _FASTEMBED_ALIASES = {
         "bge-large":       "BAAI/bge-large-en-v1.5",
         "bge-base":        "BAAI/bge-base-en-v1.5",
@@ -547,7 +517,7 @@ def _resolve_embedder(name: str | None):
         "minilm-l6":       "sentence-transformers/all-MiniLM-L6-v2",
     }
     if name in _FASTEMBED_ALIASES or name.startswith("fastembed:"):
-        from graphstore.embedding.fastembed_embedder import FastEmbedEmbedder
+        from supergraph.embedding.fastembed_embedder import FastEmbedEmbedder
         model_id = (
             _FASTEMBED_ALIASES[name] if name in _FASTEMBED_ALIASES
             else name[len("fastembed:"):]
@@ -564,7 +534,7 @@ def _resolve_embedder(name: str | None):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="GraphStore × LongMemEval benchmark")
+    parser = argparse.ArgumentParser(description="SuperGraph × LongMemEval benchmark")
     parser.add_argument("dataset")
     parser.add_argument("--mode", choices=["remember", "similar", "lexical", "hybrid"], default="remember")
     parser.add_argument("--ingest-mode", choices=["flat", "native"], default="flat",

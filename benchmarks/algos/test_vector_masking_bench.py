@@ -1,28 +1,23 @@
 import timeit
 import numpy as np
 from usearch.index import Index
-import sys
-import os
 
-# Mock VectorStore search with and without adaptive mask
 def bench_vector_masking():
     N = 100000
     dims = 128
     k = 10
     
-    # 1. Setup Index
     index = Index(ndim=dims, metric="cos", dtype="f32")
     vectors = np.random.rand(N, dims).astype(np.float32)
     index.add(np.arange(N), vectors)
     
-    # 2. Setup Sparse Mask (1% density)
     mask = np.zeros(N, dtype=bool)
     mask[np.random.choice(N, 1000, replace=False)] = True
     
     query = np.random.rand(dims).astype(np.float32)
     
     def search_static_oversample():
-        oversample = k * 5 # 50
+        oversample = k * 5
         results = index.search(query, oversample)
         valid = []
         for key, dist in zip(results.keys, results.distances):

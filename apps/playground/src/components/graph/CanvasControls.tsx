@@ -1,10 +1,10 @@
 import { Panel } from '@xyflow/react'
-import { useGraphStore, type LayoutMode } from '@/hooks/useGraphStore'
+import { useSuperGraph, type LayoutMode } from '@/hooks/useSuperGraph'
 import { Slider } from '@/components/ui/slider'
 
 export function CanvasControls() {
-  const config = useGraphStore((s) => s.config)
-  const updateConfig = useGraphStore((s) => s.updateConfig)
+  const config = useSuperGraph((s) => s.config)
+  const updateConfig = useSuperGraph((s) => s.updateConfig)
   const { layoutMode, clusterStrength, repelStrength, centerForce, linkForce, linkDistance } = config
 
   return (

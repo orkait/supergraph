@@ -6,9 +6,9 @@ sidebar_position: 5
 # Configuration
 
 ```python
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
-g = GraphStore(
+g = SuperGraph(
     path="./brain",
     ceiling_mb=256,
     embedder="default",           # "default" (model2vec), "none", "installed:<name>", or an Embedder
@@ -30,11 +30,11 @@ g = GraphStore(
 Config is resolved in layers, later layers win:
 
 1. `config.py` defaults
-2. `graphstore.json` in cwd
-3. `GRAPHSTORE_*` env vars
+2. `supergraph.json` in cwd
+3. `SUPERGRAPH_*` env vars
 4. Constructor kwargs
 
-## graphstore.json reference
+## supergraph.json reference
 
 Include only the fields you want to override. Missing fields use defaults from `config.py`.
 
@@ -74,25 +74,25 @@ Include only the fields you want to override. Missing fields use defaults from `
 Flattened by section:
 
 ```bash
-GRAPHSTORE_CORE_CEILING_MB=512
-GRAPHSTORE_DSL_FUSION_METHOD=rrf
-GRAPHSTORE_VISION_URL=http://localhost:8080
-GRAPHSTORE_VISION_MODEL=smolvlm-500m
-GRAPHSTORE_VLM_CACHE_DIR=/mnt/cache/vlm
+SUPERGRAPH_CORE_CEILING_MB=512
+SUPERGRAPH_DSL_FUSION_METHOD=rrf
+SUPERGRAPH_VISION_URL=http://localhost:8080
+SUPERGRAPH_VISION_MODEL=smolvlm-500m
+SUPERGRAPH_VLM_CACHE_DIR=/mnt/cache/vlm
 ```
 
 ## CLI
 
 ```bash
-graphstore config --defaults    # dump current defaults as JSON
-graphstore config --schema      # JSON Schema for graphstore.json
-graphstore config --path graphstore.json   # show resolved values
+supergraph config --defaults    # dump current defaults as JSON
+supergraph config --schema      # JSON Schema for supergraph.json
+supergraph config --path supergraph.json   # show resolved values
 ```
 
 ## Single-owner per path
 
-Persistent stores take an advisory lock on `<path>/.graphstore.lock`. A second `GraphStore(path=...)` against the same path raises `StoreInUse` - WAL replay + compact + checkpoint are not safe across processes. In-memory stores are unlocked. OS reclaims the lock on process exit.
+Persistent stores take an advisory lock on `<path>/.supergraph.lock`. A second `SuperGraph(path=...)` against the same path raises `StoreInUse` - WAL replay + compact + checkpoint are not safe across processes. In-memory stores are unlocked. OS reclaims the lock on process exit.
 
 ## Thread safety
 
-Default is single-threaded. `queued=True` installs a worker thread that serialises writes from multiple callers. BLAS thread count is capped at import time (`OMP_NUM_THREADS=2` by default; override with `GRAPHSTORE_BLAS_CAP=N`) so importing graphstore doesn't saturate all cores.
+Default is single-threaded. `queued=True` installs a worker thread that serialises writes from multiple callers. BLAS thread count is capped at import time (`OMP_NUM_THREADS=2` by default; override with `SUPERGRAPH_BLAS_CAP=N`) so importing supergraph doesn't saturate all cores.

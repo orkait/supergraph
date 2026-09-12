@@ -1,8 +1,7 @@
-"""PR 3: remaining writes + contexts + batch. Every verb + parser roundtrip."""
 import pytest
 
-from graphstore import q, F
-from graphstore.dsl.parser import parse
+from supergraph import q, F
+from supergraph.dsl.parser import parse
 
 
 def _roundtrip(query_obj):
@@ -202,7 +201,6 @@ class TestBatch:
         assert lines[0] == "BEGIN"
         assert lines[-1] == "COMMIT"
         assert 'CREATE NODE "n1"' in dsl
-        # parser check
         parse(dsl)
 
     def test_batch_shorthand(self):
@@ -221,7 +219,6 @@ class TestBatch:
             q.batch()
 
 
-# Critical escape case for writes
 class TestWriteEscape:
     def test_update_node_escape(self):
         out = q.update_node("m1", note='a"b').dsl()

@@ -1,12 +1,10 @@
-"""Tests for vault module: parser, manager, sync."""
 import pytest
-from pathlib import Path
 
-from graphstore.vault.parser import (
+from supergraph.vault.parser import (
     parse_frontmatter, parse_sections, extract_wikilinks,
     title_to_slug, write_frontmatter, write_section,
 )
-from graphstore.vault.manager import VaultManager
+from supergraph.vault.manager import VaultManager
 
 
 SAMPLE_NOTE = """---
@@ -61,13 +59,13 @@ class TestParser:
         updated = write_frontmatter(SAMPLE_NOTE, {"status": "archived"})
         fm = parse_frontmatter(updated)
         assert fm["status"] == "archived"
-        assert fm["kind"] == "memory"  # preserved
+        assert fm["kind"] == "memory"
 
     def test_write_section(self):
         updated = write_section(SAMPLE_NOTE, "body", "New body content")
         sections = parse_sections(updated)
         assert sections["body"] == "New body content"
-        assert "AI research" in sections["summary"]  # other sections preserved
+        assert "AI research" in sections["summary"]
 
     def test_write_section_nonexistent_appends(self):
         updated = write_section(SAMPLE_NOTE, "instructions", "Do this thing")
@@ -144,11 +142,10 @@ class TestManager:
 
 class TestVaultSync:
     def test_sync_creates_graph_nodes(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
 
-        # Write a note file manually
         (vault_path / "test-note.md").write_text("""---
 kind: memory
 tags: [test]
@@ -166,8 +163,7 @@ Content here.
 ## Links
 """)
 
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
-        # Sync should have run on init
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         node = g.execute('NODE "note:test-note"')
         assert node.data is not None
         assert node.data["note_kind"] == "memory"
@@ -175,7 +171,7 @@ Content here.
         g.close()
 
     def test_sync_creates_wikilink_edges(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
 
@@ -199,7 +195,7 @@ status: active
 Note B
 """)
 
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         edges = g.execute('EDGES FROM "note:note-a"')
         link_edges = [e for e in edges.data if e["kind"] == "links"]
         assert len(link_edges) == 1
@@ -207,8 +203,7 @@ Note B
         g.close()
 
     def test_vault_sync_api(self, tmp_path):
-        """Test sync via Python API (VAULT SYNC DSL not yet wired)."""
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
         (vault_path / "sync-test.md").write_text("""---
@@ -219,16 +214,14 @@ status: active
 ## Summary
 Sync test note
 """)
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
-        # Re-sync via Python API
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         result = g._vault_sync.sync_all()
         assert result["synced"] >= 0
         assert result["errors"] == 0
         g.close()
 
     def test_sync_skips_unchanged(self, tmp_path):
-        """Second sync_all should skip already-synced notes."""
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
         (vault_path / "stable-note.md").write_text("""---
@@ -239,8 +232,7 @@ status: active
 ## Summary
 Stable note
 """)
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
-        # First sync happened in __init__, second should skip
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         result = g._vault_sync.sync_all()
         assert result["skipped"] >= 1
         assert result["synced"] == 0
@@ -249,7 +241,7 @@ Stable note
 
 class TestFactAutoAssert:
     def test_fact_note_sets_confidence(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
         (vault_path / "db-version.md").write_text("""---
@@ -265,11 +257,10 @@ Production database is PostgreSQL 15.3
 ## Body
 Verified on 2026-03-21.
 """)
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         node = g.execute('NODE "note:db-version"')
         assert node.data is not None
         assert node.data["note_kind"] == "fact"
-        # Check that belief columns were set via reserved columns
         slot = 0
         cols = g._store.columns
         assert cols.has_column("__confidence__")
@@ -280,7 +271,7 @@ Verified on 2026-03-21.
         g.close()
 
     def test_non_fact_note_has_no_confidence(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
         (vault_path / "regular.md").write_text("""---
@@ -291,10 +282,9 @@ status: active
 ## Summary
 Just a regular memory.
 """)
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         node = g.execute('NODE "note:regular"')
         assert node.data is not None
-        # No __confidence__ set for non-fact notes
         slot = 0
         cols = g._store.columns
         if cols.has_column("__confidence__"):
@@ -304,20 +294,19 @@ Just a regular memory.
 
 class TestVaultDSL:
     def test_vault_new(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         result = g.execute('VAULT NEW "My Research" KIND "memory" TAGS "ai,ml"')
         assert result.data["slug"] == "my-research"
         assert (tmp_path / "notes" / "my-research.md").exists()
-        # Node should exist in graph
         node = g.execute('NODE "note:my-research"')
         assert node.data is not None
         assert node.data["note_kind"] == "memory"
         g.close()
 
     def test_vault_read(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Read Test" KIND "fact"')
         result = g.execute('VAULT READ "Read Test"')
         assert result.kind == "note"
@@ -325,8 +314,8 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_write_section(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Write Test"')
         g.execute('VAULT WRITE "Write Test" SECTION "body" CONTENT "Updated body content"')
         result = g.execute('VAULT READ "Write Test"')
@@ -334,8 +323,8 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_append_section(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Append Test"')
         g.execute('VAULT APPEND "Append Test" SECTION "body" CONTENT "Line 1"')
         g.execute('VAULT APPEND "Append Test" SECTION "body" CONTENT "Line 2"')
@@ -345,8 +334,8 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_list(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Note A" KIND "memory"')
         g.execute('VAULT NEW "Note B" KIND "instruction"')
         result = g.execute('VAULT LIST')
@@ -354,8 +343,8 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_list_with_where(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Memory Note" KIND "memory"')
         g.execute('VAULT NEW "Instruction Note" KIND "instruction"')
         result = g.execute('VAULT LIST WHERE note_kind = "instruction"')
@@ -364,24 +353,24 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_sync(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         result = g.execute('VAULT SYNC')
         assert "synced" in result.data
         g.close()
 
     def test_vault_daily(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         import datetime
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         result = g.execute('VAULT DAILY')
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         assert result.data["slug"] == today
         g.close()
 
     def test_vault_archive(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "Archive Me"')
         g.execute('VAULT ARCHIVE "Archive Me"')
         node = g.execute('NODE "note:archive-me"')
@@ -389,10 +378,9 @@ class TestVaultDSL:
         g.close()
 
     def test_vault_search_fallback(self, tmp_path):
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(tmp_path / "notes"), embedder=None)
         g.execute('VAULT NEW "AI Research" KIND "memory"')
-        # Write a summary that's searchable
         g.execute('VAULT WRITE "AI Research" SECTION "summary" CONTENT "Deep learning transformer models"')
         result = g.execute('VAULT SEARCH "transformer" LIMIT 5')
         assert result.count >= 1
@@ -400,17 +388,16 @@ class TestVaultDSL:
 
     def test_vault_without_vault_raises(self, tmp_path):
         import pytest as _pytest
-        from graphstore import GraphStore
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        from supergraph import SuperGraph
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         with _pytest.raises(Exception, match="[Vv]ault"):
             g.execute('VAULT NEW "test"')
         g.close()
 
     def test_vault_backlinks(self, tmp_path):
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
         vault_path = tmp_path / "notes"
         vault_path.mkdir()
-        # Create notes with wikilinks
         (vault_path / "note-a.md").write_text("""---
 kind: memory
 status: active
@@ -430,7 +417,7 @@ status: active
 ## Summary
 Note B
 """)
-        g = GraphStore(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), vault=str(vault_path), embedder=None)
         result = g.execute('VAULT BACKLINKS "note-b"')
         assert result.count >= 1
         g.close()

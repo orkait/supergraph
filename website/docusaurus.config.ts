@@ -3,7 +3,7 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'graphstore',
+  title: 'supergraph',
   tagline: 'Memory infrastructure for AI agents',
   favicon: 'img/favicon.ico',
 
@@ -12,11 +12,11 @@ const config: Config = {
     faster: true,
   },
 
-  url: 'https://graphstore-docs.orkait.com',
+  url: 'https://supergraph-docs.orkait.com',
   baseUrl: '/',
 
   organizationName: 'orkait',
-  projectName: 'graphstore',
+  projectName: 'supergraph',
 
   onBrokenLinks: 'throw',
 
@@ -38,7 +38,7 @@ const config: Config = {
         docs: {
           sidebarPath: './sidebars.ts',
           routeBasePath: '/',
-          editUrl: 'https://github.com/orkait/graphstore/tree/main/website/',
+          editUrl: 'https://github.com/orkait/supergraph/tree/main/website/',
         },
         blog: false,
         theme: {
@@ -67,18 +67,18 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/graphstore-social-card.png',
+    image: 'img/supergraph-social-card.png',
     colorMode: {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
     },
     metadata: [
-      {name: 'keywords', content: 'graphstore, agent memory, vector database, graph database, SQLite, Python, DSL, retrieval'},
+      {name: 'keywords', content: 'supergraph, agent memory, vector database, graph database, SQLite, Python, DSL, retrieval'},
     ],
     navbar: {
-      title: 'graphstore',
+      title: 'supergraph',
       logo: {
-        alt: 'graphstore',
+        alt: 'supergraph',
         src: 'img/logo.svg',
       },
       items: [
@@ -89,12 +89,12 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: 'https://pypi.org/project/graphstore/',
+          href: 'https://pypi.org/project/supergraph/',
           label: 'PyPI',
           position: 'right',
         },
         {
-          href: 'https://github.com/orkait/graphstore',
+          href: 'https://github.com/orkait/supergraph',
           label: 'GitHub',
           position: 'right',
         },
@@ -112,9 +112,9 @@ const config: Config = {
         {
           title: 'Project',
           items: [
-            {label: 'GitHub', href: 'https://github.com/orkait/graphstore'},
-            {label: 'PyPI', href: 'https://pypi.org/project/graphstore/'},
-            {label: 'Issues', href: 'https://github.com/orkait/graphstore/issues'},
+            {label: 'GitHub', href: 'https://github.com/orkait/supergraph'},
+            {label: 'PyPI', href: 'https://pypi.org/project/supergraph/'},
+            {label: 'Issues', href: 'https://github.com/orkait/supergraph/issues'},
           ],
         },
       ],

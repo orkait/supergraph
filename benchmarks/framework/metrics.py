@@ -1,4 +1,3 @@
-"""Quality, latency, memory, and cost metric collection for benchmark runs."""
 
 from __future__ import annotations
 
@@ -115,13 +114,6 @@ class _CategoryBucket:
 
 @dataclass
 class QualityMetrics:
-    """Retrieval scoring with optional per-category breakdown.
-
-    accuracy       fraction of questions where ANY gold answer appeared in top-K
-    recall_at_k    mean fraction of gold answers found in top-K
-    by_category    per-LongMemEval-category accuracy + R@K (populated when
-                   the runner passes a `category` per question)
-    """
 
     n_questions: int = 0
     n_hits: int = 0
@@ -141,19 +133,6 @@ class QualityMetrics:
         answer_session_ids: list[str] | None = None,
         retrieved_raw: list[dict] | None = None,
     ) -> None:
-        """Score a single question.
-
-        Hit if EITHER:
-            substring match of any gold answer in any retrieved text, OR
-            any retrieved node belongs to an answer_session_id
-
-        The session-based path exists because LongMemEval's preference and
-        some other categories have long synthesized gold answers that never
-        appear verbatim in the haystack. Checking "did we retrieve from the
-        right session" is the honest test - matches the real LongMemEval
-        protocol where the LLM-as-judge grades the downstream answer based
-        on whether relevant context was recalled.
-        """
         gold_lower = [g.strip().lower() for g in gold_answers if g]
         if not gold_lower:
             return
@@ -256,7 +235,6 @@ class CostMetrics:
 
 @dataclass
 class RunResult:
-    """Full result of one benchmark pass against one system."""
 
     system_name: str
     system_version: str

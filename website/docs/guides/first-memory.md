@@ -5,17 +5,17 @@ sidebar_position: 1
 
 # First memory: LoCoMo walkthrough
 
-End-to-end: populate a graphstore with a real conversation (LoCoMo conv-26: Caroline and Melanie, 19 sessions, 184 messages) and query it.
+End-to-end: populate a supergraph with a real conversation (LoCoMo conv-26: Caroline and Melanie, 19 sessions, 184 messages) and query it.
 
 ## Prerequisites
 
 ```bash
-# Install graphstore (uv optional, pip works too)
+# Install supergraph (uv optional, pip works too)
 uv sync
 
 # Install Jina v5 Small embedder (1024d, 677M params)
-GRAPHSTORE_MODEL_CACHE_DIR=/tmp/gs_models uv run python3 -c "
-from graphstore.registry.installer import install_embedder, set_cache_dir
+SUPERGRAPH_MODEL_CACHE_DIR=/tmp/gs_models uv run python3 -c "
+from supergraph.registry.installer import install_embedder, set_cache_dir
 set_cache_dir('/tmp/gs_models')
 install_embedder('jina-v5-small-retrieval')
 "
@@ -25,14 +25,14 @@ install_embedder('jina-v5-small-retrieval')
 # Place at /tmp/locomo/raw/locomo10.json
 ```
 
-## Populate graphstore
+## Populate supergraph
 
 ```python
 import os
-os.environ['GRAPHSTORE_MODEL_CACHE_DIR'] = '/tmp/gs_models'
+os.environ['SUPERGRAPH_MODEL_CACHE_DIR'] = '/tmp/gs_models'
 
 from benchmarks.framework.datasets import load_locomo
-from benchmarks.framework.adapters.graphstore_ import GraphStoreAdapter
+from benchmarks.framework.adapters.supergraph_ import SuperGraphAdapter
 
 ds = load_locomo('/tmp/locomo', max_conversations=1)
 
@@ -43,7 +43,7 @@ config = {
     'embedder_gpu': True,
     'ceiling_mb': 512,
 }
-adapter = GraphStoreAdapter(config=config)
+adapter = SuperGraphAdapter(config=config)
 adapter.reset()
 
 for sess in ds.records[0].sessions:
@@ -144,7 +144,7 @@ uv run python3 -m benchmarks.framework.ratchet_recall
 1. Set API keys in `/.env` at the repo root (see `/.env.example`). The
    shared transport reads `OPENROUTER_API_KEY` + `OLLAMA_API_KEY`.
 2. The preferred QA model is declared in
-   `src/graphstore/llm_runner.py` as `QA_MODEL_PRIORITY`. Edit that list
+   `src/supergraph/llm_runner.py` as `QA_MODEL_PRIORITY`. Edit that list
    to swap models. Default: `gemma4:31b-cloud` (Ollama) with
    `google/gemma-4-31b-it` (OpenRouter) as fallback.
 
@@ -154,10 +154,10 @@ Run:
 # 50Q random sample (~$0.07 on MiniMax nitro)
 uv run python3 -c "
 import os
-os.environ['GRAPHSTORE_MODEL_CACHE_DIR'] = '/tmp/gs_models'
+os.environ['SUPERGRAPH_MODEL_CACHE_DIR'] = '/tmp/gs_models'
 from benchmarks.framework.runners.locomo import run_locomo
 from benchmarks.framework.datasets import load_locomo
-from benchmarks.framework.adapters.graphstore_ import GraphStoreAdapter
+from benchmarks.framework.adapters.supergraph_ import SuperGraphAdapter
 
 ds = load_locomo('/tmp/locomo', max_conversations=1)
 config = {
@@ -167,7 +167,7 @@ config = {
     'embedder_gpu': True,
     'ceiling_mb': 512,
 }
-adapter = GraphStoreAdapter(config=config)
+adapter = SuperGraphAdapter(config=config)
 summary, details = run_locomo(adapter, ds, k=10)
 print(f'Overall F1: {summary[\"overall_f1\"]:.4f}')
 "

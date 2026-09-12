@@ -1,19 +1,3 @@
-"""Benchmark dataset loaders.
-
-Datasets are loaded into a uniform shape so every adapter sees identical
-input.
-
-LongMemEval uses a per-question evaluation protocol: each record ships
-with its own haystack of ~500 messages across ~53 sessions, and the
-system is scored on that record in isolation. This is different from
-"ingest one global pool and query many times", so the dataset loader
-returns one BenchmarkRecord per question rather than a flat session pool.
-
-Supported benchmarks (3 total):
-    longmemeval  - https://github.com/xiaowu0162/LongMemEval   (runner.py)
-    locomo       - https://snap-research.github.io/locomo/      (run_locomo.py)
-    beam         - https://github.com/stanford-crfm/BEAM        (run_beam.py)
-"""
 
 from __future__ import annotations
 
@@ -35,12 +19,6 @@ class BenchmarkQuestion:
 
 @dataclass
 class BenchmarkRecord:
-    """One evaluation unit: a question plus the haystack that contains its answer.
-
-    LongMemEval's per-question protocol requires ingesting this haystack
-    fresh for every question, running the query, scoring, then resetting
-    state before moving on. The runner enforces this.
-    """
 
     question: BenchmarkQuestion
     sessions: list[Session]
@@ -63,22 +41,6 @@ def load_longmemeval(
     categories: set[str] | list[str] | None = None,
     per_category: int | None = None,
 ) -> BenchmarkDataset:
-    """Load LongMemEval with flexible slicing.
-
-    Args:
-        data_path: directory containing longmemeval_<variant>_cleaned.json
-        variant: s / m / l
-        max_records: cap total returned (after filtering)
-        start: skip this many records from the top of the file (pre-filter)
-        categories: if set, only keep records whose question_type is in this set
-                    e.g. {"multi-session", "temporal-reasoning"}
-        per_category: if set, return at most this many records per category
-                      (sampled in the order they appear in the file)
-
-    Each record has:
-        question_id, question_type, question, answer, question_date,
-        answer_session_ids, haystack_dates, haystack_session_ids, haystack_sessions
-    """
     p = Path(data_path)
     candidates = [
         p / f"longmemeval_{variant}_cleaned.json",
@@ -171,24 +133,6 @@ def load_locomo(
     max_questions: int | None = None,
     use_raw_turns: bool = False,
 ) -> BenchmarkDataset:
-    """Load LoCoMo dataset.
-
-    Each record = one QA pair. Sessions are shared across QAs from the same conversation.
-    Format: 10 conversations, ~200 QAs each, 19+ sessions per conversation.
-
-    Category mapping: 1=single-hop, 2=multi-hop, 3=temporal, 4=open-domain, 5=adversarial
-
-    Input selection:
-        use_raw_turns=False (default) - use author-distilled observations
-            (conversation[session_N_observation]). Dataset authors recommend this
-            path: "RAG does particularly well when dialogues are transformed into
-            a database of assertions (observations) about each speaker's life."
-            ~9 facts per session, pre-extracted, each tagged with evidence dia_id.
-        use_raw_turns=True - use raw dialogue turns (conversation[session_N]).
-            ~20 chit-chat turns per session with {speaker, dia_id, text}. Use this
-            when the adapter under test does its own distillation (e.g. LLM-driven
-            ingest); otherwise retrieval over raw small talk underperforms.
-    """
     p = Path(data_path)
     candidates = [
         p / "locomo10.json",
@@ -207,12 +151,6 @@ def load_locomo(
     if max_conversations is not None:
         raw = raw[:max_conversations]
 
-    # Category ID -> name mapping per snap-research/locomo task_eval/evaluation.py:
-    #   cat 1 = multi-hop (gets comma-split sub-answer F1; see eval line 213)
-    #   cat 2 = single-hop (direct F1; see eval line 210)
-    #   cat 3 = temporal (direct F1 + gold.split(';')[0]; see eval line 203-204)
-    #   cat 4 = open-domain (direct F1)
-    #   cat 5 = adversarial (abstention check)
     cat_names = {1: "multi-hop", 2: "single-hop", 3: "temporal", 4: "open-domain", 5: "adversarial"}
 
     records: list[BenchmarkRecord] = []
@@ -223,8 +161,6 @@ def load_locomo(
 
         sessions: list[Session] = []
 
-        # Build sessions from observations (author-distilled facts) unless
-        # use_raw_turns forces the raw-dialogue path.
         if not use_raw_turns:
             observations = conv.get("observation", {})
             sess_idx = 1
@@ -245,7 +181,6 @@ def load_locomo(
                 ))
                 sess_idx += 1
 
-        # Raw-turns path: either forced or observations missing.
         if not sessions:
             sess_idx = 1
             while f"session_{sess_idx}" in conversation:
@@ -265,7 +200,6 @@ def load_locomo(
                 ))
                 sess_idx += 1
 
-        # Build QA records
         for qa in conv["qa"]:
             cat_id = qa.get("category", 0)
             category = cat_names.get(cat_id, f"cat-{cat_id}")

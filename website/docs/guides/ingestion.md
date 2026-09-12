@@ -35,7 +35,7 @@ INGEST "interview.mp3"                                -- needs [audio]
 
 ## Bring your own VLM
 
-Point at any OpenAI-compatible vision endpoint (Ollama, vLLM, OpenAI) via `GRAPHSTORE_VISION_URL`. See `graphstore vision {serve|stop|status|logs|models}` for the local sidecar.
+Point at any OpenAI-compatible vision endpoint (Ollama, vLLM, OpenAI) via `SUPERGRAPH_VISION_URL`. See `supergraph vision {serve|stop|status|logs|models}` for the local sidecar.
 
 ## DOCUMENT caveat
 

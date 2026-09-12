@@ -1,17 +1,15 @@
-"""End-to-end tests for DSL write operations: DSL string -> parse -> execute -> verify Result."""
 
 import pytest
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor import Executor
-from graphstore.core.errors import NodeExists, NodeNotFound, BatchRollback
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor import Executor
+from supergraph.core.errors import NodeExists, NodeNotFound, BatchRollback
 
 
 @pytest.fixture
 def executor():
-    """Create an executor with a fresh store."""
     store = CoreStore()
     return Executor(RuntimeState(store=store, schema=SchemaRegistry()))
 
@@ -21,17 +19,12 @@ def execute(executor, query):
     return executor.execute(ast)
 
 
-# =============================================
-# CREATE NODE
-# =============================================
-
 class TestCreateNode:
     def test_create_node(self, executor):
         r = execute(executor, 'CREATE NODE "x" kind = "function" name = "foo"')
         assert r.kind == "node"
         assert r.data["id"] == "x"
         assert r.data["kind"] == "function"
-        # Verify node exists
         node = executor.store.get_node("x")
         assert node is not None
         assert node["kind"] == "function"
@@ -42,10 +35,6 @@ class TestCreateNode:
         with pytest.raises(NodeExists):
             execute(executor, 'CREATE NODE "x" kind = "function" name = "bar"')
 
-
-# =============================================
-# UPDATE NODE
-# =============================================
 
 class TestUpdateNode:
     def test_update_node(self, executor):
@@ -59,10 +48,6 @@ class TestUpdateNode:
         with pytest.raises(NodeNotFound):
             execute(executor, 'UPDATE NODE "missing" SET name = "bar"')
 
-
-# =============================================
-# UPSERT NODE
-# =============================================
 
 class TestUpsertNode:
     def test_upsert_creates_new(self, executor):
@@ -81,10 +66,6 @@ class TestUpsertNode:
         assert node["name"] == "SuperWidget"
 
 
-# =============================================
-# DELETE NODE
-# =============================================
-
 class TestDeleteNode:
     def test_delete_node(self, executor):
         execute(executor, 'CREATE NODE "x" kind = "function" name = "foo"')
@@ -96,10 +77,6 @@ class TestDeleteNode:
         with pytest.raises(NodeNotFound):
             execute(executor, 'DELETE NODE "missing"')
 
-
-# =============================================
-# DELETE NODES
-# =============================================
 
 class TestDeleteNodes:
     def test_delete_nodes_by_kind(self, executor):
@@ -115,10 +92,6 @@ class TestDeleteNodes:
         assert executor.store.get_node("c") is not None
 
 
-# =============================================
-# CREATE EDGE
-# =============================================
-
 class TestCreateEdge:
     def test_create_edge(self, executor):
         execute(executor, 'CREATE NODE "a" kind = "function" name = "a"')
@@ -132,10 +105,6 @@ class TestCreateEdge:
         assert edges[0]["target"] == "b"
 
 
-# =============================================
-# DELETE EDGE
-# =============================================
-
 class TestDeleteEdge:
     def test_delete_edge(self, executor):
         execute(executor, 'CREATE NODE "a" kind = "function" name = "a"')
@@ -147,10 +116,6 @@ class TestDeleteEdge:
         edges = executor.store.get_edges_from("a", kind="calls")
         assert len(edges) == 0
 
-
-# =============================================
-# DELETE EDGES
-# =============================================
 
 class TestDeleteEdges:
     def test_delete_edges_from(self, executor):
@@ -166,10 +131,6 @@ class TestDeleteEdges:
         edges = executor.store.get_edges_from("a", kind="calls")
         assert len(edges) == 0
 
-
-# =============================================
-# INCREMENT
-# =============================================
 
 class TestIncrement:
     def test_increment(self, executor):
@@ -187,10 +148,6 @@ class TestIncrement:
         assert node["hits"] == 6
 
 
-# =============================================
-# BATCH
-# =============================================
-
 class TestBatch:
     def test_batch_success(self, executor):
         batch = 'BEGIN\nCREATE NODE "a" kind = "test"\nCREATE NODE "b" kind = "test"\nCREATE EDGE "a" -> "b" kind = "calls"\nCOMMIT'
@@ -202,7 +159,6 @@ class TestBatch:
         assert len(edges) == 1
 
     def test_batch_rollback_on_failure(self, executor):
-        # Pre-create a node so the batch will hit a duplicate
         execute(executor, 'CREATE NODE "existing" kind = "test"')
         initial_count = executor.store.node_count
 
@@ -210,24 +166,17 @@ class TestBatch:
         with pytest.raises(BatchRollback):
             execute(executor, batch)
 
-        # new_node should NOT exist because of rollback
         assert executor.store.get_node("new_node") is None
         assert executor.store.node_count == initial_count
 
-
-# =============================================
-# NULL handling
-# =============================================
 
 class TestNullHandling:
     def test_null_condition(self, executor):
         execute(executor, 'CREATE NODE "a" kind = "function" name = "foo"')
         execute(executor, 'CREATE NODE "b" kind = "function"')
 
-        # Node "b" has no "name" field in its data
         r = execute(executor, 'NODES WHERE name = NULL')
         ids = {n["id"] for n in r.data}
-        # "b" has no name field, so name is None -> matches NULL
         assert "b" in ids
         assert "a" not in ids
 

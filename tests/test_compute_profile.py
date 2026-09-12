@@ -1,30 +1,23 @@
-"""Behaviour tests for graphstore.core.compute_profile.
-
-Parametrized matrices cover: tier sizing, battery/load scaling, override
-precedence (config > env > base), floor clamping, cache invalidation,
-and GPU opt-in.
-"""
 from __future__ import annotations
 
 from unittest.mock import patch
 
 import pytest
 
-from graphstore.core import compute_profile as cp
+from supergraph.core import compute_profile as cp
 
 
 _ENV_KEYS = (
-    "GRAPHSTORE_PROFILE",
-    "GRAPHSTORE_NER_THREADS",
-    "GRAPHSTORE_EMBED_THREADS",
-    "GRAPHSTORE_RERANK_THREADS",
-    "GRAPHSTORE_EMBED_BATCH",
-    "GRAPHSTORE_GPU",
+    "SUPERGRAPH_PROFILE",
+    "SUPERGRAPH_NER_THREADS",
+    "SUPERGRAPH_EMBED_THREADS",
+    "SUPERGRAPH_RERANK_THREADS",
+    "SUPERGRAPH_EMBED_BATCH",
+    "SUPERGRAPH_GPU",
 )
 
 
 def _apply_session_lock():
-    """Same lock conftest installs at session start (tiny, 1-thread)."""
     cp.configure(
         profile="tiny",
         ner_threads=1,
@@ -39,9 +32,9 @@ def _apply_session_lock():
 def _reset(monkeypatch):
     for k in _ENV_KEYS:
         monkeypatch.delenv(k, raising=False)
-    cp.configure()  # clean slate for the test itself
+    cp.configure()
     yield
-    _apply_session_lock()  # restore thermal guard for subsequent tests
+    _apply_session_lock()
 
 
 def _host(cores=8, logical=16, ram=32.0, gpu=(False, None), battery=False, load=5.0):
@@ -56,7 +49,6 @@ def _host(cores=8, logical=16, ram=32.0, gpu=(False, None), battery=False, load=
 
 @pytest.fixture
 def desktop_host():
-    """8c/16t, 32GB, plugged in, idle -> desktop base (embed=4, rerank=4)."""
     patches = _host()
     for p in patches:
         p.start()
@@ -64,8 +56,6 @@ def desktop_host():
     for p in patches:
         p.stop()
 
-
-# ---------------- tier sizing ----------------
 
 @pytest.mark.parametrize("cores,ram,expected_name,expected_embed", [
     (2, 4.0, "tiny", 1),
@@ -85,19 +75,16 @@ def test_tier_sizing(cores, ram, expected_name, expected_embed):
         assert p.embed_threads == expected_embed
 
 
-# ---------------- scaling matrix (load + battery + disable flags + lock) ----------------
-
 @pytest.mark.parametrize("load,battery,disable_load,disable_bat,lock_embed,expected", [
-    # (load, on_battery, disable_load_scaling, disable_battery_scaling, embed lock, expected embed)
-    (  5.0, False, False, False, None, 4),  # idle baseline
-    ( 70.0, False, False, False, None, 2),  # load halves (M1 baseline)
-    ( 40.0, False, False, False, None, 4),  # boundary: 40 not > 40
-    ( 70.0, False, True,  False, None, 4),  # disable_load skips halving
-    ( 70.0, False, False, False, 3,    3),  # lock beats load scaling
-    (  5.0, True,  False, False, None, 3),  # battery -1 (M2 baseline)
-    (  5.0, True,  False, True,  None, 4),  # disable_battery skips decrement (M3)
-    (  5.0, True,  False, False, 4,    4),  # lock beats battery
-    ( 70.0, True,  False, False, None, 1),  # compound: 4-1=3, 3//2=1
+    (  5.0, False, False, False, None, 4),
+    ( 70.0, False, False, False, None, 2),
+    ( 40.0, False, False, False, None, 4),
+    ( 70.0, False, True,  False, None, 4),
+    ( 70.0, False, False, False, 3,    3),
+    (  5.0, True,  False, False, None, 3),
+    (  5.0, True,  False, True,  None, 4),
+    (  5.0, True,  False, False, 4,    4),
+    ( 70.0, True,  False, False, None, 1),
 ])
 def test_scaling_matrix(desktop_host, load, battery, disable_load, disable_bat, lock_embed, expected):
     cp.configure(
@@ -127,7 +114,6 @@ def test_tiny_tier_immune_to_scaling():
 
 
 def test_ner_never_scaled(desktop_host):
-    """NER stays at tier base regardless of load/battery."""
     with (
         patch.object(cp, "_detect_load_pct", return_value=95.0),
         patch.object(cp, "_detect_battery", return_value=True),
@@ -136,18 +122,16 @@ def test_ner_never_scaled(desktop_host):
         assert cp.get_profile().ner_threads == 2
 
 
-# ---------------- override precedence (config > env > base) ----------------
-
 @pytest.mark.parametrize("config_val,env_val,expected", [
-    (3,    "7",  3),   # config wins over env
-    (None, "7",  7),   # env wins over base when no config
-    (None, None, 4),   # base when neither
-    (0,    None, 1),   # floor clamps 0 -> 1
-    (-5,   None, 1),   # floor clamps negative -> 1
+    (3,    "7",  3),
+    (None, "7",  7),
+    (None, None, 4),
+    (0,    None, 1),
+    (-5,   None, 1),
 ])
 def test_embed_threads_precedence(desktop_host, monkeypatch, config_val, env_val, expected):
     if env_val is not None:
-        monkeypatch.setenv("GRAPHSTORE_EMBED_THREADS", env_val)
+        monkeypatch.setenv("SUPERGRAPH_EMBED_THREADS", env_val)
     cp.configure(embed_threads=config_val)
     assert cp.get_profile().embed_threads == expected
 
@@ -155,12 +139,12 @@ def test_embed_threads_precedence(desktop_host, monkeypatch, config_val, env_val
 @pytest.mark.parametrize("config_profile,env_profile,expected_name", [
     ("tiny",   None,     "tiny"),
     (None,     "laptop", "laptop"),
-    ("tiny",   "laptop", "tiny"),     # config wins
-    (None,     None,     "desktop"),  # auto-classify on desktop host
+    ("tiny",   "laptop", "tiny"),
+    (None,     None,     "desktop"),
 ])
 def test_profile_tier_precedence(desktop_host, monkeypatch, config_profile, env_profile, expected_name):
     if env_profile:
-        monkeypatch.setenv("GRAPHSTORE_PROFILE", env_profile)
+        monkeypatch.setenv("SUPERGRAPH_PROFILE", env_profile)
     cp.configure(profile=config_profile)
     assert cp.get_profile().name == expected_name
 
@@ -170,8 +154,6 @@ def test_embed_batch_override(desktop_host):
     assert cp.get_profile().embed_batch_size == 256
 
 
-# ---------------- cache invalidation ----------------
-
 def test_reconfigure_invalidates_cache(desktop_host):
     cp.configure(embed_threads=2)
     assert cp.get_profile().embed_threads == 2
@@ -179,23 +161,18 @@ def test_reconfigure_invalidates_cache(desktop_host):
     cp.configure(embed_threads=6)
     assert cp.get_profile().embed_threads == 6
 
-    cp.configure()  # wipe
+    cp.configure()
     assert cp.get_profile().embed_threads == 4
 
-
-# ---------------- GPU opt-in gate ----------------
 
 @pytest.mark.parametrize("gpu_env,detect_return,expected_has_gpu,expected_name", [
     (None, (False, None),                      False, "desktop"),
     ("1",  (True, "CUDAExecutionProvider"),    True,  "gpu"),
-    (None, (True, "CUDAExecutionProvider"),    False, "desktop"),  # env required even if probe says True
+    (None, (True, "CUDAExecutionProvider"),    False, "desktop"),
 ])
 def test_gpu_detection_requires_opt_in(desktop_host, monkeypatch, gpu_env, detect_return, expected_has_gpu, expected_name):
     if gpu_env:
-        monkeypatch.setenv("GRAPHSTORE_GPU", gpu_env)
-    # Rebind the real _detect_gpu since desktop_host already patched it as (False, None).
-    # _detect_gpu itself checks GRAPHSTORE_GPU env before probing, so we can let it run
-    # directly when env is unset and patch only when env is set.
+        monkeypatch.setenv("SUPERGRAPH_GPU", gpu_env)
     if gpu_env:
         with patch.object(cp, "_detect_gpu", return_value=detect_return):
             cp.get_profile.cache_clear()
@@ -208,14 +185,14 @@ def test_gpu_detection_requires_opt_in(desktop_host, monkeypatch, gpu_env, detec
 
 
 def test_env_fingerprint_invalidates_cache(monkeypatch):
-    from graphstore.core import compute_profile as cp
+    from supergraph.core import compute_profile as cp
 
     cp.configure()
-    monkeypatch.delenv("GRAPHSTORE_EMBED_THREADS", raising=False)
+    monkeypatch.delenv("SUPERGRAPH_EMBED_THREADS", raising=False)
     p1 = cp.get_profile()
     base_threads = p1.embed_threads
 
-    monkeypatch.setenv("GRAPHSTORE_EMBED_THREADS", "99")
+    monkeypatch.setenv("SUPERGRAPH_EMBED_THREADS", "99")
     p2 = cp.get_profile()
 
     assert p2.embed_threads == 99

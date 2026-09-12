@@ -1,9 +1,8 @@
-"""Tests for the self-balancing optimizer."""
 
 import pytest
-from graphstore import GraphStore, OptimizationInProgress
-from graphstore.dsl.parser import parse_uncached
-from graphstore.dsl.ast_nodes import SysHealth, SysOptimize
+from supergraph import SuperGraph, OptimizationInProgress
+from supergraph.dsl.parser import parse_uncached
+from supergraph.dsl.ast_nodes import SysHealth, SysOptimize
 
 
 class TestParsing:
@@ -29,7 +28,7 @@ class TestParsing:
 
 class TestHealth:
     def test_health_returns_metrics(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         result = gs.execute('SYS HEALTH')
         assert result.kind == "health"
@@ -42,7 +41,7 @@ class TestHealth:
         gs.close()
 
     def test_health_detects_tombstone_pressure(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(10):
             gs.execute(f'CREATE NODE "n{i}" kind = "test"')
         for i in range(8):
@@ -55,7 +54,7 @@ class TestHealth:
 
 class TestOptimizeCompact:
     def test_compact_removes_tombstones(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(10):
             gs.execute(f'CREATE NODE "n{i}" kind = "test" value = {i}')
         for i in range(5):
@@ -68,7 +67,6 @@ class TestOptimizeCompact:
         assert gs._store._next_slot == 5
         assert len(gs._store.node_tombstones) == 0
 
-        # Remaining nodes still accessible
         for i in range(5, 10):
             node = gs.execute(f'NODE "n{i}"')
             assert node.data is not None
@@ -76,7 +74,7 @@ class TestOptimizeCompact:
         gs.close()
 
     def test_compact_preserves_edges(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         gs.execute('CREATE NODE "b" kind = "test"')
         gs.execute('CREATE NODE "c" kind = "test"')
@@ -90,14 +88,14 @@ class TestOptimizeCompact:
         gs.close()
 
     def test_compact_no_tombstones_is_noop(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         result = gs.execute('SYS OPTIMIZE COMPACT')
         assert result.data["compacted"] == 0
         gs.close()
 
     def test_compact_preserves_snapshots(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         gs.execute('CREATE NODE "b" kind = "test"')
         gs.execute('SYS SNAPSHOT "before"')
@@ -113,7 +111,7 @@ class TestOptimizeCompact:
 
 class TestOptimizeStrings:
     def test_gc_frees_dead_strings(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(20):
             gs.execute(f'CREATE NODE "tmp{i}" kind = "temp" label = "unique_string_{i}"')
         for i in range(20):
@@ -134,7 +132,7 @@ class TestOptimizeStrings:
 
 class TestOptimizeEdges:
     def test_defrag_rebuilds(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test"')
         gs.execute('CREATE NODE "b" kind = "test"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "link"')
@@ -145,10 +143,9 @@ class TestOptimizeEdges:
 
 class TestOptimizeVectors:
     def test_cleanup_removes_dead_vectors(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         gs.execute('CREATE NODE "b" kind = "test" VECTOR [0.0, 1.0, 0.0, 0.0]')
-        # RETRACT now immediately removes the vector (no ghost until optimize)
         str_id = gs._store.string_table.intern("a")
         slot = gs._store.id_to_slot[str_id]
         assert gs._vector_store.has_vector(slot)
@@ -162,7 +159,7 @@ class TestOptimizeVectors:
 
 class TestOptimizeAll:
     def test_optimize_all(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(5):
             gs.execute(f'CREATE NODE "n{i}" kind = "test"')
         for i in range(3):
@@ -179,7 +176,7 @@ class TestOptimizeAll:
 
 class TestOptimizeLock:
     def test_lock_rejects_during_optimize(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs._optimizer._optimizing = True
         with pytest.raises(OptimizationInProgress):
             gs.execute('NODE "x"')
@@ -189,9 +186,8 @@ class TestOptimizeLock:
 
 class TestAutoOptimize:
     def test_auto_optimize_triggers_at_interval(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
 
-        # Build pressure manually (auto_optimize disabled by default)
         for i in range(10):
             gs.execute(f'CREATE NODE "n{i}" kind = "test"')
         for i in range(8):
@@ -200,11 +196,9 @@ class TestAutoOptimize:
         assert gs._store._next_slot == 10
         assert len(gs._store.node_tombstones) == 8
 
-        # Simulate what auto-optimize does: health check sets flag
         gs._optimizer._check_health()
         assert gs._optimizer._needs_optimize is True
 
-        # Next query runs auto-optimize at safe point
         result = gs.execute('NODE "n8"')
         assert gs._optimizer._needs_optimize is False
         assert len(gs._store.node_tombstones) == 0
@@ -212,6 +206,6 @@ class TestAutoOptimize:
         gs.close()
 
     def test_auto_optimize_disabled_by_default(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         assert gs._config.dsl.auto_optimize is False
         gs.close()

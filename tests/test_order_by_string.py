@@ -1,11 +1,8 @@
-"""Test ORDER BY on string (interned) columns."""
-import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def test_order_by_string_column_asc():
-    """ORDER BY on a string field should sort alphabetically."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "c" kind = "item" name = "charlie"')
     gs.execute('CREATE NODE "a" kind = "item" name = "alice"')
     gs.execute('CREATE NODE "b" kind = "item" name = "bob"')
@@ -17,8 +14,7 @@ def test_order_by_string_column_asc():
 
 
 def test_order_by_string_column_desc():
-    """ORDER BY DESC on a string field."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "c" kind = "item" name = "charlie"')
     gs.execute('CREATE NODE "a" kind = "item" name = "alice"')
     gs.execute('CREATE NODE "b" kind = "item" name = "bob"')
@@ -30,8 +26,7 @@ def test_order_by_string_column_desc():
 
 
 def test_order_by_string_with_limit():
-    """ORDER BY string with LIMIT."""
-    gs = GraphStore()
+    gs = SuperGraph()
     for i, name in enumerate(["delta", "alpha", "charlie", "bravo", "echo"]):
         gs.execute(f'CREATE NODE "n{i}" kind = "item" name = "{name}"')
 
@@ -42,8 +37,7 @@ def test_order_by_string_with_limit():
 
 
 def test_order_by_string_with_offset():
-    """ORDER BY string with OFFSET."""
-    gs = GraphStore()
+    gs = SuperGraph()
     for i, name in enumerate(["delta", "alpha", "charlie", "bravo", "echo"]):
         gs.execute(f'CREATE NODE "n{i}" kind = "item" name = "{name}"')
 
@@ -54,8 +48,7 @@ def test_order_by_string_with_offset():
 
 
 def test_order_by_numeric_still_works():
-    """Ensure numeric ORDER BY still uses fast column path."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "item" score = 30')
     gs.execute('CREATE NODE "b" kind = "item" score = 10')
     gs.execute('CREATE NODE "c" kind = "item" score = 20')
@@ -67,8 +60,7 @@ def test_order_by_numeric_still_works():
 
 
 def test_order_by_missing_field():
-    """ORDER BY a field some nodes don't have - nulls sort last."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "item" name = "alice" score = 10')
     gs.execute('CREATE NODE "b" kind = "item" name = "bob"')
     gs.execute('CREATE NODE "c" kind = "item" name = "charlie" score = 5')

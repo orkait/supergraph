@@ -1,11 +1,10 @@
-"""Sort primitives micro-benchmarks."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from graphstore.algos.sort import topk_from_column, topk_slot_order
+from supergraph.algos.sort import topk_from_column, topk_slot_order
 
 
 @pytest.fixture(scope="session")

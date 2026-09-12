@@ -1,9 +1,3 @@
-"""Enforce algos/ purity contract.
-
-Source of truth: benchmarks/algos/allowlist.py
-Algos may import only from that allowlist (stdlib + core + optional).
-Any graphstore.* import is rejected. Any unknown module is rejected.
-"""
 
 import ast
 import sys
@@ -12,7 +6,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ALGOS_DIR = REPO_ROOT / "src" / "graphstore" / "algos"
+ALGOS_DIR = REPO_ROOT / "src" / "supergraph" / "algos"
 if str(REPO_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -81,4 +75,4 @@ def test_allowlist_is_importable():
     assert "scipy" in names
     assert "math" in names
     assert FORBIDDEN_PREFIXES
-    assert "graphstore" in FORBIDDEN_PREFIXES
+    assert "supergraph" in FORBIDDEN_PREFIXES

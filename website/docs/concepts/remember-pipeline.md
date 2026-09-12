@@ -26,7 +26,7 @@ Defaults; weights configurable.
 
 ## Configuration
 
-All weights and knobs are configurable via `graphstore.json`, `GRAPHSTORE_DSL_*` env vars, or constructor kwargs. See [Configuration](../configuration).
+All weights and knobs are configurable via `supergraph.json`, `SUPERGRAPH_DSL_*` env vars, or constructor kwargs. See [Configuration](../configuration).
 
 ## Score breakdown
 

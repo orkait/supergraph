@@ -1,4 +1,4 @@
-// Categorized examples covering every cluster of the graphstore DSL.
+// Categorized examples covering every cluster of the supergraph DSL.
 // Each example is a small, runnable script that doubles as a teaching
 // moment: the description explains WHY, the script shows HOW.
 //
@@ -117,7 +117,7 @@ const retrievalAnswer: Example = {
   id: 'retrieval.answer',
   name: 'ANSWER (retrieval + reader)',
   description: 'ANSWER pulls top-K via REMEMBER then synthesizes a short answer through the configured reader.',
-  script: `// Requires GraphStore(reader=...) wired in the host. Without it,
+  script: `// Requires SuperGraph(reader=...) wired in the host. Without it,
 // the verb errors with a clear "no reader configured" message.
 ANSWER "What is the capital of France?" LIMIT 3`,
 }
@@ -298,7 +298,7 @@ INGEST "./docs/example.md" AS "doc:example" KIND "doc"`,
 const ingestVision: Example = {
   id: 'ingest.vision',
   name: 'INGEST USING VISION',
-  description: 'Image / scanned-PDF caption via the local llama.cpp VLM sidecar (graphstore vision serve).',
+  description: 'Image / scanned-PDF caption via the local llama.cpp VLM sidecar (supergraph vision serve).',
   script: `INGEST "./screenshots/dashboard.png" USING VISION "smolvlm2-2.2b" AS "img:dashboard"`,
 }
 

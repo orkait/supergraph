@@ -1,6 +1,6 @@
 # autoresearch
 
-LLM-driven optimization ratchet for files under `graphstore/algos/`. Proposes
+LLM-driven optimization ratchet for files under `supergraph/algos/`. Proposes
 candidate implementations via an LLM, verifies them against the baseline for
 correctness and speed, and promotes only those that measurably improve the
 benchmark composite.
@@ -269,8 +269,8 @@ the candidate against git HEAD independently:
 import subprocess, json, math
 from tools.autoresearch.correctness import check_correctness
 
-original = subprocess.check_output(['git', 'show', f'HEAD:graphstore/algos/{algo}.py'], text=True)
-winner = open(f'graphstore/algos/{algo}.py').read()
+original = subprocess.check_output(['git', 'show', f'HEAD:supergraph/algos/{algo}.py'], text=True)
+winner = open(f'supergraph/algos/{algo}.py').read()
 
 # Correctness
 err = check_correctness(winner, original, algo)
@@ -308,7 +308,7 @@ change), and **target-function-only AST comparison** for the others.
 
 ### Add a new algo
 
-1. Create `graphstore/algos/<algo>.py` with the target functions
+1. Create `supergraph/algos/<algo>.py` with the target functions
 2. Create `benchmarks/algos/test_<algo>_bench.py` with pytest-benchmark tests
 3. Register the algo in `benchmarks/algos/bench_one.py::ALGO_TO_FILE` and
    `ALGO_TO_BENCH`

@@ -8,7 +8,7 @@ sidebar_position: 1
 Benchmark results, methodology, and reproduction instructions.
 
 :::info Metric callout
-graphstore ships retrieval numbers, not end-to-end QA accuracy. *Retrieval accuracy* below means "did the gold-answer-bearing passage land in the retrieved top-K". End-to-end QA with an LLM reader is a strict superset.
+supergraph ships retrieval numbers, not end-to-end QA accuracy. *Retrieval accuracy* below means "did the gold-answer-bearing passage land in the retrieved top-K". End-to-end QA with an LLM reader is a strict superset.
 :::
 
 ## LongMemEval-S
@@ -17,7 +17,7 @@ Retrieval-only benchmark. 500 records, each with ~53 sessions (~500 messages). P
 
 ### Latest results (Kaggle, 2026-04-19)
 
-Jina v5 Small 1024d, Kaggle T4 GPU. Public kernel (full logs + reproducible in-browser): [kaggle.com/code/superkaiii/graphstore-jina-v5-small](https://www.kaggle.com/code/superkaiii/graphstore-jina-v5-small).
+Jina v5 Small 1024d, Kaggle T4 GPU. Public kernel (full logs + reproducible in-browser): [kaggle.com/code/superkaiii/supergraph-jina-v5-small](https://www.kaggle.com/code/superkaiii/supergraph-jina-v5-small).
 
 | Category | n | Retrieval accuracy |
 |---|---|---|
@@ -46,7 +46,7 @@ python -m benchmarks.framework.docker_runner \
 **Kaggle:**
 
 ```bash
-# Update benchmarks/kaggle/graphstore_jina_500.py with your HF token
+# Update benchmarks/kaggle/supergraph_jina_500.py with your HF token
 kaggle kernels push -p benchmarks/kaggle
 ```
 
@@ -67,7 +67,7 @@ conv-26, MiniMax M2.7 nitro, Jina v5 Small 1024d:
 | temporal | 10 | 0.189 |
 | **Overall** | **50** | **0.357** |
 
-For context: GPT-3.5-turbo-16k with full conversation context scores 0.378 on LoCoMo. graphstore hits comparable quality using only retrieved passages (no full context), with a smaller reader LLM.
+For context: GPT-3.5-turbo-16k with full conversation context scores 0.378 on LoCoMo. supergraph hits comparable quality using only retrieved passages (no full context), with a smaller reader LLM.
 
 ### Retrieval recall at K (no LLM)
 
@@ -87,14 +87,14 @@ Measured on 50 validated questions where the keyword exists in the ingested data
 # Place at /tmp/locomo/raw/locomo10.json
 
 # Install jina-v5-small
-GRAPHSTORE_MODEL_CACHE_DIR=/tmp/gs_models python -c "
-from graphstore.registry.installer import install_embedder, set_cache_dir
+SUPERGRAPH_MODEL_CACHE_DIR=/tmp/gs_models python -c "
+from supergraph.registry.installer import install_embedder, set_cache_dir
 set_cache_dir('/tmp/gs_models')
 install_embedder('jina-v5-small-retrieval')
 "
 
 # Run full benchmark (requires LLM - set OPENROUTER_API_KEY/OLLAMA_API_KEY in /.env;
-# QA_MODEL_PRIORITY lives in src/graphstore/llm_runner.py)
+# QA_MODEL_PRIORITY lives in src/supergraph/llm_runner.py)
 python -m benchmarks.framework.runners.locomo \
   --data-path /tmp/locomo \
   --embedder installed:jina-v5-small-retrieval \
@@ -132,12 +132,12 @@ Disk numbers at **100k nodes**, in-memory at **10k nodes** (disk WAL sync domina
 
 ## BEAM
 
-graphstore includes a benchmark-side BEAM answer-generation runner at `benchmarks/framework/runners/beam.py`. Keeps graphstore core untouched and emits BEAM-compatible answer JSON so BEAM's own evaluator can score it.
+supergraph includes a benchmark-side BEAM answer-generation runner at `benchmarks/framework/runners/beam.py`. Keeps supergraph core untouched and emits BEAM-compatible answer JSON so BEAM's own evaluator can score it.
 
 ### Workflow
 
 1. Prepare a local BEAM checkout or dataset directory
-2. Run graphstore answer generation against BEAM chats
+2. Run supergraph answer generation against BEAM chats
 3. Run BEAM's official evaluator on the produced answer files
 
 ### Example
@@ -155,7 +155,7 @@ uv run python3 -m benchmarks.framework.runners.beam \
   --reader-model-name gpt-4.1-mini \
   --reader-model-url https://api.openai.com/v1 \
   --reader-model-api-key "$OPENAI_API_KEY" \
-  --result-file-name graphstore_beam_answers.json \
+  --result-file-name supergraph_beam_answers.json \
   --k 5
 
 # Evaluate with BEAM's official scorer
@@ -166,10 +166,10 @@ python -m src.evaluation.run_evaluation \
   --start_index 0 \
   --end_index 2 \
   --max_workers 4 \
-  --allowed_result_files graphstore_beam_answers.json
+  --allowed_result_files supergraph_beam_answers.json
 ```
 
-Supported chunk modes: `pair_chunk`, `turn_chunk`. The runner builds one graphstore per BEAM chat, ingests once, and answers all probing questions against that live state. This is answer-generation support, not a separate custom evaluator.
+Supported chunk modes: `pair_chunk`, `turn_chunk`. The runner builds one supergraph per BEAM chat, ingests once, and answers all probing questions against that live state. This is answer-generation support, not a separate custom evaluator.
 
 ## Run all three benchmarks from one CLI
 

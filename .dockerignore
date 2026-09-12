@@ -53,7 +53,10 @@ apps/playground/node_modules
 apps/playground/dist
 benchmarks/results
 
-# Docker self-references (avoid infinite loops if someone builds in-tree)
+# Docker self-references (avoid infinite loops if someone builds in-tree).
+# A Dockerfile is read by the builder via -f from the host, not from the build
+# context, so excluding them all costs nothing - there is no need to re-include
+# any particular variant.
 Dockerfile
 Dockerfile.*
 docker-compose*.yml

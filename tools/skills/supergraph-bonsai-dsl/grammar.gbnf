@@ -1,0 +1,29 @@
+# GBNF for supergraph ingest-only DSL.
+# Locks the model to emit ONLY valid statements from the ingest subset.
+# Kills <think> tags, markdown fences, duplicate whitespace by construction.
+#
+# Use with llama_cpp.LlamaGrammar.from_string(open(...).read()) and pass
+# `grammar=` to create_chat_completion. Works with any Qwen/Bonsai model.
+
+root ::= stmt ( "\n" stmt )*
+
+stmt ::= create-node | upsert-node | create-edge | assert-stmt | retract-stmt
+
+create-node ::= "CREATE NODE " id " kind = " string field* document?
+upsert-node ::= "UPSERT NODE " id " kind = " string " name = " string
+create-edge ::= "CREATE EDGE " id " -> " id " kind = " string
+assert-stmt ::= "ASSERT " id " kind = \"belief\" value = " string " CONFIDENCE " confidence " SOURCE " id
+retract-stmt ::= "RETRACT " id " REASON " string
+
+field ::= " " key " = " value
+key ::= [a-z] [a-z0-9_]*
+value ::= string | number
+
+document ::= " DOCUMENT " string
+
+id ::= string
+string ::= "\"" char* "\""
+char ::= [^"\\] | "\\\"" | "\\\\"
+
+number ::= [0-9]+ ("." [0-9]+)?
+confidence ::= "0" "." [0-9] [0-9]?

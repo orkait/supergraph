@@ -1,16 +1,16 @@
 {
   "mcpServers": {
-    "graphstore": {
-      "command": "graphstore-mcp",
+    "supergraph": {
+      "command": "supergraph-mcp",
       "env": {
-        "GRAPHSTORE_DB_PATH": "/absolute/path/to/graphstore-agent.db"
+        "SUPERGRAPH_DB_PATH": "/absolute/path/to/supergraph-agent.db"
       }
     },
-    "graphstore-pro": {
-      "command": "graphstore-mcp",
+    "supergraph-pro": {
+      "command": "supergraph-mcp",
       "env": {
-        "GRAPHSTORE_DB_PATH": "/absolute/path/to/graphstore-pro.db",
-        "GRAPHSTORE_PROFILE": "pro",
+        "SUPERGRAPH_DB_PATH": "/absolute/path/to/supergraph-pro.db",
+        "SUPERGRAPH_PROFILE": "pro",
         "HF_TOKEN": "hf_your_token_here_if_needed"
       }
     }

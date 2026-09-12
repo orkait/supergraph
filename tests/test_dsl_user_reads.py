@@ -1,24 +1,14 @@
-"""End-to-end tests for DSL read operations: DSL string -> parse -> execute -> verify Result."""
 
 import pytest
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor import Executor
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor import Executor
 
 
 @pytest.fixture
 def graph():
-    """Create a test graph with functions, classes, and edges.
-
-    Graph structure:
-        fn_main --calls--> fn_helper --calls--> fn_parse
-        fn_main --calls--> fn_parse
-        fn_main --calls--> fn_run
-        fn_main --uses--> cls_app
-        cls_app --extends--> cls_base
-    """
     store = CoreStore()
     store.put_node("fn_main", "function", {"name": "main", "file": "src/main.py", "line": 1})
     store.put_node("fn_helper", "function", {"name": "helper", "file": "src/utils.py", "line": 10})
@@ -42,10 +32,6 @@ def execute(executor, query):
     return executor.execute(ast)
 
 
-# =============================================
-# NODE
-# =============================================
-
 class TestNodeQuery:
     def test_node_returns_data(self, graph):
         r = execute(graph, 'NODE "fn_main"')
@@ -63,10 +49,6 @@ class TestNodeQuery:
         assert r.count == 0
         assert r.data is None
 
-
-# =============================================
-# NODES
-# =============================================
 
 class TestNodesQuery:
     def test_all_nodes(self, graph):
@@ -93,7 +75,7 @@ class TestNodesQuery:
 
     def test_where_or(self, graph):
         r = execute(graph, 'NODES WHERE (kind = "function" OR kind = "class")')
-        assert r.count == 6  # all nodes are either function or class
+        assert r.count == 6
 
     def test_where_and(self, graph):
         r = execute(graph, 'NODES WHERE kind = "function" AND file = "src/main.py"')
@@ -105,10 +87,6 @@ class TestNodesQuery:
         assert r.count == 4
         assert all(n["kind"] != "class" for n in r.data)
 
-
-# =============================================
-# EDGES
-# =============================================
 
 class TestEdgesQuery:
     def test_edges_from_with_kind(self, graph):
@@ -127,22 +105,16 @@ class TestEdgesQuery:
 
     def test_edges_from_all_types(self, graph):
         r = execute(graph, 'EDGES FROM "fn_main"')
-        # fn_main has calls edges and a uses edge
-        assert r.count == 4  # 3 calls + 1 uses
+        assert r.count == 4
         kinds = {e["kind"] for e in r.data}
         assert "calls" in kinds
         assert "uses" in kinds
 
 
-# =============================================
-# TRAVERSE
-# =============================================
-
 class TestTraverseQuery:
     def test_traverse_depth_1(self, graph):
         r = execute(graph, 'TRAVERSE FROM "fn_main" DEPTH 1 WHERE kind = "calls"')
         assert r.kind == "nodes"
-        # Should include fn_main (depth 0) + direct callees at depth 1
         ids = {n["id"] for n in r.data}
         assert "fn_main" in ids
         assert "fn_helper" in ids
@@ -152,8 +124,6 @@ class TestTraverseQuery:
     def test_traverse_depth_2(self, graph):
         r = execute(graph, 'TRAVERSE FROM "fn_main" DEPTH 2 WHERE kind = "calls"')
         ids = {n["id"] for n in r.data}
-        # Depth 0: fn_main, Depth 1: fn_helper, fn_parse, fn_run
-        # Depth 2: fn_parse (via fn_helper, but already visited at depth 1)
         assert "fn_main" in ids
         assert "fn_helper" in ids
         assert "fn_parse" in ids
@@ -169,10 +139,6 @@ class TestTraverseQuery:
                 assert n["_depth"] == 1
 
 
-# =============================================
-# SUBGRAPH
-# =============================================
-
 class TestSubgraphQuery:
     def test_subgraph_depth_1(self, graph):
         r = execute(graph, 'SUBGRAPH FROM "fn_main" DEPTH 1')
@@ -183,10 +149,6 @@ class TestSubgraphQuery:
         assert "fn_main" in node_ids
         assert len(r.data["edges"]) > 0
 
-
-# =============================================
-# PATH
-# =============================================
 
 class TestPathQuery:
     def test_path_exists(self, graph):
@@ -205,70 +167,44 @@ class TestPathQuery:
 
     def test_path_no_connection(self, graph):
         r = execute(graph, 'PATH FROM "cls_base" TO "fn_main" MAX_DEPTH 5')
-        # cls_base has no outgoing edges to fn_main
         assert r.data is None or r.count == 0
 
-
-# =============================================
-# SHORTEST PATH
-# =============================================
 
 class TestShortestPathQuery:
     def test_shortest_path_direct(self, graph):
         r = execute(graph, 'SHORTEST PATH FROM "fn_main" TO "fn_parse" WHERE kind = "calls"')
         assert r.kind == "path"
         assert r.data is not None
-        # Direct edge fn_main -> fn_parse exists, so shortest is length 2
         assert len(r.data) == 2
         assert r.data[0] == "fn_main"
         assert r.data[1] == "fn_parse"
 
     def test_shortest_path_no_route(self, graph):
         r = execute(graph, 'SHORTEST PATH FROM "fn_parse" TO "fn_main" WHERE kind = "calls"')
-        # No path from fn_parse back to fn_main via calls
         assert r.data is None
 
-
-# =============================================
-# DISTANCE
-# =============================================
 
 class TestDistanceQuery:
     def test_distance_direct(self, graph):
         r = execute(graph, 'DISTANCE FROM "fn_main" TO "fn_parse" MAX_DEPTH 5')
         assert r.kind == "distance"
-        # Direct edge exists, distance = 1
         assert r.data == 1
 
     def test_distance_no_path(self, graph):
         r = execute(graph, 'DISTANCE FROM "fn_parse" TO "fn_main" MAX_DEPTH 5')
-        # No reverse path in directed graph
         assert r.data == -1
 
-
-# =============================================
-# ANCESTORS
-# =============================================
 
 class TestAncestorsQuery:
     def test_ancestors(self, graph):
         r = execute(graph, 'ANCESTORS OF "fn_parse" DEPTH 2 WHERE kind = "calls"')
         assert r.kind == "subgraph"
         ids = {n["id"] for n in r.data["nodes"] if not n.get("_query_anchor")}
-        # fn_main -> fn_parse (direct caller)
-        # fn_helper -> fn_parse (direct caller)
-        # fn_main -> fn_helper (caller of caller)
         assert "fn_main" in ids
         assert "fn_helper" in ids
-        # fn_parse itself should NOT be included (excluding anchor)
         assert "fn_parse" not in ids
-        # Verify edges are returned
         assert len(r.data["edges"]) > 0
 
-
-# =============================================
-# DESCENDANTS
-# =============================================
 
 class TestDescendantsQuery:
     def test_descendants(self, graph):
@@ -278,60 +214,50 @@ class TestDescendantsQuery:
         assert "fn_helper" in ids
         assert "fn_parse" in ids
         assert "fn_run" in ids
-        # fn_main itself should NOT be included (excluding anchor)
         assert "fn_main" not in ids
-        # Verify edges are returned
         assert len(r.data["edges"]) > 0
 
-
-# =============================================
-# COMMON NEIGHBORS
-# =============================================
 
 class TestCommonNeighborsQuery:
     def test_common_neighbors(self, graph):
         r = execute(graph, 'COMMON NEIGHBORS OF "fn_main" AND "fn_helper" WHERE kind = "calls"')
         assert r.kind == "nodes"
         ids = {n["id"] for n in r.data}
-        # Both fn_main and fn_helper call fn_parse
         assert "fn_parse" in ids
 
-
-# =============================================
-# DEGREE CONDITIONS
-# =============================================
 
 class TestDegreeConditions:
     def test_indegree_filter(self, graph):
         r = execute(graph, 'NODES WHERE INDEGREE > 1')
         ids = {n["id"] for n in r.data}
-        # fn_parse has 2 incoming calls edges (from fn_main and fn_helper)
         assert "fn_parse" in ids
 
     def test_outdegree_typed_filter(self, graph):
         r = execute(graph, 'NODES WHERE OUTDEGREE calls > 2')
         ids = {n["id"] for n in r.data}
-        # fn_main has 3 outgoing calls edges
         assert "fn_main" in ids
-        # fn_helper only has 1 outgoing calls edge
         assert "fn_helper" not in ids
 
-
-# =============================================
-# MATCH
-# =============================================
 
 class TestMatchQuery:
     def test_match_bound_start(self, graph):
         r = execute(graph, 'MATCH ("fn_main") -[kind = "calls"]-> (b)')
         assert r.kind == "match"
         assert r.count > 0
-        # Each result should have variable "b" bound
         for binding in r.data["bindings"]:
             assert "b" in binding
         bound_ids = {b["b"] for b in r.data["bindings"]}
         assert "fn_helper" in bound_ids
         assert "fn_parse" in bound_ids
         assert "fn_run" in bound_ids
-        # Verify edges are returned
         assert len(r.data["edges"]) > 0
+
+    def test_match_untyped_reports_stored_edge_kind(self, graph):
+        r = execute(graph, 'MATCH ("fn_main") -[]-> (b)')
+        by_target = {e["target"]: e["kind"] for e in r.data["edges"]}
+        assert by_target["fn_helper"] == "calls"
+        assert by_target["cls_app"] == "uses"
+
+    def test_match_typed_reports_stored_edge_kind(self, graph):
+        r = execute(graph, 'MATCH ("fn_main") -[kind = "uses"]-> (b)')
+        assert [e["kind"] for e in r.data["edges"]] == ["uses"]

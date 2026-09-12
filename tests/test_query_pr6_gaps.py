@@ -1,16 +1,7 @@
-"""PR 6: close the remaining sub-grammar gaps.
-
-Covers:
-  - F.like / F.similar_score / F.indegree / F.outdegree
-  - field_ref dot notation (field.subfield)
-  - CREATE NODE AUTO
-  - q.var() + variable-aware CREATE EDGE
-  - Time namespace (NOW / TODAY / YESTERDAY / NOW() - Nu)
-"""
 import pytest
 
-from graphstore import q, F, Time
-from graphstore.dsl.parser import parse
+from supergraph import q, F, Time
+from supergraph.dsl.parser import parse
 
 
 def _roundtrip(query_obj):
@@ -38,7 +29,6 @@ class TestContainsStartswith:
         assert 'title CONTAINS "budget"' in dsl
 
     def test_startswith_as_like(self):
-        """F.startswith emits LIKE "x%" since grammar has no STARTSWITH."""
         dsl = _roundtrip(q.nodes(where=F.startswith("title", "Proj")))
         assert 'title LIKE "Proj%"' in dsl
 
@@ -50,7 +40,6 @@ class TestIn:
 
     def test_not_in_wrapped(self):
         dsl = _roundtrip(q.nodes(where=F.not_in("topic", ["test"])))
-        # Emits as NOT (... IN (...))
         assert "NOT" in dsl
         assert "IN" in dsl
 
@@ -97,7 +86,6 @@ class TestFieldRefDot:
         assert 'parent.kind = "memory"' in dsl
 
     def test_more_than_one_dot_rejected(self):
-        # F.eq accepts, compile rejects via dsl_field_ref
         with pytest.raises(ValueError, match="at most one dot"):
             F.eq("a.b.c", 1).to_dsl()
 
@@ -128,7 +116,6 @@ class TestVarAssign:
         assert 'CREATE EDGE $x -> $y kind = "next"' in dsl
 
     def test_var_without_dollar_ok(self):
-        """q.var('x', ...) should work same as q.var('$x', ...)."""
         out = q.var("x", q.create_node("n", kind="m")).dsl()
         assert out.startswith("$x = ")
 
@@ -164,7 +151,5 @@ class TestTimeExpr:
 
     def test_time_in_create_node_event_at(self):
         dsl = q.create_node("m", kind="memory", event_at=Time.today()).dsl()
-        # parser doesn't accept EVENT_AT with TODAY token in grammar since
-        # event_clause: "EVENT_AT" value; value accepts time_expr -> TODAY
         parse(dsl)
         assert "EVENT_AT TODAY" in dsl

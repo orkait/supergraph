@@ -1,6 +1,6 @@
 # Benchmark Framework
 
-Benchmark GraphStore retrieval quality on three standardized datasets.
+Benchmark SuperGraph retrieval quality on three standardized datasets.
 
 ## Supported Benchmarks
 
@@ -81,7 +81,7 @@ framework/
   datasets.py                   # Dataset loaders (longmemeval, locomo)
   metrics.py                    # Quality, latency, memory metrics
   report.py                     # JSON, CSV, Markdown output
-  entity_extraction.py          # NER for graph enrichment (used by graphstore_.py)
+  entity_extraction.py          # NER for graph enrichment (used by supergraph_.py)
   docker_runner.py              # Docker entry point
   Dockerfile.bench              # CPU container
   Dockerfile.bench.gpu          # GPU container
@@ -95,17 +95,17 @@ framework/
     ratchet_test.py             # Ratchet test harness (50Q random 10/cat)
 
   transport/
-    llm_runner.py               # Thin re-export of graphstore.llm_runner
+    llm_runner.py               # Thin re-export of supergraph.llm_runner
     llm_client.py               # LoCoMo reader/judge wrappers (delegates to runner)
     llm_judge.py                # LongMemEval per-category judge prompts
 
   adapters/
     base.py                     # MemoryAdapter protocol + shared types
-    graphstore_.py              # Native-DSL adapter (5-signal REMEMBER)
-    graphstore_skill.py         # Skill-based ingest adapter (LLM-planned DSL)
+    supergraph_.py              # Native-DSL adapter (5-signal REMEMBER)
+    supergraph_skill.py         # Skill-based ingest adapter (LLM-planned DSL)
 ```
 
-The canonical LLM transport lives in `src/graphstore/llm_runner.py`. The
+The canonical LLM transport lives in `src/supergraph/llm_runner.py`. The
 `transport/` re-export keeps bench-side imports stable. Provider chain +
 config.json parsing live in `tools/autoresearch/providers.py`; secrets
 come from `/.env` via `/env.py`.
@@ -114,12 +114,12 @@ come from `/.env` via `/env.py`.
 
 ```bash
 # Build
-docker build -f benchmarks/framework/Dockerfile.bench.gpu -t graphstore-bench:gpu .
+docker build -f benchmarks/framework/Dockerfile.bench.gpu -t supergraph-bench:gpu .
 
 # Run LongMemEval-S
 docker run --cpus=8 --memory=16g --gpus all \
     -v ./data:/data:ro -v ./results:/results \
-    graphstore-bench:gpu \
+    supergraph-bench:gpu \
     --dataset longmemeval --variant s \
     --embedder installed --embedder-model jina-v5-small-retrieval \
     --gpu --k 5

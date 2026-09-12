@@ -1,12 +1,10 @@
-"""Tests for graphstore.strings.StringTable."""
 
 import pytest
 
-from graphstore.core.strings import StringTable
+from supergraph.core.strings import StringTable
 
 
 class TestIntern:
-    """intern() assigns sequential IDs starting from 0."""
 
     def test_sequential_ids(self):
         t = StringTable()
@@ -36,7 +34,6 @@ class TestIntern:
 
 
 class TestLookup:
-    """lookup() returns the correct string or raises KeyError."""
 
     def test_lookup_returns_correct_string(self):
         t = StringTable()
@@ -64,7 +61,6 @@ class TestLookup:
 
 
 class TestLen:
-    """__len__ returns the number of distinct interned strings."""
 
     def test_empty(self):
         assert len(StringTable()) == 0
@@ -84,7 +80,6 @@ class TestLen:
 
 
 class TestContains:
-    """__contains__ checks membership."""
 
     def test_present(self):
         t = StringTable()
@@ -103,7 +98,6 @@ class TestContains:
 
 
 class TestSerialization:
-    """to_list / from_list round-trip."""
 
     def test_round_trip_preserves_mappings(self):
         t = StringTable()
@@ -118,7 +112,7 @@ class TestSerialization:
         assert t2.lookup(0) == "foo"
         assert t2.lookup(1) == "bar"
         assert t2.lookup(2) == "baz"
-        assert t2.intern("foo") == 0  # still deduped
+        assert t2.intern("foo") == 0
 
     def test_round_trip_empty(self):
         t = StringTable()
@@ -130,13 +124,13 @@ class TestSerialization:
         t.intern("a")
         exported = t.to_list()
         exported.append("b")
-        assert len(t) == 1  # original unchanged
+        assert len(t) == 1
 
     def test_from_list_does_not_alias_input(self):
         source = ["a", "b"]
         t = StringTable.from_list(source)
         source.append("c")
-        assert len(t) == 2  # table unchanged
+        assert len(t) == 2
 
     def test_from_list_allows_continued_interning(self):
         t = StringTable.from_list(["x", "y"])
@@ -146,7 +140,6 @@ class TestSerialization:
 
 
 class TestEmptyTable:
-    """Edge cases on a fresh, empty table."""
 
     def test_len_zero(self):
         assert len(StringTable()) == 0
@@ -163,7 +156,6 @@ class TestEmptyTable:
 
 
 class TestLargeScale:
-    """Verify correctness with 1000+ strings."""
 
     def test_thousand_strings(self):
         t = StringTable()
@@ -173,11 +165,9 @@ class TestLargeScale:
 
         assert len(t) == n
 
-        # every string round-trips
         for i in range(n):
             assert t.lookup(i) == f"str_{i}"
 
-        # dedup still works
         for i in range(n):
             assert t.intern(f"str_{i}") == i
 

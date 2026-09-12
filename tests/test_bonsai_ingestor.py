@@ -1,9 +1,3 @@
-"""Unit tests for bonsai_ingestor correctness guards.
-
-The live LLM path needs the 1.09 GB TQ1_0 GGUF on disk and is skipped by
-default. These tests exercise the post-processing and guard logic without
-touching llama.cpp.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -11,12 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from graphstore.bonsai_ingestor import (
+from supergraph.bonsai_ingestor import (
     BonsaiIngestor,
     ParsedTurn,
     FactState,
     IngestEmpty,
-    IngestOverflow,
     IngestResult,
     _dedupe_upserts,
     _dsl_escape,
@@ -28,10 +21,6 @@ from graphstore.bonsai_ingestor import (
     _synthesize_dsl,
 )
 
-
-# --------------------------------------------------------------------
-# Post-processing helpers
-# --------------------------------------------------------------------
 
 def test_strip_think_removes_single_block():
     out = _strip_think("<think>reasoning</think>CREATE NODE \"x\" kind = \"k\"")
@@ -80,10 +69,6 @@ def test_dedupe_upserts_passes_non_upsert():
     assert dropped == []
 
 
-# --------------------------------------------------------------------
-# Skill fingerprint
-# --------------------------------------------------------------------
-
 def test_skill_fingerprint_is_stable_across_instances(tmp_path: Path):
     skill = tmp_path / "skill.md"
     skill.write_text("content A")
@@ -123,10 +108,6 @@ def test_skill_fingerprint_pinned_into_system_prompt(tmp_path: Path):
     assert "rule body" in ing._system_prompt
 
 
-# --------------------------------------------------------------------
-# Input validation
-# --------------------------------------------------------------------
-
 def test_empty_input_raises_ingest_empty(tmp_path: Path):
     skill = tmp_path / "skill.md"
     skill.write_text("any")
@@ -147,7 +128,7 @@ def test_non_dry_run_without_store_raises(tmp_path: Path):
     model.write_bytes(b"")
 
     ing = BonsaiIngestor(model_path=model, skill_path=skill)
-    with pytest.raises(ValueError, match="requires a GraphStore"):
+    with pytest.raises(ValueError, match="requires a SuperGraph"):
         ing.ingest("hello")
 
 
@@ -165,10 +146,6 @@ def test_missing_skill_file_raises(tmp_path: Path):
         BonsaiIngestor(model_path=model, skill_path=tmp_path / "nope.md")
 
 
-# --------------------------------------------------------------------
-# Frontmatter strip
-# --------------------------------------------------------------------
-
 def test_yaml_frontmatter_stripped_from_skill(tmp_path: Path):
     skill = tmp_path / "skill.md"
     skill.write_text("---\nname: x\n---\n\nactual rules")
@@ -179,10 +156,6 @@ def test_yaml_frontmatter_stripped_from_skill(tmp_path: Path):
     assert "name: x" not in ing._skill_text
     assert "actual rules" in ing._skill_text
 
-
-# --------------------------------------------------------------------
-# IngestResult shape
-# --------------------------------------------------------------------
 
 def test_ingest_result_defaults():
     r = IngestResult()
@@ -196,10 +169,6 @@ def test_ingest_result_defaults():
     assert r.skill_fingerprint == ""
     assert r.dry_run is False
 
-
-# --------------------------------------------------------------------
-# Fact state tracking (cross-message belief identity)
-# --------------------------------------------------------------------
 
 def test_scrape_single_assert_creates_factstate():
     facts: dict[str, FactState] = {}
@@ -310,11 +279,9 @@ def test_ingestor_facts_property_returns_copy(tmp_path: Path):
 
     ing = BonsaiIngestor(model_path=model, skill_path=skill)
     assert ing.facts == {}
-    # Simulate state set by an earlier ingest:
     ing._facts["fact:x"] = FactState(fact_id="fact:x", value="v")
     snapshot = ing.facts
     assert "fact:x" in snapshot
-    # Mutating the snapshot should not affect internal state
     snapshot["fact:y"] = FactState(fact_id="fact:y")
     assert "fact:y" not in ing._facts
 
@@ -330,10 +297,6 @@ def test_ingestor_reset_facts_clears_state(tmp_path: Path):
     ing.reset_facts()
     assert ing._facts == {}
 
-
-# --------------------------------------------------------------------
-# Verb parser (English-keyword @-prefix grammar)
-# --------------------------------------------------------------------
 
 def test_parse_all_three_ingest_verbs():
     out = '''@UPSERT priya Priya
@@ -361,7 +324,6 @@ def test_parse_entities_only():
 
 
 def test_parse_multi_word_name_joined_by_whitespace():
-    """Rest-of-line is the name; split on first 2 whitespace runs only."""
     turn = _parse_verb_output("@UPSERT sf San Francisco")
     assert turn.entities == [("sf", "San Francisco")]
 
@@ -375,7 +337,6 @@ def test_parse_case_insensitive_verbs():
 
 
 def test_parse_assert_alias_maps_to_belief():
-    """ASSERT is a grammar keyword; we accept it as an alias for @BELIEF."""
     turn = _parse_verb_output("@ASSERT color blue")
     assert turn.beliefs == [("fact:color", "blue")]
 
@@ -387,7 +348,6 @@ def test_parse_tolerates_fence_lines():
 
 
 def test_parse_strips_prefix_if_model_adds_it():
-    """Model sometimes emits '@UPSERT ent:x X'; we normalize to slug-only."""
     turn = _parse_verb_output('@UPSERT ent:priya Priya')
     assert turn.entities == [("priya", "Priya")]
 
@@ -403,7 +363,6 @@ def test_parse_ignores_unknown_verbs():
 
 
 def test_parse_ignores_malformed_short_lines():
-    """Missing required args -> line dropped, no crash."""
     out = "@UPSERT justslug\n@BELIEF onlytopic\n@RETRACT\n"
     turn = _parse_verb_output(out)
     assert turn.entities == []
@@ -412,17 +371,11 @@ def test_parse_ignores_malformed_short_lines():
 
 
 def test_parse_strips_quotes_if_present():
-    """Model occasionally wraps tokens in quotes; handle both."""
     turn = _parse_verb_output('@UPSERT "priya" "Priya"')
     assert turn.entities == [("priya", "Priya")]
 
 
-# --------------------------------------------------------------------
-# @-prefix contract
-# --------------------------------------------------------------------
-
 def test_parse_drops_lines_without_at_prefix():
-    """Any line not starting with @ drops silently (English drift inert)."""
     out = '''UPSERT priya Priya
 Wait, let me think about this.
 This is free-form prose.
@@ -432,7 +385,6 @@ This is free-form prose.
 
 
 def test_parse_accepts_space_after_at():
-    """'@ UPSERT priya' still parses (tolerant)."""
     turn = _parse_verb_output("@ UPSERT priya Priya")
     assert turn.entities == [("priya", "Priya")]
 
@@ -450,13 +402,7 @@ Wait - that's not correct. Let me reconsider.'''
     assert turn.statements == []
 
 
-# --------------------------------------------------------------------
-# Non-ingest verbs (edges, retrieval, walks, sys/vault)
-# --------------------------------------------------------------------
-
 def test_parse_edge_emits_create_edge():
-    """@EDGE produces an entity_edges entry; synthesizer maps each
-    slug to the resolver's entity_id before rendering the DSL."""
     turn = _parse_verb_output("@EDGE ent:priya ent:flipkart works_at")
     assert turn.entity_edges == [("priya", "flipkart", "works_at")]
     assert turn.statements == []
@@ -588,21 +534,14 @@ def test_parse_walk_verb_without_anchor_dropped():
 
 
 def test_parse_plain_verb_ignores_trailing_tokens():
-    """@HEALTH foo still fires; plain handler ignores the rest of the line."""
     turn = _parse_verb_output("@HEALTH ignored")
     assert turn.statements == ['SYS HEALTH']
 
 
 def test_parse_edge_escapes_quotes_in_ids():
-    """Edge slugs + kind survive odd characters; synthesizer escapes
-    when it renders the final DSL."""
     turn = _parse_verb_output('@EDGE ent:a ent:b weird"kind')
     assert turn.entity_edges == [("a", "b", 'weird"kind')]
 
-
-# --------------------------------------------------------------------
-# Node lifecycle verbs (update/delete/forget/merge/counterfactual)
-# --------------------------------------------------------------------
 
 def test_parse_update_node():
     turn = _parse_verb_output("@UPDATE_NODE me title senior engineer")
@@ -637,10 +576,6 @@ def test_parse_count_nodes_and_edges():
     assert _parse_verb_output("@COUNT_NODES").statements == ['COUNT NODES']
     assert _parse_verb_output("@COUNT_EDGES").statements == ['COUNT EDGES']
 
-
-# --------------------------------------------------------------------
-# DSL synthesis (v5 pre-rendered statements)
-# --------------------------------------------------------------------
 
 def test_synthesize_appends_statements_verbatim():
     turn = ParsedTurn(
@@ -678,12 +613,8 @@ def test_synthesize_minimal_turn_emits_only_message_node():
 
 
 def test_synthesize_with_entities_emits_mention_entity_and_refers_to():
-    """Each entity slug yields: mention node + entity node (new) +
-    refers_to edge (mention->entity) + mentions edge (msg->mention).
-    With no gs passed, every mention mints a fresh entity."""
     turn = ParsedTurn(entities=[("priya", "Priya"), ("openai", "OpenAI")])
     dsl = _synthesize_dsl(turn, msg_id="m:s1:0", session_id="s1", role="user", text="x")
-    # 1 message + 2 * (1 mention + 1 entity + 1 refers_to + 1 mentions) = 9
     assert len(dsl) == 9
     text = "\n".join(dsl)
     assert 'kind = "mention"' in text
@@ -697,8 +628,6 @@ def test_synthesize_with_entities_emits_mention_entity_and_refers_to():
 
 
 def test_synthesize_dedupes_duplicate_entities():
-    """Same slug emitted twice in one turn yields exactly one mention
-    + one entity + one refers_to."""
     turn = ParsedTurn(entities=[("x", "X"), ("x", "X")])
     dsl = _synthesize_dsl(turn, msg_id="m:0", session_id="s", role="user", text="x")
     mentions = [d for d in dsl if 'kind = "mention"' in d]
@@ -710,8 +639,6 @@ def test_synthesize_dedupes_duplicate_entities():
 
 
 def test_synthesize_emits_entity_edges_after_resolution():
-    """@EDGE between two upserted slugs renders as entity-to-entity
-    after the slug map is populated."""
     turn = ParsedTurn(
         entities=[("priya", "Priya"), ("flipkart", "Flipkart")],
         entity_edges=[("priya", "flipkart", "works_at")],
@@ -721,15 +648,12 @@ def test_synthesize_emits_entity_edges_after_resolution():
                   if d.startswith("CREATE EDGE")
                   and 'kind = "works_at"' in d]
     assert len(edge_lines) == 1
-    # Both endpoints must be entity:* ids, not slug literals.
     assert 'entity:' in edge_lines[0]
     assert 'ent:priya' not in edge_lines[0]
     assert 'ent:flipkart' not in edge_lines[0]
 
 
 def test_synthesize_drops_entity_edge_with_unknown_slug():
-    """@EDGE references a slug not declared via @UPSERT; synthesizer
-    drops it (logs warning) rather than emitting a broken DSL line."""
     turn = ParsedTurn(
         entities=[("alice", "Alice")],
         entity_edges=[("alice", "ghost", "knows")],
@@ -765,7 +689,6 @@ def test_synthesize_escapes_quotes_in_text_and_name():
 
 
 def test_synthesize_all_together_contract():
-    """End-to-end: message + mention/entity/refers_to + belief + retract."""
     turn = ParsedTurn(
         entities=[("priya", "Priya")],
         beliefs=[("fact:color", "green")],
@@ -796,16 +719,11 @@ def test_ingest_requires_msg_id(tmp_path: Path):
 
 
 def test_default_prompt_path_ships_in_package(tmp_path: Path):
-    """Default prompt file lives inside the package and contains at least one @-verb."""
-    from graphstore.bonsai_ingestor import _DEFAULT_PROMPT_PATH
+    from supergraph.bonsai_ingestor import _DEFAULT_PROMPT_PATH
     assert _DEFAULT_PROMPT_PATH.exists()
     body = _DEFAULT_PROMPT_PATH.read_text()
     assert "@UPSERT" in body and "@REMEMBER" in body
 
-
-# --------------------------------------------------------------------
-# Persistent KV cache
-# --------------------------------------------------------------------
 
 def test_save_kv_cache_noop_without_path(tmp_path: Path):
     skill = tmp_path / "skill.md"
@@ -814,9 +732,7 @@ def test_save_kv_cache_noop_without_path(tmp_path: Path):
     model.write_bytes(b"")
 
     ing = BonsaiIngestor(model_path=model, skill_path=skill)
-    # Should silently no-op when no kv_cache_path configured and no Llama
     ing.save_kv_cache()
-    # no crash = pass
 
 
 def test_save_kv_cache_noop_without_llm(tmp_path: Path):
@@ -839,8 +755,6 @@ def test_try_load_kv_cache_returns_false_when_missing(tmp_path: Path):
     kv = tmp_path / "kv.bin"
 
     ing = BonsaiIngestor(model_path=model, skill_path=skill, kv_cache_path=kv)
-    # Don't need a real Llama - load returns False on missing file before
-    # reaching the load_state call.
     assert ing._try_load_kv_cache(None) is False
 
 
@@ -879,8 +793,6 @@ def test_try_load_kv_cache_rejects_stale_fingerprint(tmp_path: Path):
     }
     kv.write_bytes(pickle.dumps(stale))
 
-    # Even with a None Llama, stale meta is detected before load_state is
-    # attempted so we return False cleanly.
     assert ing._try_load_kv_cache(None) is False
 
 
@@ -910,17 +822,7 @@ def test_try_load_kv_cache_handles_wrong_shape(tmp_path: Path):
     assert ing._try_load_kv_cache(None) is False
 
 
-# --------------------------------------------------------------------
-# NER hints feed Bonsai
-# --------------------------------------------------------------------
-
-
 def _make_ingestor(tmp_path: Path, **kwargs) -> BonsaiIngestor:
-    """Build a BonsaiIngestor without touching llama.cpp.
-
-    Skill + model files exist on disk; the LLM is never loaded because we
-    only exercise the NER pre-pass and user-message composition.
-    """
     skill = tmp_path / "skill.md"
     skill.write_text("v1")
     model = tmp_path / "fake.gguf"
@@ -941,7 +843,7 @@ def test_ner_hints_disabled_when_max_hints_zero(tmp_path: Path):
 
 
 def test_ner_hints_formats_unique_entities_in_order(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text, label="PER", score=0.9):
@@ -961,7 +863,7 @@ def test_ner_hints_formats_unique_entities_in_order(tmp_path: Path, monkeypatch)
 
 
 def test_ner_hints_caps_at_max_hints(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text):
@@ -982,7 +884,7 @@ def test_ner_hints_caps_at_max_hints(tmp_path: Path, monkeypatch):
 
 
 def test_ner_hints_empty_results_yield_no_line(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     monkeypatch.setattr(
         entity_extract, "extract_entities",
@@ -994,7 +896,7 @@ def test_ner_hints_empty_results_yield_no_line(tmp_path: Path, monkeypatch):
 
 
 def test_ner_hints_disable_after_extractor_error(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     calls = {"n": 0}
 
@@ -1006,14 +908,13 @@ def test_ner_hints_disable_after_extractor_error(tmp_path: Path, monkeypatch):
 
     ing = _make_ingestor(tmp_path, ner_model_dir=tmp_path / "fake-ner")
     assert ing._ner_hints("Maria pushed code") == ""
-    # Subsequent calls short-circuit without re-invoking the extractor.
     assert ing._ner_hints("Kailash joined OpenAI") == ""
     assert calls["n"] == 1
     assert ing._ner_disabled is True
 
 
 def test_ner_hints_skip_blank_text_entries(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text):

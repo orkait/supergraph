@@ -1,8 +1,7 @@
-"""Comprehensive tests for the DSL parser."""
 
 import pytest
-from graphstore.dsl.parser import parse, parse_uncached, clear_cache, _plan_cache
-from graphstore.dsl.ast_nodes import (
+from supergraph.dsl.parser import parse, parse_uncached, clear_cache, _plan_cache
+from supergraph.dsl.ast_nodes import (
     NodeQuery, NodesQuery, EdgesQuery, TraverseQuery, SubgraphQuery,
     PathQuery, PathsQuery, ShortestPathQuery, DistanceQuery,
     AncestorsQuery, DescendantsQuery, CommonNeighborsQuery,
@@ -14,12 +13,8 @@ from graphstore.dsl.ast_nodes import (
     SysExplain, SysRegisterNodeKind, SysRegisterEdgeKind,
     SysUnregister, SysCheckpoint, SysRebuild, SysClear, SysWal,
 )
-from graphstore.core.errors import QueryError
+from supergraph.core.errors import QueryError
 
-
-# =============================================
-# Read queries
-# =============================================
 
 class TestNodeQuery:
     def test_node_simple(self):
@@ -191,11 +186,8 @@ class TestMatchQuery:
         assert isinstance(r.pattern, MatchPattern)
         assert len(r.pattern.steps) == 2
         assert len(r.pattern.arrows) == 1
-        # First step is a bound step
         assert r.pattern.steps[0].bound_id == "src"
-        # Second step is a variable step
         assert r.pattern.steps[1].variable == "x"
-        # Arrow has an expression
         assert isinstance(r.pattern.arrows[0].expr, Condition)
         assert r.pattern.arrows[0].expr.field == "kind"
         assert r.pattern.arrows[0].expr.value == "calls"
@@ -207,10 +199,6 @@ class TestMatchQuery:
         assert isinstance(r, MatchQuery)
         assert r.limit is None
 
-
-# =============================================
-# Write queries
-# =============================================
 
 class TestCreateNode:
     def test_create_node(self):
@@ -332,10 +320,6 @@ class TestBatch:
         assert isinstance(r.statements[1], CreateNode)
 
 
-# =============================================
-# Filter expressions
-# =============================================
-
 class TestFilterExpressions:
     def test_and_expr(self):
         r = parse('NODES WHERE kind = "function" AND name = "foo"')
@@ -439,10 +423,6 @@ class TestFilterExpressions:
         assert cond.value == 3.14
         assert isinstance(cond.value, float)
 
-
-# =============================================
-# System queries
-# =============================================
 
 class TestSystemQueries:
     def test_sys_stats(self):
@@ -604,10 +584,6 @@ class TestSystemQueries:
         assert r.action == "REPLAY"
 
 
-# =============================================
-# Error handling
-# =============================================
-
 class TestErrorHandling:
     def test_invalid_query_raises_query_error(self):
         with pytest.raises(QueryError):
@@ -622,10 +598,6 @@ class TestErrorHandling:
             parse("NODE")
 
 
-# =============================================
-# Plan cache
-# =============================================
-
 class TestPlanCache:
     def setup_method(self):
         clear_cache()
@@ -633,7 +605,7 @@ class TestPlanCache:
     def test_cache_returns_same_result(self):
         r1 = parse('NODE "user:1"')
         r2 = parse('NODE "user:1"')
-        assert r1 is r2  # same object from cache
+        assert r1 is r2
 
     def test_cache_normalizes_whitespace(self):
         r1 = parse('NODE   "user:1"')
@@ -647,12 +619,12 @@ class TestPlanCache:
         assert isinstance(r2, NodeQuery)
 
     def test_cache_eviction(self):
-        from graphstore.dsl.parser import PlanCache
+        from supergraph.dsl.parser import PlanCache
         cache = PlanCache(maxsize=2)
         cache.get_or_parse('NODE "a"')
         cache.get_or_parse('NODE "b"')
         cache.get_or_parse('NODE "c"')
-        assert len(cache) == 2  # oldest evicted
+        assert len(cache) == 2
 
     def test_clear_cache(self):
         parse('NODE "user:1"')
@@ -660,10 +632,6 @@ class TestPlanCache:
         clear_cache()
         assert len(_plan_cache) == 0
 
-
-# =============================================
-# Task 5: Relative time expressions
-# =============================================
 
 import time as _time
 
@@ -680,10 +648,9 @@ class TestRelativeTimeExpressions:
         ast = parse('NODES WHERE __created_at__ > NOW() - 7d')
         cond = ast.where.expr
         assert isinstance(cond.value, (int, float))
-        # Should be approximately 7 days ago in milliseconds
         now_ms = int(_time.time() * 1000)
         seven_days_ms = 7 * 86400000
-        assert abs(cond.value - (now_ms - seven_days_ms)) < 2000  # 2s tolerance
+        assert abs(cond.value - (now_ms - seven_days_ms)) < 2000
 
     def test_parse_today(self):
         ast = parse('NODES WHERE __created_at__ > TODAY')

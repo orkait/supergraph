@@ -1,14 +1,3 @@
-"""Single source of truth for what graphstore/algos/ may import.
-
-Consumed by:
-    - tests/test_algos_purity.py  → blocks forbidden imports at CI time
-    - benchmarks/algos/dump_env.py → produces autoresearch prompt context
-    - benchmarks/algos/README.md   → documented allowlist
-
-Adding a package here is a two-way door: purity test immediately allows
-it, and dump_env will surface it to any autoresearch LLM that reads the
-environment manifest.
-"""
 
 from __future__ import annotations
 
@@ -81,7 +70,7 @@ OPTIONAL: dict[str, dict[str, str]] = {
 }
 
 FORBIDDEN_PREFIXES: frozenset[str] = frozenset({
-    "graphstore",
+    "supergraph",
     "pytest",
     "fastapi",
     "uvicorn",
@@ -111,11 +100,9 @@ FORBIDDEN_PREFIXES: frozenset[str] = frozenset({
 
 
 def allowed_import_names() -> frozenset[str]:
-    """Every module name that may appear in an algos/ file's imports."""
     return frozenset(STDLIB) | frozenset(CORE.keys()) | frozenset(OPTIONAL.keys())
 
 
 def is_forbidden(module: str) -> bool:
-    """True if import is on the forbidden list."""
     top = module.split(".")[0]
     return top in FORBIDDEN_PREFIXES

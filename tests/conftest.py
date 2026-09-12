@@ -1,24 +1,9 @@
-"""Pytest hooks for the graphstore test suite.
-
-THREAD CAP: This module runs before every test collection. BLAS (numpy /
-scipy), OpenMP, MKL, and Rust/Rayon (HuggingFace tokenizers) read their
-thread-count env vars on first use. Set them *before* any numpy import so
-the thread pools initialise small. Combined with the early
-``threadpool_limits`` call this survives xdist worker forks.
-
-Skip-if-extra-missing:
-  1. ``collect_ignore`` for test files that import a feature at module
-     level (these crash at collection time when the extra is missing).
-  2. ``pytest.mark.needs_<extra>`` for files that boot cleanly but whose
-     test bodies hit the feature path. Translated into dynamic skips.
-"""
 
 from __future__ import annotations
 
-# ---- Hard BLAS / OpenMP cap. Must run BEFORE any numpy/scipy import. ----
 import os as _os
 
-_THREAD_CAP = _os.environ.get("GRAPHSTORE_TEST_BLAS_THREADS", "1")
+_THREAD_CAP = _os.environ.get("SUPERGRAPH_TEST_BLAS_THREADS", "1")
 for _var in (
     "OMP_NUM_THREADS",
     "OPENBLAS_NUM_THREADS",
@@ -31,12 +16,10 @@ for _var in (
 ):
     _os.environ.setdefault(_var, _THREAD_CAP)
 _os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-# onnxruntime session thread pools honour this too when queried early.
-_os.environ.setdefault("GRAPHSTORE_NER_THREADS", _THREAD_CAP)
-_os.environ.setdefault("GRAPHSTORE_EMBED_THREADS", _THREAD_CAP)
-_os.environ.setdefault("GRAPHSTORE_RERANK_THREADS", _THREAD_CAP)
+_os.environ.setdefault("SUPERGRAPH_NER_THREADS", _THREAD_CAP)
+_os.environ.setdefault("SUPERGRAPH_EMBED_THREADS", _THREAD_CAP)
+_os.environ.setdefault("SUPERGRAPH_RERANK_THREADS", _THREAD_CAP)
 
-# ---- Runtime cap (for already-loaded libraries). ----
 try:
     from threadpoolctl import threadpool_limits as _threadpool_limits
     _BLAS_LIMIT_CTX = _threadpool_limits(limits=int(_THREAD_CAP))
@@ -44,7 +27,6 @@ except Exception:
     _BLAS_LIMIT_CTX = None
 
 
-# ---- Normal conftest starts here. ----
 import importlib.util
 import os
 
@@ -94,7 +76,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="Include slow tests (pytest.mark.slow). Default is skip. "
-             "Also enabled by GRAPHSTORE_RUN_SLOW=1.",
+             "Also enabled by SUPERGRAPH_RUN_SLOW=1.",
     )
 
 
@@ -102,18 +84,18 @@ def pytest_configure(config: pytest.Config) -> None:
     for marker in _EXTRA_TO_DEP:
         config.addinivalue_line(
             "markers",
-            f"{marker}: skipped unless the matching graphstore extra is installed",
+            f"{marker}: skipped unless the matching supergraph extra is installed",
         )
     config.addinivalue_line(
         "markers",
-        "slow: skipped unless --run-slow or GRAPHSTORE_RUN_SLOW=1 is set",
+        "slow: skipped unless --run-slow or SUPERGRAPH_RUN_SLOW=1 is set",
     )
 
 
 def _slow_enabled(config: pytest.Config) -> bool:
     return (
         bool(config.getoption("--run-slow"))
-        or os.environ.get("GRAPHSTORE_RUN_SLOW") == "1"
+        or os.environ.get("SUPERGRAPH_RUN_SLOW") == "1"
     )
 
 
@@ -140,8 +122,6 @@ def pytest_collection_modifyitems(
 
 @pytest.fixture(scope="session", autouse=True)
 def _blas_cap_session_guard():
-    """Belt-and-braces: reapply threadpool cap inside every test session in
-    case a test or fixture tears the module-level limit down."""
     cap = int(_THREAD_CAP)
     try:
         from threadpoolctl import threadpool_limits

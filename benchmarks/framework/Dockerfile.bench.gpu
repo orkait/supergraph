@@ -43,11 +43,11 @@ RUN pip install \
 RUN pip uninstall -y onnxruntime && \
     pip install --no-deps --force-reinstall "onnxruntime-gpu>=1.23"
 
-COPY graphstore /repo/graphstore
+COPY supergraph /repo/supergraph
 COPY benchmarks /repo/benchmarks
 COPY scripts /repo/scripts
 
 ENV PYTHONPATH=/repo
 
 ENTRYPOINT ["python", "-m", "benchmarks.framework.docker_runner"]
-CMD ["--system", "graphstore", "--dataset", "longmemeval", "--variant", "s"]
+CMD ["--system", "supergraph", "--dataset", "longmemeval", "--variant", "s"]

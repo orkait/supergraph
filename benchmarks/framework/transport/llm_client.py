@@ -1,10 +1,3 @@
-"""LoCoMo bench scoring helpers.
-
-All LLM transport goes through `graphstore.llm_runner` (shared across
-benches + autoresearch). This module holds LoCoMo-specific scoring:
-token F1 (official snap-research/locomo protocol) and a semantic LLM
-judge prompt.
-"""
 
 from __future__ import annotations
 
@@ -17,17 +10,11 @@ logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
 
 def llm_call(prompt: str, max_tokens: int = 1000, temperature: float = 0.0, _retries: int | None = None) -> str:
-    """Sync LLM call. Delegates to the shared LLMRunner.
-
-    The ``_retries`` kwarg is ignored (runner retries internally). Kept
-    in the signature only because older in-tree callers pass it.
-    """
-    from graphstore.llm_runner import get_shared_runner
+    from supergraph.llm_runner import get_shared_runner
     return get_shared_runner().call_sync(prompt, max_tokens=max_tokens, temperature=temperature)
 
 
 def health_check() -> bool:
-    """Verify LLM is reachable. Call before starting a benchmark."""
     result = llm_call("Say OK", max_tokens=500)
     if not result:
         raise RuntimeError(
@@ -39,7 +26,6 @@ def health_check() -> bool:
 
 
 def _normalize_answer(s: str) -> str:
-    """Normalize answer string - matches official LoCoMo evaluation.py."""
     s = s.replace(',', '')
     s = re.sub(r'\b(a|an|the|and)\b', ' ', s.lower())
     s = ''.join(ch for ch in s if ch not in string.punctuation)
@@ -47,7 +33,6 @@ def _normalize_answer(s: str) -> str:
 
 
 def _f1_score(prediction: str, gold: str) -> float:
-    """Token-level F1 with Porter stemming - matches official LoCoMo."""
     from collections import Counter
     try:
         from nltk.stem import PorterStemmer
@@ -70,25 +55,12 @@ def _f1_score(prediction: str, gold: str) -> float:
 
 
 def compute_f1(prediction: str, gold: str, category: int | None = None) -> float:
-    """Compute F1 matching snap-research/locomo task_eval/evaluation.py verbatim.
-
-    Category mapping (from official evaluation.py):
-      - 1 (multi-hop):   split comma-separated sub-answers, np.mean of per-gold
-                         max over pred sub-F1 scores
-      - 2 (single-hop):  direct token F1
-      - 3 (temporal):    gold.split(';')[0].strip() then direct token F1
-      - 4 (open-domain): direct token F1
-      - 5 (adversarial): 1.0 if prediction contains abstention phrase
-                         ("no information available" or "not mentioned")
-    """
     if category == 5:
         low = prediction.lower()
         if 'no information available' in low or 'not mentioned' in low:
             return 1.0
         return 0.0
 
-    # Temporal: gold may carry multiple alternates separated by ';'; take first
-    # per snap-research evaluation.py line 203-204.
     if category == 3:
         gold = gold.split(';')[0].strip()
 
@@ -129,15 +101,6 @@ def compute_llm_judge(
     category: int | None = None,
     debug: bool = False,
 ) -> float:
-    """Semantic-equivalence judge via llm_call.
-
-    Returns 1.0 if LLM says CORRECT, 0.0 if INCORRECT, 0.0 on parse failure.
-    Costs 1 LLM call per QA. Used with --judge llm on run_locomo.
-
-    Reasoning models need a generous max_tokens so thinking tokens don't
-    starve the verdict. Parsing looks for CORRECT or INCORRECT anywhere
-    in the verdict, not just the first token.
-    """
     pred = (prediction or "").strip()
     if not pred:
         return 0.0
@@ -165,9 +128,6 @@ def compute_llm_judge(
     last_correct = upper.rfind("CORRECT")
     if last_incorrect == -1 and last_correct == -1:
         return 0.0
-    # "INCORRECT" contains "CORRECT" as substring. If INCORRECT is at position
-    # P, CORRECT would match at P+2; prefer whichever appears later as a
-    # standalone word.
     if last_incorrect != -1 and (last_correct == -1 or last_correct <= last_incorrect + 2):
         return 0.0
     return 1.0

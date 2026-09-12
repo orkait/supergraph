@@ -1,6 +1,5 @@
-"""Tests for extensibility injection points."""
 import pytest
-from graphstore.ingest.base import Ingestor, IngestResult
+from supergraph.ingest.base import Ingestor, IngestResult
 
 
 class _DummyIngestor(Ingestor):
@@ -13,7 +12,7 @@ class _DummyIngestor(Ingestor):
 
 class TestIngestorRegistry:
     def test_register_and_resolve_by_extension(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         ingestor = _DummyIngestor()
         reg.register(ingestor)
@@ -21,20 +20,19 @@ class TestIngestorRegistry:
         assert resolved is ingestor
 
     def test_resolve_unknown_extension_raises(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         with pytest.raises(ValueError, match="Unsupported format"):
             reg.resolve("file.unknownext999")
 
     def test_resolve_using_unknown_name_raises(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
-        # using= with an unknown builtin name raises ValueError from _make_builtin_ingestor
         with pytest.raises(ValueError):
             reg.resolve("file.txt", using="nonexistent_parser_xyz")
 
     def test_override_existing_extension(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
 
         class MyPDFIngestor(Ingestor):
@@ -48,7 +46,7 @@ class TestIngestorRegistry:
         assert resolved.name == "mypdf"
 
     def test_builtin_pdf_resolves(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         ingestor = reg.resolve("report.pdf")
         assert ingestor is not None
@@ -56,13 +54,13 @@ class TestIngestorRegistry:
 
     @pytest.mark.needs_ingest
     def test_builtin_txt_resolves(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         ingestor = reg.resolve("notes.txt")
         assert ingestor.name == "markitdown"
 
     def test_list_returns_registered(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         reg.register(_DummyIngestor())
         entries = reg.list()
@@ -70,7 +68,7 @@ class TestIngestorRegistry:
         assert "dummy" in names
 
     def test_using_override_bypasses_extension_map(self):
-        from graphstore.ingest.registry import IngestorRegistry
+        from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
         reg.register(_DummyIngestor())
         resolved = reg.resolve("report.pdf", using="dummy")
@@ -79,27 +77,27 @@ class TestIngestorRegistry:
 
 class TestChunkerProtocol:
     def test_heading_chunker_implements_protocol(self):
-        from graphstore.ingest.base import ChunkerProtocol
-        from graphstore.ingest.chunker import HeadingChunker
+        from supergraph.ingest.base import ChunkerProtocol
+        from supergraph.ingest.chunker import HeadingChunker
         chunker = HeadingChunker()
         assert isinstance(chunker, ChunkerProtocol)
 
     def test_heading_chunker_chunks_text(self):
-        from graphstore.ingest.chunker import HeadingChunker
+        from supergraph.ingest.chunker import HeadingChunker
         chunker = HeadingChunker()
         chunks = chunker.chunk("# Heading\nsome text")
         assert len(chunks) >= 1
         assert chunks[0].heading == "Heading"
 
     def test_heading_chunker_passes_kwargs(self):
-        from graphstore.ingest.chunker import HeadingChunker
+        from supergraph.ingest.chunker import HeadingChunker
         chunker = HeadingChunker()
         chunks = chunker.chunk("# H\n" + "word " * 1000, max_chunk_size=200)
-        assert len(chunks) > 1  # kwargs were honored
+        assert len(chunks) > 1
 
     def test_custom_chunker_satisfies_protocol(self):
-        from graphstore.ingest.base import ChunkerProtocol
-        from graphstore.ingest.base import Chunk
+        from supergraph.ingest.base import ChunkerProtocol
+        from supergraph.ingest.base import Chunk
 
         class SingleChunker:
             def chunk(self, text: str, **kwargs):
@@ -108,7 +106,7 @@ class TestChunkerProtocol:
         assert isinstance(SingleChunker(), ChunkerProtocol)
 
     def test_object_without_chunk_method_fails_protocol(self):
-        from graphstore.ingest.base import ChunkerProtocol
+        from supergraph.ingest.base import ChunkerProtocol
 
         class NotAChunker:
             pass
@@ -116,10 +114,10 @@ class TestChunkerProtocol:
         assert not isinstance(NotAChunker(), ChunkerProtocol)
 
 
-class TestGraphStoreInjection:
+class TestSuperGraphInjection:
     def test_custom_ingestor_used_for_extension(self, tmp_path):
-        from graphstore import GraphStore
-        from graphstore.ingest.base import Ingestor, IngestResult
+        from supergraph import SuperGraph
+        from supergraph.ingest.base import Ingestor, IngestResult
 
         called = []
 
@@ -134,7 +132,7 @@ class TestGraphStoreInjection:
         f = tmp_path / "notes.txt"
         f.write_text("# Hello\nworld")
 
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None,
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None,
                        ingestors={"txt": TrackingIngestor()})
         g.execute(f'INGEST "{f}" AS "doc:t1"')
         g.close()
@@ -142,8 +140,8 @@ class TestGraphStoreInjection:
         assert len(called) == 1
 
     def test_custom_chunker_used(self, tmp_path):
-        from graphstore import GraphStore
-        from graphstore.ingest.base import Chunk
+        from supergraph import SuperGraph
+        from supergraph.ingest.base import Chunk
 
         chunk_calls = []
 
@@ -155,7 +153,7 @@ class TestGraphStoreInjection:
         f = tmp_path / "doc.txt"
         f.write_text("# Title\nSome content here.")
 
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None,
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None,
                        chunker=CountingChunker())
         g.execute(f'INGEST "{f}" AS "doc:c1"')
         g.close()
@@ -163,14 +161,12 @@ class TestGraphStoreInjection:
         assert len(chunk_calls) >= 1
 
     def test_default_path_preserved_without_ingestors(self, tmp_path):
-        """No ingestors= passed → existing router path still active (no regression)."""
-        from graphstore import GraphStore
+        from supergraph import SuperGraph
 
         f = tmp_path / "notes.txt"
         f.write_text("# Hello\nworld")
 
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}" AS "doc:default"')
-        # router.py fast-paths .txt/.md as "direct"
         assert result.data["parser"] in ("markitdown", "direct")
         g.close()

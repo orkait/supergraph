@@ -1,7 +1,6 @@
-"""F algebra laws + dict shorthand + DSL compilation."""
 import pytest
 
-from graphstore.query.filters import F, compile_where
+from supergraph.query.filters import F, compile_where
 
 
 class TestLeafBuilders:
@@ -27,7 +26,6 @@ class TestLeafBuilders:
         assert F.in_("topic", ["travel", "finance"]).to_dsl() == 'topic IN ("travel", "finance")'
 
     def test_not_in(self):
-        # Grammar has no NOT IN; emitted as NOT (... IN (...))
         assert F.not_in("topic", ["test"]).to_dsl() == 'NOT (topic IN ("test"))'
 
     def test_in_empty_raises(self):
@@ -39,14 +37,12 @@ class TestLeafBuilders:
             F.in_("topic", "not-a-list")
 
     def test_is_null(self):
-        # Grammar uses = NULL / != NULL, not IS (NOT) NULL
         assert F.is_null("deleted_at").to_dsl() == "deleted_at = NULL"
 
     def test_is_not_null(self):
         assert F.is_not_null("deleted_at").to_dsl() == "deleted_at != NULL"
 
     def test_startswith(self):
-        # Grammar has no STARTSWITH; emitted as LIKE "prefix%"
         assert F.startswith("title", "Project").to_dsl() == 'title LIKE "Project%"'
 
     def test_contains(self):
@@ -60,7 +56,6 @@ class TestLeafBuilders:
             F.raw("")
 
     def test_leaf_string_escape(self):
-        """Injection attempt in leaf value."""
         f = F.eq("kind", 'mem"; DROP ALL; --')
         out = f.to_dsl()
         assert out.startswith('kind = "')
@@ -81,13 +76,11 @@ class TestAlgebraLaws:
         assert f.to_dsl() == "NOT (retracted = 1)"
 
     def test_double_negation(self):
-        """~~x == x (involution law)."""
         f = F.eq("kind", "m")
         assert (~~f) is f or (~~f).to_dsl() == f.to_dsl()
 
     def test_and_associativity(self):
         a, b, c = F.eq("x", 1), F.eq("y", 2), F.eq("z", 3)
-        # Flattened tree: (a & b) & c == a & (b & c) == a & b & c
         left  = (a & b) & c
         right = a & (b & c)
         assert left.to_dsl() == right.to_dsl()
@@ -115,7 +108,6 @@ class TestAlgebraLaws:
         assert (a | F.true()).to_dsl() == "true"
 
     def test_and_or_precedence_parens(self):
-        """a OR (b AND c) should parenthesise the OR when nested in an AND."""
         a, b, c, d = F.eq("a", 1), F.eq("b", 2), F.eq("c", 3), F.eq("d", 4)
         expr = a & (b | c) & d
         out = expr.to_dsl()
@@ -171,8 +163,6 @@ class TestCompileWhere:
             compile_where(42)
 
     def test_false_const_raises_in_where(self):
-        """``F.eq(..) & F.false()`` collapses to F.false() which is unreachable
-        grammar. Catch at compile time rather than emitting invalid DSL."""
         with pytest.raises(ValueError, match="never-match"):
             compile_where(F.false())
 

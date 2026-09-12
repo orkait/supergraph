@@ -1,10 +1,7 @@
-"""Tests for ONNX entity extraction and co-reference resolution."""
-import pytest
-from graphstore.ingest.entity_extract import (
-    extract_entities, CoReferenceResolver, Entity, _get_extractor
+from supergraph.ingest.entity_extract import (
+    extract_entities, CoReferenceResolver
 )
 
-import os
 from pathlib import Path
 
 MODEL_DIR = Path(__file__).parent.parent / "models" / "tinybert-ner"
@@ -37,7 +34,6 @@ class TestEntityExtractor:
         assert extract_entities("Caroline moved.", model_dir=None) == []
 
     def test_high_threshold_filters_low_confidence(self):
-        """Spotify subword 'ify' should be filtered at default 0.6 threshold."""
         entities = extract_entities("She works at Spotify.", model_dir=MODEL_DIR)
         assert all(e.score >= 0.6 for e in entities)
         assert not any(e.text == "ify" for e in entities)
@@ -82,7 +78,7 @@ class TestCoReferenceResolver:
 
 
 def test_slug_no_collision_on_truncation():
-    from graphstore.ingest.entity_extract import slug
+    from supergraph.ingest.entity_extract import slug
     a = slug("Barack Hussein Obama II the Second of That Name")
     b = slug("Barack Hussein Obama Jr the Son of the First")
     assert a != b, f"slugs collided: {a!r} == {b!r}"
@@ -91,6 +87,6 @@ def test_slug_no_collision_on_truncation():
 
 
 def test_slug_short_unchanged():
-    from graphstore.ingest.entity_extract import slug
+    from supergraph.ingest.entity_extract import slug
     assert slug("Alice") == "alice"
     assert slug("Bob Smith") == "bob_smith"

@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # DSL reference
 
-Every verb in the graphstore DSL, grouped by role. For the typed Python API, see [Query builder](../query-builder).
+Every verb in the supergraph DSL, grouped by role. For the typed Python API, see [Query builder](../query-builder).
 
 ## Reads
 
@@ -120,7 +120,7 @@ ANSWER "What were the biggest Q3 revenue drivers?" LIMIT 5
 ANSWER "Who attended the LGBTQ support group?" LIMIT 5 USING "careful-reader"
 ```
 
-Runs REMEMBER internally, hands retrieved passages + question to a reader LLM configured at GraphStore construction (`reader=` or `readers={...}`), returns `{answer, cited_slots, candidates, reader}` plus the same `meta["signals"]` telemetry. Graphstore ships no LLM dependency; the reader is a user-supplied callable.
+Runs REMEMBER internally, hands retrieved passages + question to a reader LLM configured at SuperGraph construction (`reader=` or `readers={...}`), returns `{answer, cited_slots, candidates, reader}` plus the same `meta["signals"]` telemetry. SuperGraph ships no LLM dependency; the reader is a user-supplied callable.
 
 ### Temporal retrieval
 
@@ -188,7 +188,7 @@ SYS EVOLVE RULE "reindex-on-drift"
 ### Markdown vault
 
 ```python
-# python: GraphStore(path="./brain", vault="./notes")
+# python: SuperGraph(path="./brain", vault="./notes")
 ```
 
 ```sql
@@ -206,4 +206,4 @@ DISCARD CONTEXT "reasoning-session-42"
 
 ## Grammar
 
-Lark LALR(1), source of truth at [`src/graphstore/dsl/grammar.lark`](https://github.com/orkait/graphstore/blob/main/src/graphstore/dsl/grammar.lark).
+Lark LALR(1), source of truth at [`src/supergraph/dsl/grammar.lark`](https://github.com/orkait/supergraph/blob/main/src/supergraph/dsl/grammar.lark).

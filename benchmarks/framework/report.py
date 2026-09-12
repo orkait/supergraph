@@ -1,4 +1,3 @@
-"""Leaderboard generation: JSON, CSV, and Markdown from a list of RunResults."""
 
 from __future__ import annotations
 

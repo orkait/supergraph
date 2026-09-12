@@ -1,4 +1,4 @@
-# graphstore - Pro GPU image (slim).
+# supergraph - Pro GPU image (slim).
 #
 # Single-stage on python:3.12-slim-bookworm. CUDA 12.4 runtime is
 # delivered via the official nvidia-* pip wheels (cuda-runtime, cublas,
@@ -19,37 +19,37 @@
 # on a CI runner means nothing on the deployment host. Run it once on
 # the target machine inside the container:
 #
-#     docker compose --profile pro run --rm graphstore-pro graphstore pro setup
+#     docker compose --profile pro run --rm supergraph-pro supergraph pro setup
 #
 # The calibration cache lives on the gs-cache volume and persists across
 # container restarts.
 #
-# Build:  docker buildx build -f Dockerfile.pro --builder graphstore-builder \
-#             -t graphstore-pro:latest --load .
+# Build:  docker buildx build -f Dockerfile.pro --builder supergraph-builder \
+#             -t supergraph-pro:latest --load .
 # Run:    docker run --gpus all --cpus=8 --memory=16g -p 7200:7200 \
-#               -v gs-data:/data -v gs-cache:/root/.cache/graphstore \
-#               graphstore-pro:latest
+#               -v gs-data:/data -v gs-cache:/root/.cache/supergraph \
+#               supergraph-pro:latest
 
-ARG GRAPHSTORE_VERSION=0.6.0
+ARG SUPERGRAPH_VERSION=0.6.0
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm
 
 FROM ${PYTHON_IMAGE}
 
-ARG GRAPHSTORE_VERSION
+ARG SUPERGRAPH_VERSION
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    GRAPHSTORE_DB_PATH=/data \
-    GRAPHSTORE_HOST=0.0.0.0 \
-    GRAPHSTORE_PORT=7200 \
+    SUPERGRAPH_DB_PATH=/data \
+    SUPERGRAPH_HOST=0.0.0.0 \
+    SUPERGRAPH_PORT=7200 \
     HF_HOME=/root/.cache/huggingface
 
 # Bring in uv as a build-only binary (deleted at end of mega-RUN).
 COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /usr/local/bin/
 
-# Mega-RUN: install all wheels + CUDA runtime + graphstore + strip
+# Mega-RUN: install all wheels + CUDA runtime + supergraph + strip
 # symbols + delete unused ORT execution providers + purge build deps.
 # Everything lands in one layer so cleanup actually shrinks the image.
 RUN apt-get update \
@@ -67,7 +67,7 @@ RUN apt-get update \
         "llama-cpp-python>=0.3" \
     && uv pip install --system "onnxruntime-gpu>=1.17" \
     && uv pip install --system \
-        "graphstore==${GRAPHSTORE_VERSION}" \
+        "supergraph==${SUPERGRAPH_VERSION}" \
         "tokenizers>=0.15" \
         "huggingface-hub>=0.24" \
         "mcp>=1.0" \
@@ -118,12 +118,12 @@ RUN if [ "$SKIP_MODEL_PREFETCH" = "0" ]; then \
             snapshot_download('onnx-community/TinyBERT-finetuned-NER-ONNX')" ; \
     fi
 
-COPY docker/entrypoint.sh /usr/local/bin/graphstore-entrypoint
-RUN chmod +x /usr/local/bin/graphstore-entrypoint \
-    && mkdir -p /data /root/.cache/graphstore
+COPY docker/entrypoint.sh /usr/local/bin/supergraph-entrypoint
+RUN chmod +x /usr/local/bin/supergraph-entrypoint \
+    && mkdir -p /data /root/.cache/supergraph
 
 WORKDIR /root
-VOLUME ["/data", "/root/.cache/graphstore", "/root/.cache/huggingface"]
+VOLUME ["/data", "/root/.cache/supergraph", "/root/.cache/huggingface"]
 
 EXPOSE 7200
 
@@ -131,4 +131,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import socket; s=socket.socket(); s.settimeout(3); \
         s.connect(('127.0.0.1', 7200)); s.close()" || exit 1
 
-ENTRYPOINT ["/usr/local/bin/graphstore-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/supergraph-entrypoint"]

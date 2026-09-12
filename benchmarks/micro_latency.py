@@ -1,25 +1,14 @@
-"""Micro-benchmark for README latency claims. Measures point lookup,
-filtered scan, SIMILAR TO, RECALL, REMEMBER, ASSERT against both the
-in-memory and disk-backed stores at a range of sizes.
-
-Run: python benchmarks/micro_latency.py
-
-Numbers are median over 30 iters after 5 warmups. Results printed to
-stdout in a format that can be pasted straight into the README.
-"""
 from __future__ import annotations
 
-import os
 import statistics
 import sys
 import tempfile
 import time
-from typing import Callable
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
-def _bulk_create(gs: GraphStore, n: int) -> float:
+def _bulk_create(gs: SuperGraph, n: int) -> float:
     t0 = time.perf_counter()
     with gs.deferred_embeddings(batch_size=256):
         for i in range(n):
@@ -30,7 +19,7 @@ def _bulk_create(gs: GraphStore, n: int) -> float:
     return time.perf_counter() - t0
 
 
-def _bench(gs: GraphStore, q: str, iters: int = 30, warmup: int = 5) -> float:
+def _bench(gs: SuperGraph, q: str, iters: int = 30, warmup: int = 5) -> float:
     for _ in range(warmup):
         gs.execute(q)
     times = []
@@ -53,14 +42,13 @@ QUERIES: list[tuple[str, str]] = [
 
 def run(n: int, mode: str) -> None:
     if mode == "mem":
-        gs = GraphStore(path=None)
+        gs = SuperGraph(path=None)
     else:
         td = tempfile.mkdtemp(prefix=f"gs_bench_{n}_")
-        gs = GraphStore(path=f"{td}/db")
+        gs = SuperGraph(path=f"{td}/db")
 
     ingest_s = _bulk_create(gs, n)
 
-    # A few next-edges so RECALL has something to walk
     for i in range(min(2000, n - 1)):
         gs.execute(f'CREATE EDGE "n{i}" -> "n{i+1}" kind = "next"')
 

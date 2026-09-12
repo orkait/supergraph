@@ -1,19 +1,3 @@
-"""
-Algo Autoresearch - Scientific ratchet loop for graphstore/algos/.
-
-Design principles:
-  - Baseline is sacred: never modified until a statistically confirmed winner
-  - Clean room: LLM sees proven best + bottleneck + hard constraint. No failure history.
-  - Tiered bench: quick filter → full confirm (avoids wasting time on clear losers)
-  - AST-level staleness: detect structural repetition on the target function only
-  - Hypothesis exhaustion: track what was tried per baseline, unlock wider scope as fallback
-  - Full checkpoint: restart continues exactly where it left off
-
-Usage:
-    python -m tools.autoresearch.run_loop
-    python -m tools.autoresearch.run_loop --algo compact
-    python -m tools.autoresearch.run_loop --algo graph --iterations 30
-"""
 
 from __future__ import annotations
 
@@ -21,7 +5,6 @@ import argparse
 import ast
 import json
 import math
-import os
 import signal
 import subprocess
 import sys
@@ -31,7 +14,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-ALGO_DIR = REPO_ROOT / "src" / "graphstore" / "algos"
+ALGO_DIR = REPO_ROOT / "src" / "supergraph" / "algos"
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 from tools.autoresearch.providers import CONFIG_PATH as CONFIG_FILE
 PROGRAM_FILE = Path(__file__).resolve().parent / "program.md"
@@ -41,10 +24,6 @@ _checkpoint: dict = {}
 _config_cache: dict | None = None
 _config_mtime: float = 0
 
-
-# ---------------------------------------------------------------------------
-# Hypothesis taxonomy - hard API-level constraints, not labels
-# ---------------------------------------------------------------------------
 
 HYPOTHESIS_TYPES: list[dict] = [
     {
@@ -99,19 +78,7 @@ HYPOTHESIS_TYPES: list[dict] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Signal handling
-# ---------------------------------------------------------------------------
-
 class IterationTimeout(BaseException):
-    """Abort-the-iteration signal.
-
-    Inherits from BaseException (NOT Exception) so that library code like
-    litellm's `except Exception:` wrappers cannot swallow it. The SIGALRM
-    budget must propagate all the way up to the iteration-level handler,
-    otherwise the retry loop inside get_llm_proposal can extend LLM calls
-    indefinitely past the configured iteration_timeout.
-    """
     pass
 
 
@@ -127,17 +94,7 @@ def _graceful_shutdown(signum, frame):
     sys.exit(0)
 
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 def migrate_config(cfg: dict) -> dict:
-    """Convert old flat provider schema → nested providers/models schema.
-
-    Old: providers[<pid>] = {base_url, model, api_key}  # one model per provider
-    New: providers[<pid>] = {base_url, api_key, models: {<name>: {...}}, model_fallback_order: [...]}
-         + active_model at top level
-    """
     providers = cfg.get("providers", {})
     if not providers:
         return cfg
@@ -208,10 +165,6 @@ def load_config() -> dict:
     return _config_cache  # type: ignore[return-value]
 
 
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-
 def algo_path(algo: str) -> Path:
     return ALGO_DIR / f"{algo}.py"
 
@@ -240,16 +193,11 @@ def candidate_dir(algo: str) -> Path:
 
 def save_candidate(algo: str, iteration: int, hypothesis: str, model: str,
                    raw_response: str, extracted_code: str):
-    """Persist raw LLM output + extracted code for post-hoc inspection."""
     safe_model = model.replace("/", "_").replace(":", "_")
     base = candidate_dir(algo) / f"iter_{iteration:04d}_{hypothesis}_{safe_model}"
     base.with_suffix(".raw.txt").write_text(raw_response)
     base.with_suffix(".py").write_text(extracted_code)
 
-
-# ---------------------------------------------------------------------------
-# Checkpoint
-# ---------------------------------------------------------------------------
 
 def save_checkpoint(algo: str):
     if not algo:
@@ -272,10 +220,6 @@ def load_checkpoint(algo: str) -> bool:
         print(f"  Checkpoint load failed: {e} - starting fresh")
         return False
 
-
-# ---------------------------------------------------------------------------
-# Benchmarking
-# ---------------------------------------------------------------------------
 
 def _python() -> str:
     return str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
@@ -314,7 +258,6 @@ def identify_bottleneck(bench_result: dict) -> str:
 
 
 def test_metric_to_fn_name(test_metric: str, source_code: str) -> str:
-    """Map 'TestApplySlotRemap::test_100k_edges' → 'apply_slot_remap_to_edges'."""
     import re as _re
     class_name = test_metric.split("::")[0]
     bare = _re.sub(r"^Test", "", class_name)
@@ -331,12 +274,6 @@ def test_metric_to_fn_name(test_metric: str, source_code: str) -> str:
 
 
 def run_bench_repeated(algo: str, fast: bool, repeats: int) -> dict | None:
-    """Run bench N times, return the run with the minimum composite score.
-
-    Taking the MIN across repeats filters transient noise (GC, context switches,
-    parallel loop CPU contention). Min is the correct statistic for latency
-    microbenchmarks - noise only makes runs slower, never faster.
-    """
     best: dict | None = None
     best_score = float("inf")
     for _ in range(max(1, repeats)):
@@ -356,17 +293,6 @@ def run_bench_tiered(
     noise_tolerance: float = 1.05,
     full_repeats: int = 3,
 ) -> tuple[dict | None, str]:
-    """
-    Quick bench filters out *clearly worse* candidates only.
-
-    noise_tolerance = 1.05 means: reject only if quick_score is >5% worse than best.
-    Anything within noise (or any improvement, however small) proceeds to full bench.
-
-    Full bench runs `full_repeats` times; the run with the MIN composite is used
-    as the authoritative measurement (filters transient noise from parallel loops).
-
-    Returns (result, tier) where tier in: "rejected", "full", "failed".
-    """
     quick = run_bench(algo, fast=True)
     if quick is None:
         return None, "failed"
@@ -383,10 +309,6 @@ def run_bench_tiered(
 
     return full, "full"
 
-
-# ---------------------------------------------------------------------------
-# Purity gate
-# ---------------------------------------------------------------------------
 
 def check_purity(code: str) -> str | None:
     if str(REPO_ROOT) not in sys.path:
@@ -413,10 +335,6 @@ def check_purity(code: str) -> str | None:
                 return f"Not-allowlisted import: {m!r}"
     return None
 
-
-# ---------------------------------------------------------------------------
-# Staleness detection - AST of target function only
-# ---------------------------------------------------------------------------
 
 def fn_ast_dump(code: str, fn_name: str) -> str:
     try:
@@ -452,18 +370,7 @@ def is_stale(candidate: str, baseline: str, recent_asts: list[str], fn: str, who
     return cand_ast in recent_asts
 
 
-# ---------------------------------------------------------------------------
-# Hypothesis management
-# ---------------------------------------------------------------------------
-
 def next_hypothesis(attempts: dict, limit: int, allow_widen: bool) -> dict | None:
-    """Pick first hypothesis that hasn't used up its attempt quota.
-
-    Every iteration on a hypothesis counts as 1 attempt, regardless of outcome
-    (win, slow reject, purity fail, stale, timeout, correctness drift, error).
-    When attempts[h] >= limit, the hypothesis is locked out for the current
-    baseline. A WIN resets all attempts to 0 (new baseline gets fresh budget).
-    """
     for h in HYPOTHESIS_TYPES:
         name = h["name"]
         if name == "scope_widen" and not allow_widen:
@@ -477,10 +384,6 @@ def next_hypothesis(attempts: dict, limit: int, allow_widen: bool) -> dict | Non
 def fresh_attempts() -> dict:
     return {h["name"]: 0 for h in HYPOTHESIS_TYPES}
 
-
-# ---------------------------------------------------------------------------
-# LLM - clean room prompt
-# ---------------------------------------------------------------------------
 
 def get_env_manifest() -> str:
     try:
@@ -521,7 +424,7 @@ def build_prompt(
 ## Environment
 {env_manifest}
 
-## Proven baseline - graphstore/algos/{algo}.py
+## Proven baseline - supergraph/algos/{algo}.py
 ```python
 {baseline_code}
 ```
@@ -540,15 +443,7 @@ Return the complete file. No markdown. No explanation.
 
 
 def get_llm_proposal(prompt: str, config: dict) -> tuple[str, str, str]:
-    """Call LLM with provider → model fallback chain.
-
-    Order tried: active_provider/active_model → model_fallback_order on same provider
-                 → provider_fallback_order with each provider's models.
-
-    Returns (extracted_code, model_used, raw_response).
-    """
-    import re as _re
-    from graphstore.llm_runner import LLMRunner
+    from supergraph.llm_runner import LLMRunner
     from tools.autoresearch.providers import resolve_providers
 
     runner = LLMRunner(resolve_providers(config), timeout_s=800)
@@ -557,7 +452,6 @@ def get_llm_proposal(prompt: str, config: dict) -> tuple[str, str, str]:
     if not raw_response.strip():
         raise RuntimeError("All providers/models failed: empty response")
 
-    # Extract code: markdown fences, then trim leading prose.
     new_code = raw_response
     if "```python" in new_code:
         new_code = new_code.split("```python")[1].split("```")[0].strip()
@@ -580,26 +474,16 @@ def get_llm_proposal(prompt: str, config: dict) -> tuple[str, str, str]:
     return new_code, model, raw_response
 
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
-
 def log_result(algo: str, entry: dict):
     with open(log_path(algo), "a") as f:
         f.write(json.dumps(entry, default=str) + "\n")
 
 
-# ---------------------------------------------------------------------------
-# Main loop
-# ---------------------------------------------------------------------------
-
 def _apply_overrides(config: dict, model_override: str | None, provider_override: str | None) -> dict:
-    """Inject CLI overrides onto the loaded config (in-memory, non-persistent)."""
     if provider_override:
         config["active_provider"] = provider_override
     if model_override:
         config["active_model"] = model_override
-        # Auto-pick the provider that owns this model if provider wasn't also overridden
         if not provider_override:
             for pid, p in config.get("providers", {}).items():
                 if model_override in p.get("models", {}):
@@ -609,7 +493,6 @@ def _apply_overrides(config: dict, model_override: str | None, provider_override
 
 
 def _validate_overrides(config: dict, model_override: str | None, provider_override: str | None):
-    """Fail fast if overrides point at unknown provider/model."""
     providers = config.get("providers", {})
     if provider_override and provider_override not in providers:
         available = list(providers.keys())
@@ -660,7 +543,6 @@ def run_loop(
     env_manifest = get_env_manifest()
     program_text = PROGRAM_FILE.read_text() if PROGRAM_FILE.exists() else ""
 
-    # --- Restore or initialise checkpoint ---
     restored = load_checkpoint(algo)
     if restored and _checkpoint.get("baseline_code"):
         baseline_code = _checkpoint["baseline_code"]
@@ -696,7 +578,6 @@ def run_loop(
 
     timeout_count = 0
 
-    # iterations_override is a relative count from wherever we resume
     stop_at = (start_iter + iterations_override - 1) if iterations_override else None
 
     for i in range(start_iter, start_iter + 10_000):
@@ -714,12 +595,6 @@ def run_loop(
             print(f"\nReached max_iterations={max_iterations}. Done.")
             break
 
-        # Re-measure baseline every 10 iters (drift control).
-        # CRITICAL: best_score is MONOTONIC - drift refresh may only *tighten* it.
-        # If the fresh measurement is worse, it's noise (CPU contention, GC, etc),
-        # not a real regression in baseline_code. We keep the stored best so that
-        # candidates are judged against the tightest valid measurement of the current
-        # baseline code, preventing false wins from noise-inflated baselines.
         if i - baseline_measured_at >= 10:
             print(f"  [drift control] Re-measuring baseline (min of {full_bench_repeats})...")
             fresh = run_bench_repeated(algo, fast=False, repeats=full_bench_repeats)
@@ -737,7 +612,6 @@ def run_loop(
 
         attempts_per_hypothesis = int(config.get("attempts_per_hypothesis", 3))
 
-        # Pick hypothesis
         hypothesis = next_hypothesis(attempts, attempts_per_hypothesis, allow_widen)
         if hypothesis is None:
             exhausted_names = [h["name"] for h in HYPOTHESIS_TYPES
@@ -751,7 +625,6 @@ def run_loop(
                       f"each of: {exhausted_names}. {algo} locally optimal.")
             break
 
-        # Clear recent_asts on hypothesis switch (avoids cross-hypothesis stale contamination)
         if hypothesis["name"] != last_hypothesis:
             if recent_asts:
                 print(f"  Hypothesis switched {last_hypothesis!r} → {hypothesis['name']!r} - clearing recent_asts")
@@ -759,7 +632,7 @@ def run_loop(
             last_hypothesis = hypothesis["name"]
 
         active_model = config.get("active_model", "")
-        used_model = active_model  # updated after successful LLM call
+        used_model = active_model
         noise_tolerance = float(config.get("noise_tolerance", 1.05))
 
         bottleneck_metric = identify_bottleneck(baseline_result)
@@ -775,7 +648,6 @@ def run_loop(
         signal.alarm(iteration_timeout)
 
         try:
-            # Build clean-room prompt
             prompt = build_prompt(
                 baseline_code, bottleneck_fn_name, bottleneck_us, total_us,
                 hypothesis, algo, env_manifest, program_text,
@@ -789,7 +661,6 @@ def run_loop(
             def _bump_attempt():
                 attempts[h_name] = attempts.get(h_name, 0) + 1
 
-            # Purity gate
             purity_err = check_purity(candidate)
             if purity_err:
                 _bump_attempt()
@@ -804,8 +675,6 @@ def run_loop(
                 })
                 continue
 
-            # Correctness gate - candidate must produce the same output as
-            # baseline on deterministic test inputs. Drift = attempt failure.
             from tools.autoresearch.correctness import check_correctness
             correctness_err = check_correctness(candidate, baseline_code, algo)
             if correctness_err:
@@ -821,7 +690,6 @@ def run_loop(
                 })
                 continue
 
-            # AST staleness gate - scope_widen compares whole file (helpers may change)
             use_whole_file = h_name == "scope_widen"
             if is_stale(candidate, baseline_code, recent_asts, bottleneck_fn_name, whole_file=use_whole_file):
                 _bump_attempt()
@@ -841,7 +709,6 @@ def run_loop(
             else:
                 recent_asts = (recent_asts + [fn_ast_dump(candidate, bottleneck_fn_name)])[-3:]
 
-            # Isolated bench - baseline always restored in finally
             result = None
             tier = "failed"
             try:
@@ -867,7 +734,6 @@ def run_loop(
             }
 
             if score < best_score and result is not None and tier != "failed":
-                # WIN - reset all attempts, new baseline gets fresh budget
                 entry["result"] = "win"
                 print(f"  WIN: {score:.2f} us via {h_name} on {bottleneck_fn_name}")
                 baseline_code = candidate
@@ -880,7 +746,6 @@ def run_loop(
                 recent_asts = []
                 print(f"  Baseline promoted. Attempts reset.")
             else:
-                # Non-win: 1 attempt consumed. Any outcome counts the same.
                 _bump_attempt()
                 if result is None or tier == "failed":
                     entry["result"] = "bench_failed"
@@ -896,7 +761,6 @@ def run_loop(
             history.append(entry)
             log_result(algo, entry)
 
-            # Unlock scope_widen when all standard hypotheses have been fully attempted
             all_standard_done = all(
                 attempts.get(h["name"], 0) >= attempts_per_hypothesis
                 for h in HYPOTHESIS_TYPES if h["name"] != "scope_widen"
