@@ -109,7 +109,6 @@ class TestSysReembed:
         g.execute('CREATE NODE "a" kind = "chunk" summary = "hello world"')
         # Manually embed to initialize vector store with correct dims
         if g._embedder:
-            import numpy as np
             vec = g._embedder.encode_documents(["hello world"])[0]
             g._ensure_vector_store(len(vec))
             slot = g._executor._resolve_slot("a")

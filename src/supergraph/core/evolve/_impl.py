@@ -6,7 +6,6 @@ import json
 import time
 import logging
 import warnings
-import weakref
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)

@@ -43,7 +43,7 @@ class TraversalHandlers:
         # an entry only if BOTH its source and target are visible. For a
         # CSR, the cheapest way is to element-multiply a mask column
         # after a row-slice. scipy.sparse handles the broadcasting.
-        from scipy.sparse import csr_matrix, diags
+        from scipy.sparse import diags
         d = diags(live_mask.astype(np.float32))
         # d @ M @ d: rows filtered by visibility then cols filtered. Cast
         # back to CSR since BFS expects the indices/indptr layout.

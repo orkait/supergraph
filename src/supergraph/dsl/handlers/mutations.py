@@ -2,17 +2,14 @@
 
 import logging
 import time
-from collections import deque
 
 logger = logging.getLogger(__name__)
 
 import numpy as np
-from scipy.sparse import csr_matrix
 
 from supergraph.dsl.handlers._registry import handles
 from supergraph.dsl.ast_nodes import (
     Batch,
-    ConnectNode,
     CreateEdge,
     CreateNode,
     DeleteNode,
@@ -502,7 +499,6 @@ class MutationHandlers:
                         fallback_mask[int(slot_idx)] = True
                 mask = fallback_mask
 
-        update_data = {fp.name: fp.value for fp in q.fields}
         matching_slots = np.nonzero(mask)[0]
         now_ms = int(time.time() * 1000)
 
@@ -611,7 +607,6 @@ class MutationHandlers:
                     continue
                 if self.store.columns._presence[field][tgt_slot]:
                     continue
-                dtype = self.store.columns._dtypes[field]
                 raw = self.store.columns._columns[field][src_slot]
                 self.store.columns._columns[field][tgt_slot] = raw
                 self.store.columns._presence[field][tgt_slot] = True

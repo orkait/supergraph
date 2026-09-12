@@ -45,7 +45,7 @@ __all__ = [
     "CeilingExceeded", "VersionMismatch", "SchemaError",
     "CostThresholdExceeded", "BatchRollback", "AggregationError",
     "VectorError", "EmbedderRequired", "VectorNotFound",
-    "StoreInUse",
+    "OptimizationInProgress", "StoreInUse",
     "DEFAULT_CEILING_BYTES",
     "SuperGraphConfig", "load_config", "save_config",
     "CoreConfig", "VectorConfig", "DocumentConfig", "DslConfig",

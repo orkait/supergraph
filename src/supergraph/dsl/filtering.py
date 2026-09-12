@@ -1,7 +1,6 @@
 """WHERE evaluation, column acceleration, and index helpers."""
 
 import re
-import threading
 from functools import lru_cache
 
 import numpy as np

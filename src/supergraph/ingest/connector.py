@@ -1,6 +1,5 @@
 """Auto-wire cross-document relationships via vector similarity."""
 import logging
-import numpy as np
 from supergraph.core.types import Result
 
 logger = logging.getLogger(__name__)

@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import itertools
 
-import pytest
 
-from supergraph.query.filters import F, compile_where
+from supergraph.query.filters import F
 from supergraph.query.escape import dsl_literal
 
 

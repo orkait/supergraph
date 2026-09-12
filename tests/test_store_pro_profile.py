@@ -15,7 +15,7 @@ import pytest
 from supergraph import SuperGraph
 from supergraph.pro import (
     CalibrationCache, CalibrationEntry, HostSnapshot, ProSpec,
-    ProCalibrationMissing, ProExtraNotInstalled, ProUnsupportedHostError,
+    ProCalibrationMissing, ProExtraNotInstalled,
 )
 
 
@@ -274,7 +274,6 @@ class TestCreateBonsaiFactory:
         class _FakeCache:
             repos = [_FakeRepo()]
 
-        from huggingface_hub import scan_cache_dir as _real
         monkeypatch.setattr(
             "huggingface_hub.scan_cache_dir", lambda: _FakeCache(),
         )

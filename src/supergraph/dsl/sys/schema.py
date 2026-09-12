@@ -6,21 +6,10 @@ via @handles_sys(AstType). Composed into SystemExecutor as a mixin.
 
 from __future__ import annotations
 
-import time
 import logging
 
-import numpy as np
 
-from supergraph.core.errors import SuperGraphError, NodeNotFound
-from supergraph.core.memory import estimate as estimate_memory
 from supergraph.core.types import Result
-from supergraph.dsl.ast_nodes import (
-    Condition,
-    MatchQuery,
-    NodesQuery,
-    TraverseQuery,
-)
-from supergraph.dsl.cost_estimator import estimate_match_cost, estimate_traverse_cost
 
 logger = logging.getLogger(__name__)
 

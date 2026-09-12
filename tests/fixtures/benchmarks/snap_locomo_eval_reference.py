@@ -5,7 +5,6 @@ import unicodedata
 from typing import List
 import numpy as np
 from collections import Counter
-import os
 # NOTE (vendored copy): top-level `from bert_score import score` moved into
 # bert_score() body so parity tests that exercise only f1_score/f1/normalize
 # don't need torch + bert_score installed. Scoring functions unchanged.

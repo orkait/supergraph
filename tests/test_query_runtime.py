@@ -1,7 +1,7 @@
 """Query object: modifiers, pipe, batch compose, immutability."""
 import pytest
 
-from supergraph import q, F, Query
+from supergraph import q, F
 
 
 class TestImmutability:

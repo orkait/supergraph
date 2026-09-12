@@ -5,7 +5,6 @@ The caller (core/optimizer.py) applies the plan to mutable state.
 """
 
 import numpy as np
-from scipy.sparse import csr_matrix
 
 __all__ = [
     "build_live_mask",

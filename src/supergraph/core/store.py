@@ -1193,7 +1193,7 @@ class CoreStore:
 
 # Module-level dataclass: out of the class so other code can import the type
 # for annotations without pulling in the heavy CoreStore import path.
-from dataclasses import dataclass, field as _field
+from dataclasses import dataclass
 from typing import Any as _Any
 
 

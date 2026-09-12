@@ -87,10 +87,7 @@ def bidirectional_bfs(
                 matrix_t, bwd_frontier, bwd_parent, bwd_dist, step,
             )
 
-        # Meeting points: slots visited by both sides.
-        both = (fwd_parent >= -1) & (fwd_parent != -1) & (bwd_parent != -1)
-        # The first guard (>=-1) is a tautology on int64 but kept explicit;
-        # what we need is "not unvisited", i.e. != -1.
+        # Meeting points: slots visited by both sides. -1 means unvisited.
         both = (fwd_parent != -1) & (bwd_parent != -1)
         if both.any():
             meeting_slots = np.nonzero(both)[0]

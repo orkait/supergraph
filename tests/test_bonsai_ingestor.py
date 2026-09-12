@@ -16,7 +16,6 @@ from supergraph.bonsai_ingestor import (
     ParsedTurn,
     FactState,
     IngestEmpty,
-    IngestOverflow,
     IngestResult,
     _dedupe_upserts,
     _dsl_escape,

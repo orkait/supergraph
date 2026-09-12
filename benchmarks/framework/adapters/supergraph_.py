@@ -21,10 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
 from supergraph import SuperGraph, __version__ as _GS_VERSION
-from supergraph.core.errors import NodeExists
 
 from .base import QueryContext, QueryResult, Session, TimedOperation
 from ..entity_extraction import build_entity_extractor

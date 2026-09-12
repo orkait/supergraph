@@ -1,6 +1,6 @@
 """Ingestor protocol and data types."""
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from supergraph.algos.chunker import Chunk  # noqa: F401 - re-export
 

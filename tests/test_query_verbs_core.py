@@ -5,7 +5,7 @@ parser to prove the output is syntactically valid.
 """
 import pytest
 
-from supergraph import q, F
+from supergraph import q
 from supergraph.dsl.parser import parse
 
 

@@ -5,7 +5,6 @@ from supergraph.algos.chunker import (
     chunk_by_heading,
     chunk_by_paragraph,
     chunk_fixed,
-    make_summary as _make_summary,
 )
 
 __all__ = [

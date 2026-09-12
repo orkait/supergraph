@@ -11,7 +11,7 @@ implemented as a pure numpy/scipy operation.
 """
 
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 

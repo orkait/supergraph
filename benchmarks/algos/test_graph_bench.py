@@ -1,7 +1,5 @@
 """Graph algorithm micro-benchmarks."""
 
-import numpy as np
-import pytest
 
 from supergraph.algos.graph import (
     bfs_traverse,

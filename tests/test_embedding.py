@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-from supergraph.embedding.base import Embedder
 from supergraph.embedding.model2vec_embedder import Model2VecEmbedder
 from supergraph.embedding.postprocess import l2_normalize, truncate_dims
 

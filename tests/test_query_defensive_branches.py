@@ -7,9 +7,8 @@ import pytest
 
 from supergraph import q, F, P, agg, Time, EvolveWhen, EvolveThen, Query
 from supergraph.query.filters import F as _F, _Leaf, _Degree
-from supergraph.query.runtime import _COMPILERS
 from supergraph.query.escape import dsl_field_ref, dsl_variable, dsl_node_ref
-from supergraph.query.time_expr import TimeExpr, Time as _Time
+from supergraph.query.time_expr import Time as _Time
 
 
 # -- F algebra defensive paths ---------------------------------------------

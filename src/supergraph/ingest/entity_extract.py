@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import json
 from dataclasses import dataclass
@@ -129,7 +130,10 @@ def _get_extractor(model_dir: str | Path, max_length: int):
             sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 
         session = ort.InferenceSession(str(onnx_path), sess_options=sess_options, providers=providers)
-        print(f"  [NER] Model loaded. Provider: {session.get_providers()[0]} threads={profile.ner_threads}")
+        logging.getLogger(__name__).info(
+            "NER model loaded: provider=%s threads=%s",
+            session.get_providers()[0], profile.ner_threads,
+        )
         input_names = {i.name for i in session.get_inputs()}
 
         _extractors[key] = {

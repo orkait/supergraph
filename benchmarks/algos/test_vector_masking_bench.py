@@ -1,8 +1,6 @@
 import timeit
 import numpy as np
 from usearch.index import Index
-import sys
-import os
 
 # Mock VectorStore search with and without adaptive mask
 def bench_vector_masking():

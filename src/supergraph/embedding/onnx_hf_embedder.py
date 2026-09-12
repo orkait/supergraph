@@ -209,8 +209,11 @@ def _resolve_providers(providers: list[str] | str | None) -> list[str]:
     if any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in wanted):
         _preload_cu12_libs()
 
+    # Result is intentionally discarded: this call is what makes onnxruntime
+    # dlopen its provider plugins, so it validates the preload above. We do not
+    # filter on it - see the next comment.
     import onnxruntime as ort
-    available = set(ort.get_available_providers())
+    ort.get_available_providers()
 
     # Do not drop providers here. Keep everything wanted.
     resolved = list(wanted)

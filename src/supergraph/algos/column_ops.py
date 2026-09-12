@@ -5,7 +5,7 @@ conditions and recursive AND/OR/NOT trees given raw column data and
 presence bitmasks. No supergraph imports.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import numpy as np
 

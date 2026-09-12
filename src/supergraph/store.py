@@ -2,7 +2,6 @@
 
 import os
 import time
-import sqlite3
 import logging
 from contextlib import contextmanager
 from pathlib import Path
@@ -501,7 +500,6 @@ class SuperGraph:
                 "build an ingestor that would crash. shortfalls: "
                 + "; ".join(self._pro_resolved.shortfalls)
             )
-        from supergraph.pro import _DEFAULT_CACHE_DIR  # type: ignore[attr-defined]
         from supergraph.bonsai_ingestor import (
             BonsaiIngestor,
             _DEFAULT_LITE_PROMPT_PATH, _DEFAULT_PROMPT_PATH,
@@ -1031,7 +1029,6 @@ class SuperGraph:
                 path=vector_path
             )
 
-        import collections
         self._counters = {
             "execute_ok": 0,
             "execute_err": 0,

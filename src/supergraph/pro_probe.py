@@ -35,16 +35,14 @@ from __future__ import annotations
 import gc
 import logging
 import os
-import shutil
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Callable, Iterable
 
 from supergraph.pro import (
-    CalibrationCache, CalibrationEntry, HostSnapshot, ProSpec,
-    _DEFAULT_CACHE_DIR,
+    CalibrationCache, CalibrationEntry, HostSnapshot, _DEFAULT_CACHE_DIR,
     _EXTRA_EMBED_BATCH, _EXTRA_N_CTX_DEFAULT, _EXTRA_N_CTX_MAX,
     _EXTRA_N_CTX_MIN, _EXTRA_N_BATCH, _EXTRA_RERANKER_MAX,
 )
@@ -433,8 +431,9 @@ class FastembedProbe(Probe):
             raise RuntimeError(
                 "fastembed not installed; pip install 'supergraph[embedders-extra]'"
             ) from e
-        # First instantiation pulls the model.
-        emb = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        # First instantiation pulls the model. The instance is not needed; the
+        # download is the point.
+        TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
         # Best-effort disk size from huggingface_hub cache scan.
         try:
             from huggingface_hub import scan_cache_dir
@@ -630,7 +629,6 @@ class BonsaiProbe(Probe):
             )
 
         rss_baseline = _process_rss_mb()
-        vram_baseline = _vram_free_mb()
 
         gs = SuperGraph(embedder=None)
         try:

@@ -1,18 +1,12 @@
 """Intelligence handlers: RECALL, SIMILAR, LEXICAL SEARCH, WHAT IF."""
 
-import re
 import time
-from collections import deque
 
 import numpy as np
-from scipy.sparse import csr_matrix
 
 from supergraph.algos.fusion import (
-    normalize_bm25 as _algo_normalize_bm25,
     recency_decay as _algo_recency_decay,
     rrf_remember_fusion as _algo_rrf_fusion,
-    temporal_proximity as _algo_temporal_proximity,
-    weighted_remember_fusion as _algo_weighted_fusion,
 )
 from supergraph.algos.spreading import (
     spreading_activation as _algo_spreading_activation,

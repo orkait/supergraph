@@ -61,7 +61,6 @@ class CronScheduler:
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
-            self._thread = None
         if self._tick_conn is not None:
             try:
                 self._tick_conn.close()

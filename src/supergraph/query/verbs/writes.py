@@ -251,7 +251,7 @@ register_compiler("upsert_node", _compile_upsert_node)
 # ---------- DELETE NODES --------------------------------------------------
 # delete_nodes: "DELETE" "NODES" where_clause
 
-from supergraph.query.filters import F, compile_where
+from supergraph.query.filters import compile_where
 
 
 def delete_nodes(*, where) -> Query:

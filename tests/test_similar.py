@@ -2,7 +2,6 @@
 import numpy as np
 import pytest
 from supergraph import SuperGraph
-from supergraph.core.errors import NodeNotFound
 
 
 class TestSimilarToByVector:

@@ -1,6 +1,5 @@
 """Fusion primitives micro-benchmarks."""
 
-import numpy as np
 
 from supergraph.algos.fusion import (
     normalize_bm25,

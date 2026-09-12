@@ -6,9 +6,7 @@ Total: ~100MB, gitignored under tests/fixtures/
 """
 
 import json
-import os
 import ssl
-import sys
 import urllib.request
 from pathlib import Path
 

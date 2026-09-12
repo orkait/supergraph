@@ -1,5 +1,4 @@
 """Tests for sentence-level query expansion."""
-import pytest
 from supergraph import SuperGraph
 from supergraph.algos.sentence_split import split_sentences
 

@@ -142,7 +142,7 @@ def cmd_vision(args: argparse.Namespace) -> None:
     """Manage the local vision sidecar (start/stop/status/logs/pull)."""
     try:
         from supergraph.ingest import vision_sidecar as vs
-    except ImportError as e:
+    except ImportError:
         print(
             "Missing dependencies. Install with:\n"
             "  pip install 'supergraph[vision]'",

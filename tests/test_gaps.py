@@ -1,7 +1,6 @@
 """Tests for the 4 summary.md gaps: lexical recall, vision ingest, blob lifecycle, section hierarchy."""
 
 import time
-import pytest
 from unittest.mock import patch, MagicMock
 
 from supergraph import SuperGraph

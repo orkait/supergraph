@@ -6,7 +6,6 @@ secondary indices, and tombstones.
 """
 
 import os
-import json
 from pathlib import Path
 from urllib.parse import unquote
 

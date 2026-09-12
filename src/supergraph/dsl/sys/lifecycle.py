@@ -11,16 +11,11 @@ import logging
 
 import numpy as np
 
-from supergraph.core.errors import SuperGraphError, NodeNotFound
-from supergraph.core.memory import estimate as estimate_memory
+from supergraph.core.errors import SuperGraphError
 from supergraph.core.types import Result
 from supergraph.dsl.ast_nodes import (
     Condition,
-    MatchQuery,
-    NodesQuery,
-    TraverseQuery,
 )
-from supergraph.dsl.cost_estimator import estimate_match_cost, estimate_traverse_cost
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +147,6 @@ class SysLifecycleHandlers:
 
         # Apply optional WHERE filter (kind filter)
         if q.where:
-            from supergraph.dsl.executor import Executor
             kind_filter = None
             expr = q.where.expr
             if isinstance(expr, Condition) and expr.field == "kind" and expr.op == "=":
@@ -449,7 +443,7 @@ class SysLifecycleHandlers:
     def _optimize(self, q: SysOptimize) -> Result:
         """SYS OPTIMIZE: run optimization operations under exclusive lock."""
         from supergraph.core.optimizer import (
-            optimize_all, compact_tombstones, compact_tombstones_safe,
+            optimize_all, compact_tombstones_safe,
             gc_strings, defrag_edges, cleanup_vectors, sweep_orphans, clear_caches,
         )
         target = q.target

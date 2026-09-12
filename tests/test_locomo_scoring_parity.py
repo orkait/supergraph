@@ -120,7 +120,6 @@ def test_temporal_semicolon_split_gold():
 
 def test_multihop_comma_split_golds():
     """Cat 1 must use np.mean of per-gold max-over-preds F1."""
-    import numpy as np
     pred = "alice, bob"
     gold = "alice, bob, carol"
     ours = compute_f1(pred, gold, category=1)

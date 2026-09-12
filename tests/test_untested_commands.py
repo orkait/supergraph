@@ -2,7 +2,6 @@
 import tempfile
 import pytest
 from supergraph import SuperGraph
-from supergraph.core.store import CoreStore
 
 
 class TestWeightedShortestPath:

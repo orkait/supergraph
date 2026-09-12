@@ -1,6 +1,5 @@
 """Tests for the intelligent log layer: auto-tagging, trace binding, SYS LOG."""
 import logging
-import pytest
 from supergraph import SuperGraph
 from supergraph.dsl.tagger import infer_tag, infer_phase
 from supergraph.dsl.parser import parse

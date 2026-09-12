@@ -19,7 +19,7 @@ Bench: same query side as `supergraph_.py`; only `ingest()` differs.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 

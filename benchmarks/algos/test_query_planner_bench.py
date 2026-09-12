@@ -1,8 +1,6 @@
 import timeit
 import numpy as np
 from scipy.sparse import csr_matrix
-import sys
-import os
 
 def bench_query_planning_logic():
     N = 1000000

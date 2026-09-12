@@ -1075,17 +1075,9 @@ class DSLTransformer(Transformer):
 
     def sys_contradictions(self, args):
         where = self._find(args, WhereClause)
-        # The last two args are IDENTIFIER tokens: field, group_by
-        identifiers = [str(a) for a in args if isinstance(a, str) and not isinstance(a, Token)]
-        # Actually, IDENTIFIER tokens are strings after transformation
-        # Filter out WhereClause and collect remaining string identifiers
-        idents = []
-        for a in args:
-            if isinstance(a, WhereClause):
-                continue
-            if isinstance(a, (str, Token)) and not isinstance(a, WhereClause):
-                idents.append(str(a))
-        # idents should be [field, group_by_field]
+        # IDENTIFIER tokens arrive as plain strings; the two that survive the
+        # WhereClause filter are [field, group_by].
+        idents = [str(a) for a in args if not isinstance(a, WhereClause)]
         field = idents[0] if len(idents) >= 1 else ""
         group_by = idents[1] if len(idents) >= 2 else ""
         return SysContradictions(where=where, field=field, group_by=group_by)

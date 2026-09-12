@@ -1,6 +1,5 @@
 """Tests for vault module: parser, manager, sync."""
 import pytest
-from pathlib import Path
 
 from supergraph.vault.parser import (
     parse_frontmatter, parse_sections, extract_wikilinks,

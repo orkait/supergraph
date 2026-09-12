@@ -9,9 +9,7 @@ from __future__ import annotations
 import time
 import logging
 
-import numpy as np
 
-from supergraph.core.errors import SuperGraphError, NodeNotFound
 from supergraph.core.memory import estimate as estimate_memory
 from supergraph.core.types import Result
 from supergraph.dsl.ast_nodes import (

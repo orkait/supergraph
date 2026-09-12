@@ -1,6 +1,6 @@
 """IngestorRegistry - pluggable extension-to-ingestor routing."""
 from pathlib import Path
-from supergraph.ingest.base import Ingestor, IngestResult
+from supergraph.ingest.base import Ingestor
 
 
 _BUILTIN_EXT_MAP: dict[str, str] = {

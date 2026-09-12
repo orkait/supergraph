@@ -1,7 +1,6 @@
 """Unit tests for supergraph.columns.ColumnStore."""
 
 import numpy as np
-import pytest
 
 from supergraph.core.columns import ColumnStore
 from supergraph.core.strings import StringTable

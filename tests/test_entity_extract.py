@@ -1,10 +1,8 @@
 """Tests for ONNX entity extraction and co-reference resolution."""
-import pytest
 from supergraph.ingest.entity_extract import (
-    extract_entities, CoReferenceResolver, Entity, _get_extractor
+    extract_entities, CoReferenceResolver
 )
 
-import os
 from pathlib import Path
 
 MODEL_DIR = Path(__file__).parent.parent / "models" / "tinybert-ner"

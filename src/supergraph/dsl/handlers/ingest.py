@@ -1,11 +1,9 @@
 """Ingest and connect handlers for the DSL executor."""
 
-import time
 import hashlib
 import logging
 from pathlib import Path as _Path
 
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +34,7 @@ class IngestHandlers:
     @handles(IngestStmt, write=True)
     def _ingest(self, q: IngestStmt) -> Result:
         """INGEST: parse file, chunk, create graph nodes + edges, store documents."""
-        from supergraph.ingest.router import ingest_file, EXTENSION_MAP
+        from supergraph.ingest.router import ingest_file
         import os as _os
 
         resolved = _Path(q.file_path).resolve()
@@ -206,7 +204,6 @@ class IngestHandlers:
         entity_score_threshold = getattr(self, '_entity_score_threshold', 0.6)
         entity_max_length = getattr(self, '_entity_max_length', 256)
 
-        t0 = time.monotonic()
         entity_seen: dict[str, str] = {}  # slug -> display_name
 
         # Pre-batch NER across all chunks (1 ONNX run instead of N)

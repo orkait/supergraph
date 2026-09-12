@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 from supergraph import SuperGraph
 from supergraph.core.compressed_edges import CompressedEdgeMatrix

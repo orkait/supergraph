@@ -7,15 +7,14 @@
 # Build:   docker build --cpus=8 --memory=16g -t supergraph:latest .
 # Run:     docker run --cpus=8 --memory=16g -p 7200:7200 -v gs-data:/data supergraph:latest
 #
-# Override the version with --build-arg SUPERGRAPH_VERSION=0.6.0 to pin
-# the wheel; default tracks the latest published release.
-
-ARG SUPERGRAPH_VERSION=0.6.0
+# Built FROM LOCAL SOURCE. It used to install `supergraph[playground]==<ver>`
+# from PyPI, which cannot work: the distribution is named supergraph only from
+# 0.7.0 and has never been published under that name. Source keeps this file
+# buildable from any checkout and matches Dockerfile.cloud-cpu.
 
 # ----- builder ------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS builder
 
-ARG SUPERGRAPH_VERSION
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1
@@ -25,8 +24,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install into /install so the runtime stage can copy it as one layer.
-RUN pip install --prefix=/install \
-        "supergraph[playground]==${SUPERGRAPH_VERSION}"
+WORKDIR /src
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --prefix=/install ".[playground]"
 
 # ----- runtime ------------------------------------------------------------
 FROM python:3.12-slim-bookworm

@@ -21,7 +21,6 @@ import argparse
 import ast
 import json
 import math
-import os
 import signal
 import subprocess
 import sys
@@ -547,7 +546,6 @@ def get_llm_proposal(prompt: str, config: dict) -> tuple[str, str, str]:
 
     Returns (extracted_code, model_used, raw_response).
     """
-    import re as _re
     from supergraph.llm_runner import LLMRunner
     from tools.autoresearch.providers import resolve_providers
 

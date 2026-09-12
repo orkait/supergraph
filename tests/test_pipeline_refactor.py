@@ -1,5 +1,4 @@
 """Integration tests for pipeline refactoring."""
-import pytest
 from supergraph import SuperGraph
 
 

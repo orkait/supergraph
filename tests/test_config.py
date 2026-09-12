@@ -5,9 +5,7 @@ import msgspec
 import pytest
 
 from supergraph.config import (
-    SuperGraphConfig, CoreConfig, VectorConfig, RetentionConfig,
-    PersistenceConfig, DslConfig, VaultConfig, ServerConfig,
-    load_config, save_config, merge_kwargs,
+    SuperGraphConfig, CoreConfig, load_config, save_config, merge_kwargs,
 )
 from supergraph import SuperGraph
 

@@ -939,7 +939,7 @@ def _synthesize_dsl(
     from supergraph.entity_resolver import (
         EDGE_REFERS_TO, KIND_ENTITY, KIND_MENTION,
         make_entity_id, make_mention_id,
-        resolve_and_create_entity, resolve_mention,
+        resolve_and_create_entity,
     )
 
     out: list[str] = []

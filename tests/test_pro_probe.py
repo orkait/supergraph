@@ -5,10 +5,7 @@ covered by tests/test_pro_probe_live.py (skipped by default).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import patch
 
-import pytest
 
 from supergraph import pro_probe
 from supergraph.pro import (

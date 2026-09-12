@@ -1,6 +1,5 @@
 """Test that node kinds > 255 survive checkpoint/reload."""
 import tempfile
-from pathlib import Path
 from supergraph import SuperGraph
 
 

@@ -1,6 +1,6 @@
 """Tests for ingestion protocol and chunker."""
 import pytest
-from supergraph.ingest.base import Chunk, IngestResult, Ingestor, ExtractedImage
+from supergraph.ingest.base import IngestResult, Ingestor, ExtractedImage
 from supergraph.ingest.chunker import chunk_by_heading, chunk_by_paragraph, chunk_fixed, _make_summary
 
 

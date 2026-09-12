@@ -12,8 +12,6 @@ grammar grows a new verb without a builder, this test fails loud.
 """
 from __future__ import annotations
 
-import re
-from pathlib import Path
 
 import pytest
 

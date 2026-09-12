@@ -10,10 +10,10 @@ mutated.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
-from supergraph.query.filters import F, compile_where
+from supergraph.query.filters import F
 
 if TYPE_CHECKING:
     from supergraph.store import SuperGraph

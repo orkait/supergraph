@@ -3,7 +3,7 @@
 import numpy as np
 
 from supergraph.dsl.handlers._registry import handles
-from supergraph.dsl.ast_nodes import AggFunc, AggregateQuery
+from supergraph.dsl.ast_nodes import AggregateQuery
 from supergraph.core.types import Result
 from supergraph.core.errors import AggregationError
 

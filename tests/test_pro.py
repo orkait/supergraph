@@ -6,17 +6,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import msgspec
 
 from supergraph.pro import (
     CalibrationCache, CalibrationEntry,
-    HostSnapshot, ProSpec, ResolvedConfig,
-    ProCalibrationMissing, ProExtraNotInstalled, ProUnsupportedHostError,
-    check_extras_installed, resolve,
+    HostSnapshot, ProSpec, ProExtraNotInstalled, check_extras_installed, resolve,
 )
 
 

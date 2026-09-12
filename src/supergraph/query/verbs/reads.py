@@ -1,7 +1,6 @@
 """Read-verb builders. Clause order in compilers matches grammar.lark."""
 from __future__ import annotations
 
-from typing import Any
 
 from supergraph.query.escape import dsl_literal, dsl_node_id
 from supergraph.query.filters import F, compile_where

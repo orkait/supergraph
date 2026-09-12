@@ -1,5 +1,4 @@
 """Test that REMEMBER uses confidence, recall frequency, and recency."""
-import time
 import numpy as np
 from supergraph import SuperGraph
 from supergraph.embedding.base import Embedder

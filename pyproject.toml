@@ -68,6 +68,9 @@ dev = [
     # if they want entity extraction.
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
+    # Dead-code gate, see [tool.ruff]. Must live here and not only in
+    # [dependency-groups] because CI installs the extra, not the uv group.
+    "ruff>=0.16",
 ]
 embedders-extra = [
     "fastembed>=0.8",
@@ -184,6 +187,24 @@ include = ["supergraph*"]
 "supergraph.query" = ["py.typed"]
 "supergraph.dsl"   = ["*.lark"]
 
+[tool.ruff]
+# Dead-code gate. Before this existed the library carried 116 unused imports
+# and unused locals, including a function imported into the REMEMBER handler
+# and never called, and a variable assigned twice in a row in the BFS.
+target-version = "py310"
+extend-exclude = ["models", "dist", "docs", "website", "apps", ".venv"]
+
+[tool.ruff.lint]
+# Deliberately narrow. This is a regression gate, not a style migration -
+# widening it would produce thousands of findings and get switched off.
+select = ["F401", "F841"]
+
+[tool.ruff.lint.per-file-ignores]
+# In a test, `r = call()` is often there for the call; ruff's F841 fix would
+# delete the statement and with it the assertion's subject.
+"tests/*" = ["F841"]
+"benchmarks/*" = ["F841"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # -n 4: 4 xdist workers. With the 2-thread BLAS cap set in conftest.py
@@ -234,4 +255,5 @@ dev = [
     "pytest-cov>=7.0.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
+    "ruff>=0.16.7",
 ]

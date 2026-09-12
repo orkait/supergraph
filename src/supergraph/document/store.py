@@ -3,7 +3,6 @@
 import sqlite3
 import tempfile
 import os
-from pathlib import Path
 
 from supergraph.algos.text import fts5_sanitize as _sanitize_fts5_query
 

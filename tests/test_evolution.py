@@ -4,7 +4,6 @@ All 27 spec test cases plus infrastructure tests for Step 1 counter setup.
 Written first (RED phase) - all should fail until implementation is complete.
 """
 import time
-import sqlite3
 import warnings
 import pytest
 

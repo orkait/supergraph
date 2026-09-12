@@ -36,7 +36,7 @@ import asyncio
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
 

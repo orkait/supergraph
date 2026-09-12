@@ -6,9 +6,8 @@ because they carry their own sub-verb trees.
 """
 from __future__ import annotations
 
-from typing import Any
 
-from supergraph.query.escape import dsl_identifier, dsl_literal, dsl_node_id
+from supergraph.query.escape import dsl_identifier, dsl_literal
 from supergraph.query.filters import F, compile_where
 from supergraph.query.runtime import Query, register_compiler
 

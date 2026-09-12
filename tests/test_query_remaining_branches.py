@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from supergraph import q, F, P, agg, EvolveThen
+from supergraph import q, F, P, agg
 from supergraph.dsl.parser import parse
 
 

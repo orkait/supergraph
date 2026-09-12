@@ -1,5 +1,4 @@
 """Test ORDER BY on string (interned) columns."""
-import pytest
 from supergraph import SuperGraph
 
 

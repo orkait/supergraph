@@ -17,10 +17,10 @@ never mutated.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from dataclasses import dataclass
+from typing import Any
 
-from supergraph.query.escape import dsl_field_ref, dsl_identifier, dsl_literal
+from supergraph.query.escape import dsl_field_ref, dsl_literal
 
 
 # -------------------------------------------------------------------------

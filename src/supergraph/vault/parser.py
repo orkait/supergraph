@@ -1,6 +1,5 @@
 """Parse markdown notes: frontmatter, sections, wikilinks."""
 import re
-from datetime import datetime
 
 import yaml
 

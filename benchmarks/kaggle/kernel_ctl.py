@@ -11,11 +11,9 @@ Usage:
 
 import argparse
 import json
-import sys
 from kagglesdk import KaggleClient
 from kagglesdk.kernels.types.kernels_api_service import (
     ApiGetKernelSessionStatusRequest,
-    ApiCancelKernelSessionRequest,
     ApiCreateKernelSessionRequest,
     ApiListKernelSessionOutputRequest,
 )

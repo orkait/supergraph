@@ -1,6 +1,4 @@
 from supergraph import SuperGraph
-from supergraph.core.errors import OptimizationInProgress
-import os
 import pytest
 
 def test_sys_evict_limit():
@@ -145,7 +143,6 @@ def test_scheduler_emergency_eviction_arg_order():
     Previously it passed vector_store as target_bytes (positional), causing
     TypeError: got multiple values for argument 'target_bytes'."""
     from supergraph.core.optimizer import evict_oldest
-    from supergraph.core.store import CoreStore
     import inspect
 
     sig = inspect.signature(evict_oldest)

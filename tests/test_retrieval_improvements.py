@@ -5,10 +5,8 @@ Uses FixedEmbedder + SYS REGISTER to get vectors into the store, matching
 the pattern in test_remember_signals.py and test_integration_fixtures.py.
 """
 
-import tempfile
 
 import numpy as np
-import pytest
 
 from supergraph import SuperGraph
 from supergraph.algos.fusion import rrf_remember_fusion

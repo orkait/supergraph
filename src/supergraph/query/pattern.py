@@ -20,7 +20,7 @@ Typed API:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 from typing import Optional
 
 from supergraph.query.escape import dsl_identifier, dsl_literal

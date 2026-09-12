@@ -1,5 +1,4 @@
 """Tests for WAL replay and query log rotation."""
-import pytest
 from supergraph import SuperGraph
 
 

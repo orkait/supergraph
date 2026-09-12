@@ -1,10 +1,7 @@
 """Belief handlers: ASSERT, RETRACT, PROPAGATE."""
 
 import time
-from collections import deque
 
-import numpy as np
-from scipy.sparse import csr_matrix
 
 from supergraph.core.edges import resize_csr
 

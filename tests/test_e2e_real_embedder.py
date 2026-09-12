@@ -4,12 +4,9 @@ These tests verify that supergraph works as a cognitive layer for AI agents:
 ingest real documents, build knowledge, query semantically, maintain over time.
 """
 
-import tempfile
-import time
 from pathlib import Path
 
 import pytest
-import numpy as np
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

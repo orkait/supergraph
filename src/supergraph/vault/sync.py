@@ -1,11 +1,10 @@
 """VaultSync: sync vault directory to supergraph graph."""
 import logging
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 from supergraph.vault.parser import (
-    parse_frontmatter, parse_sections, extract_wikilinks, title_to_slug,
+    parse_frontmatter, parse_sections, extract_wikilinks,
 )
 from supergraph.vault.manager import VaultManager
 
