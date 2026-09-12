@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, render_transcript, threshold
+from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, threshold
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
@@ -58,7 +58,7 @@ class Options:
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
     session: SessionStore | None = None
     session_id: str = ""
-    summarize: Callable[[list[Message]], str] | None = None
+    summarize: Callable[[str], str] | None = None
 
 
 @dataclass
@@ -116,10 +116,10 @@ class _Run:
     def result(self, answer: str, **kw: Any) -> Result:
         return Result(final_answer=answer, turns=self.turns, messages=list(self.messages), **kw)
 
-    def summarize(self, middle: list[Message]) -> str:
+    def summarize(self, brief: str) -> str:
         if self.o.summarize:
-            return self.o.summarize(middle)
-        request = [Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=render_transcript(middle))]
+            return self.o.summarize(brief)
+        request = [Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=brief)]
         return self.provider.complete(request, []).text
 
     def maybe_compact(self, exposed: list[dict[str, Any]]) -> None:
@@ -128,7 +128,7 @@ class _Run:
             return
         plan = self.ctx.state.get("plan", [])
         res = compact(self.messages, preserve_last=self.o.preserve_last, summarize=self.summarize,
-                      preserved_state=format_plan(plan) if plan else "")
+                      plan_text=format_plan(plan) if plan else "")
         if not res.compacted:
             return
         system_end = sum(1 for m in self.messages if m.role == "system")

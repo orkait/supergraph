@@ -1,6 +1,6 @@
 import pytest
 
-from superclaw.compaction import SUMMARY_LABEL, compact, render_transcript, threshold
+from superclaw.compaction import RESUME_NOTE, SUMMARY_LABEL, compact, project, render_transcript, threshold
 from superclaw.guards import Guards, ends_with_continuation_cue, error_signature
 from superclaw.runtime import Message, ToolCall, approx_tokens, estimate_tokens, to_wire
 
@@ -74,9 +74,10 @@ class TestCompaction:
         assert res.messages[0].content == "s"
         assert res.messages[1].role == "user"
         assert res.messages[1].content.startswith(SUMMARY_LABEL + "\nSUM")
+        assert res.messages[1].content.rstrip().endswith(RESUME_NOTE)
         assert res.messages[2].role == "assistant"
         assert [m.content for m in res.messages[2:]] == ["a4", "u5", "a5"]
-        assert seen[0] == msgs[1:10]
+        assert all(f"[user #{i}]\nu{i // 2}" in seen[0] for i in range(0, 9, 2))
         assert res.removed == 9
 
     def test_suffix_never_starts_on_tool_result(self):
@@ -86,10 +87,20 @@ class TestCompaction:
         assert res.messages[2].role == "assistant"
         assert res.messages[2].tool_calls[0].id == "c"
 
-    def test_preserved_state_is_appended_to_summary(self):
-        msgs = [Message(role="system", content="s")] + [user(f"u{i}") if i % 2 == 0 else assistant(f"a{i}") for i in range(10)]
-        res = compact(msgs, preserve_last=2, summarize=lambda m: "SUM", preserved_state="Current Plan:\n1. [pending] x")
-        assert "Current Plan:" in res.messages[1].content
+    def test_preserved_state_and_projection(self):
+        msgs = [Message(role="system", content="s"), user(f"{SUMMARY_LABEL}\nOLD FACTS"),
+                assistant("", [ToolCall("c1", "skill", '{"name": "bench"}'), ToolCall("c2", "read_file", '{"path": "a"}')]),
+                tool("c1", "skill body"), tool("c2", "file text"),
+                assistant("", [ToolCall("c3", "edit_file", '{"path": "src/x.py", "old_string": "a", "new_string": "b"}')]),
+                tool("c3", "Error: old_string not found", is_error=True),
+                user("u"), assistant("a"), user("u2"), assistant("a2")]
+        brief = project(msgs[1:7])
+        assert brief.startswith("[previous summary]\nOLD FACTS")
+        assert "skill body" not in brief and "file text" not in brief
+        assert "[tool_error #5] edit_file\nError: old_string not found" in brief
+        res = compact(msgs, preserve_last=2, summarize=lambda b: "SUM", plan_text="Current Plan:\n1. [pending] x")
+        body = res.messages[1].content
+        assert "Current Plan:" in body and "Skills loaded: bench" in body and "Files edited: src/x.py" in body
 
     def test_render_transcript_clamps_tool_output(self):
         text = render_transcript([assistant("", [ToolCall("c", "t", "a" * 1000)]), tool("c", "b" * 5000)])
