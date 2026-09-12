@@ -81,6 +81,7 @@ class _Run:
         self.seqs: list[int] = []
         self.turns = 0
         self.tokens_used = 0
+        self.loaded: set[str] = set()
         self.nudges = 0
         self.promise_nudged = False
         self.objective = ""
@@ -247,6 +248,7 @@ class _Run:
             if repeated := self.guards.observe_identical(call.name, call.arguments):
                 followups.append(repeated)
             res, denied = self.execute(call)
+            self.loaded.update(res.meta.get("load_tools", []))
             self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
             self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
             outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
@@ -288,7 +290,7 @@ class _Run:
                 self.emit({"type": "budget", "used": self.tokens_used, "budget": o.token_budget})
                 return self.result(f"Stopped: the run's token budget of {o.token_budget} was reached after {self.tokens_used} tokens.",
                                    incomplete=True, incomplete_reason="token budget reached", stop_reason="budget")
-            exposed = o.registry.definitions(o.policy.visible)
+            exposed = o.registry.definitions(o.policy.visible, self.loaded)
             self.maybe_compact(exposed)
             completion = self.complete(exposed)
             self.tokens_used += completion.usage.total

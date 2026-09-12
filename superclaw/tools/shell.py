@@ -17,32 +17,21 @@ SANDBOX_MODES = ("use_default", "with_additional_permissions", "require_escalate
 class Bash(Tool):
     name = "bash"
     description = (
-        "Execute a shell command inside the workspace sandbox and return its output. "
-        "Use it for build, test, git and package commands that have no native tool; "
-        "prefer the file tools for reading and editing. The sandbox has no network and can only write "
-        "inside the workspace; ask for more with sandbox_permissions."
+        "Run a shell command in the workspace sandbox (no network, writes only inside the workspace). "
+        "For build, test, git and package commands; use the file tools to read and edit."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "command": {"type": "string", "description": "Shell command to execute with bash -c."},
-            "description": {"type": "string", "description": "Why this command runs, one short active-voice line."},
-            "cwd": {"type": "string", "description": "Directory to run in, relative to the workspace. Defaults to workspace root.", "default": "."},
-            "timeout_ms": {"type": "integer", "description": "Command timeout in milliseconds.", "default": DEFAULT_TIMEOUT_MS, "minimum": 1, "maximum": MAX_TIMEOUT_MS},
-            "sandbox_permissions": {
-                "type": "string", "enum": list(SANDBOX_MODES), "default": "use_default",
-                "description": "use_default runs sandboxed; with_additional_permissions adds the listed paths or network inside the sandbox; require_escalated runs outside the sandbox and needs approval with a justification.",
-            },
-            "additional_permissions": {
-                "type": "object",
-                "properties": {
-                    "paths": {"type": "array", "items": {"type": "string"}, "description": "Absolute directories to make writable."},
-                    "network": {"type": "boolean", "description": "Allow network egress."},
-                },
-                "additionalProperties": False,
-            },
-            "justification": {"type": "string", "description": "User-facing reason, required with require_escalated or additional permissions."},
-            "prefix_rule": {"type": "array", "items": {"type": "string"}, "description": "Narrow command prefix to remember if approved, for example [\"git\", \"pull\"]."},
+            "command": {"type": "string"},
+            "description": {"type": "string", "description": "Why, one short line."},
+            "cwd": {"type": "string", "description": "Relative to the workspace.", "default": "."},
+            "timeout_ms": {"type": "integer", "default": DEFAULT_TIMEOUT_MS, "maximum": MAX_TIMEOUT_MS},
+            "sandbox_permissions": {"type": "string", "enum": list(SANDBOX_MODES), "default": "use_default",
+                                    "description": "with_additional_permissions grants paths or network inside the sandbox; require_escalated runs on the host after approval."},
+            "additional_permissions": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}, "network": {"type": "boolean"}}, "additionalProperties": False},
+            "justification": {"type": "string", "description": "User-facing reason; required with escalation or extra permissions."},
+            "prefix_rule": {"type": "array", "items": {"type": "string"}, "description": "Narrow prefix to remember if approved, e.g. [\"git\",\"pull\"]."},
         },
         "required": ["command", "description"],
         "additionalProperties": False,

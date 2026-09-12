@@ -39,7 +39,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
 | Fits the window | proactive compaction at 70% of the context window: the summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary |
 
-The system prompt is 541 tokens (838 with the confirmation policy).
+The system prompt is 541 tokens (838 with the confirmation policy). Only six tool schemas ride every request (`read_file` `edit_file` `write_file` `grep` `bash` `tool_search`); the rest are listed one line each and load on demand through `tool_search`, so a first turn is about 1.6k tokens before the user's message (eager=964 all=2035 prompt=873 first_turn=1837).
 
 ## 🔐 Permission modes
 
