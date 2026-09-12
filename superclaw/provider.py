@@ -4,9 +4,7 @@ import re
 from typing import Any
 
 from superclaw.runtime import Completion, Message, ToolCall, Usage, to_wire
-
-DEFAULT_MAX_TOKENS = 4096
-DEFAULT_TIMEOUT_S = 120
+from superclaw.settings import LIMITS
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 
@@ -29,12 +27,14 @@ def parse_response(resp: Any) -> Completion:
             continue
         calls.append(ToolCall(id=tc.id or f"call_{len(calls)}", name=name, arguments=tc.function.arguments or "{}"))
     usage = getattr(resp, "usage", None)
+    details = getattr(usage, "prompt_tokens_details", None)
     return Completion(
         text=text,
         tool_calls=calls,
         usage=Usage(
             input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
             output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+            cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
         ),
         finish_reason=getattr(choice, "finish_reason", "") or "",
     )
@@ -45,9 +45,9 @@ class LitellmProvider:
         self,
         chain: list[dict[str, Any]],
         *,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
+        max_tokens: int = LIMITS.completion_max_tokens,
         temperature: float = 0.0,
-        timeout_s: int = DEFAULT_TIMEOUT_S,
+        timeout_s: int = LIMITS.completion_timeout_s,
     ) -> None:
         if not chain:
             raise ValueError("LitellmProvider needs at least one provider in the chain")

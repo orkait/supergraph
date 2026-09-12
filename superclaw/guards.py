@@ -3,14 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-MAX_EMPTY_TURNS = 3
-FAILURE_HINT_AT = 2
-FAILURE_STOP_AT = 6
-STALE_TOOL_CALLS = 10
-TOOL_ONLY_REMINDER_AT = 6
-MAX_CONTINUE_NUDGES = 3
-IDENTICAL_CALL_AT = 3
-MAX_CALLS_PER_TURN = 42
+from superclaw.settings import LIMITS
+
 PLAN_TOOL = "update_plan"
 
 _PROMISES = ("i'll ", "i will ", "let me ", "next, ", "next steps", "next step", "now i'll ", "now let me ", "remaining:", "todo:")
@@ -124,7 +118,7 @@ def error_signature(output: str) -> str:
     sig = output.strip().lower()
     sig = re.sub(r"(?:/[^\s/]+)+", "<path>", sig)
     sig = re.sub(r"\d+", "#", sig)
-    return sig[:160]
+    return sig[:LIMITS.error_signature_chars]
 
 
 @dataclass
@@ -138,11 +132,11 @@ class Guards:
     def __init__(
         self,
         *,
-        max_empty_turns: int = MAX_EMPTY_TURNS,
-        hint_at: int = FAILURE_HINT_AT,
-        stop_at: int = FAILURE_STOP_AT,
-        stale_tool_calls: int = STALE_TOOL_CALLS,
-        tool_only_at: int = TOOL_ONLY_REMINDER_AT,
+        max_empty_turns: int = LIMITS.max_empty_turns,
+        hint_at: int = LIMITS.failure_hint_at,
+        stop_at: int = LIMITS.failure_stop_at,
+        stale_tool_calls: int = LIMITS.stale_plan_tool_calls,
+        tool_only_at: int = LIMITS.tool_only_reminder_at,
     ) -> None:
         self.max_empty_turns = max_empty_turns
         self.hint_at = hint_at
@@ -163,7 +157,7 @@ class Guards:
         key = (name, arguments)
         self._identical_count = self._identical_count + 1 if key == self._identical else 1
         self._identical = key
-        return identical_call_reminder(name, self._identical_count) if self._identical_count == IDENTICAL_CALL_AT else None
+        return identical_call_reminder(name, self._identical_count) if self._identical_count == LIMITS.identical_call_at else None
 
     def observe_turn(self, text: str, tool_calls: int) -> bool:
         if not text.strip() and tool_calls == 0:

@@ -8,6 +8,7 @@ from typing import Any
 from collections.abc import Callable
 
 from superclaw.redaction import redact
+from superclaw.settings import LIMITS
 
 
 class SideEffect(str, Enum):
@@ -120,14 +121,13 @@ class Tool:
         }
 
 
-MAX_OUTPUT_BYTES = 64 * 1024
 _TRUNCATION_MARKER = "\n\n[... output truncated: {dropped} chars omitted ...]\n\n"
 
 
 def _cap(output: str) -> tuple[str, bool]:
-    if len(output) <= MAX_OUTPUT_BYTES:
+    if len(output) <= LIMITS.tool_output_bytes:
         return output, False
-    keep = MAX_OUTPUT_BYTES // 2
+    keep = LIMITS.tool_output_bytes // 2
     dropped = len(output) - 2 * keep
     return output[:keep] + _TRUNCATION_MARKER.format(dropped=dropped) + output[-keep:], True
 

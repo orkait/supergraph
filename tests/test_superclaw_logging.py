@@ -4,7 +4,7 @@ from supergraph import SuperGraph
 
 from superclaw.loop import Options, run
 from superclaw.policy import Mode, Policy
-from superclaw.runtime import Completion
+from superclaw.runtime import Completion, approx_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.tools import Registry
 
@@ -27,7 +27,7 @@ def test_prompt_is_logged_and_replay_ignores_log_only_events(tmp_path):
     opts = Options(registry=Registry(), policy=Policy(tmp_path, Mode.ASK), workspace=tmp_path, system_prompt="SYS v1", session=store, session_id=sid)
     run("hi", Scripted(Completion(text="hello")), opts)
     assert [e["type"] for e in store.events(sid)] == ["prompt", "message", "message"]
-    assert store.last_prompt(sid) == {"hash": prompt_hash("SYS v1"), "tokens": 1, "text": "SYS v1"}
+    assert store.last_prompt(sid) == {"hash": prompt_hash("SYS v1"), "tokens": approx_tokens("SYS v1"), "text": "SYS v1"}
     assert [m.role for m in store.replay(sid)] == ["user", "assistant"]
     with pytest.raises(RuntimeError):
         run("again", Scripted(RuntimeError("provider down")), opts)

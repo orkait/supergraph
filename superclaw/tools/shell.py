@@ -6,12 +6,11 @@ import subprocess
 from typing import Any
 
 from superclaw.sandbox import Backend, Grant
+from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
 
-DEFAULT_TIMEOUT_MS = 60_000
-MAX_TIMEOUT_MS = 600_000
-MAX_CAPTURE_BYTES = 1024 * 1024
 SANDBOX_MODES = ("use_default", "with_additional_permissions", "require_escalated")
+_MS_PER_SECOND = 1000
 
 
 class Bash(Tool):
@@ -26,7 +25,7 @@ class Bash(Tool):
             "command": {"type": "string"},
             "description": {"type": "string", "description": "Why, one short line."},
             "cwd": {"type": "string", "description": "Relative to the workspace.", "default": "."},
-            "timeout_ms": {"type": "integer", "default": DEFAULT_TIMEOUT_MS, "maximum": MAX_TIMEOUT_MS},
+            "timeout_ms": {"type": "integer", "default": LIMITS.shell_timeout_ms, "maximum": LIMITS.shell_max_timeout_ms},
             "sandbox_permissions": {"type": "string", "enum": list(SANDBOX_MODES), "default": "use_default",
                                     "description": "with_additional_permissions grants paths or network inside the sandbox; require_escalated runs on the host after approval."},
             "additional_permissions": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}}, "network": {"type": "boolean"}}, "additionalProperties": False},
@@ -45,7 +44,7 @@ class Bash(Tool):
         cwd = jail(ctx.workspace, args.get("cwd") or ".")
         if not cwd.is_dir():
             return Result.error(f"Error: cwd is not a directory: {args.get('cwd')}")
-        timeout = min(int(args.get("timeout_ms") or DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS) / 1000
+        timeout = min(int(args.get("timeout_ms") or LIMITS.shell_timeout_ms), LIMITS.shell_max_timeout_ms) / _MS_PER_SECOND
         approval = ctx.state.get("approval") or {}
         argv = ["bash", "-c", args["command"]]
         if self.backend is not None and not approval.get("escalated"):
@@ -61,8 +60,8 @@ class Bash(Tool):
             os.killpg(proc.pid, signal.SIGKILL)
             proc.communicate()
             return Result.error(f"Error: command timed out after {timeout:g}s")
-        out = stdout[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace").rstrip("\n")
-        err = stderr[:MAX_CAPTURE_BYTES].decode("utf-8", errors="replace").rstrip("\n")
+        out = stdout[:LIMITS.shell_capture_bytes].decode("utf-8", errors="replace").rstrip("\n")
+        err = stderr[:LIMITS.shell_capture_bytes].decode("utf-8", errors="replace").rstrip("\n")
         if err:
             out = f"{out}\n{err}" if out else err
         if proc.returncode != 0:

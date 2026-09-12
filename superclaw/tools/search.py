@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
-
-MAX_KEYWORD_MATCHES = 10
 
 
 class ToolSearch(Tool):
@@ -37,7 +36,7 @@ class ToolSearch(Tool):
             matches = [deferred[n] for n in wanted if n in deferred]
         else:
             words = [w.lower() for w in query.split()]
-            matches = [t for t in deferred.values() if any(w in f"{t.name} {t.description}".lower() for w in words)][:MAX_KEYWORD_MATCHES]
+            matches = [t for t in deferred.values() if any(w in f"{t.name} {t.description}".lower() for w in words)][:LIMITS.tool_search_matches]
         if not matches:
             return Result.error(f"Error: no deferred tool matches {query!r}. Available: {', '.join(deferred) or '(none)'}")
         rendered = "\n\n".join(json.dumps(t.definition()["function"], indent=1) for t in matches)

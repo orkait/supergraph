@@ -10,20 +10,24 @@ from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, resolve_session, run_once
 from superclaw.policy import Mode
-from superclaw.settings import Settings
+from superclaw.report import context_report
+from superclaw.runtime import clip
+from superclaw.settings import LIMITS, Settings
 from superclaw.skills import load_skills
 
 SCHEMA_VERSION = 1
+_NAME_WIDTH = 18
+_TOKENS_WIDTH = 9
 
 
 def _progress_line(event: dict[str, Any]) -> str | None:
     kind = event["type"]
     if kind == "tool_call":
         args = json.dumps(event["args"])
-        return f"  → {event['name']} {args[:120]}{'…' if len(args) > 120 else ''}"
+        return f"  → {event['name']} {clip(args, LIMITS.preview_args_chars)}"
     if kind == "tool_result" and not event["ok"]:
-        first = event["output"].splitlines()[0][:160] if event["output"] else ""
-        return f"  ✗ {event['name']}: {first}"
+        first = event["output"].splitlines()[0] if event["output"] else ""
+        return f"  ✗ {event['name']}: {clip(first, LIMITS.preview_error_chars)}"
     if kind == "compaction":
         return f"  (compacted {event['removed']} messages)"
     return None
@@ -32,7 +36,7 @@ def _progress_line(event: dict[str, Any]) -> str | None:
 def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     sid = resolve_session(rt, args.resume)
     prompt = args.prompt if args.prompt != "-" else sys.stdin.read()
-    run_id = f"run_{secrets.token_hex(4)}"
+    run_id = f"run_{secrets.token_hex(LIMITS.run_id_bytes)}"
     stream = args.output_format == "stream-json"
 
     def emit(event: dict[str, Any]) -> None:
@@ -69,6 +73,15 @@ def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_context(rt: Runtime, args: argparse.Namespace) -> int:
+    report = context_report(rt, args.prompt)
+    info = rt.model_info
+    print(f"{rt.model}  window {report.window:,}  max output {info.max_output_tokens:,}  {'catalog' if info.known else 'fallback (unknown model)'}")
+    for name, tokens in [*report.categories.items(), ("free", report.free)]:
+        print(f"  {name:<{_NAME_WIDTH}}{tokens:>{_TOKENS_WIDTH},}  {report.percent(tokens):5.1f}%")
+    return 0
+
+
 def cmd_tui(rt: Runtime, args: argparse.Namespace) -> int:
     from superclaw.tui import SuperclawApp
 
@@ -83,8 +96,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--model", default=defaults.model)
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
     parser.add_argument("--max-turns", type=int, default=12)
-    parser.add_argument("--context-window", type=int, default=defaults.context_window)
+    parser.add_argument("--context-window", type=int, default=defaults.context_window, help="override the model's catalog context window (0 = from catalog)")
     parser.add_argument("--budget-tokens", type=int, default=defaults.budget_tokens, help="stop a run once this many tokens were spent (0 = unlimited)")
+    parser.add_argument("--budget-usd", type=float, default=defaults.budget_usd, help="stop a run once this much was spent at catalog prices (0 = unlimited)")
     parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--trust-workspace", action="store_true", help="also run hooks from <workspace>/.superclaw/hooks.json")
     parser.add_argument("--resume", default=None, help="session id, or 'latest'")
@@ -96,6 +110,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
     sub.add_parser("sessions", help="list sessions")
     sub.add_parser("skills", help="list discovered skills")
+    ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
+    ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
     return parser
 
 
@@ -106,13 +122,13 @@ def main(argv: list[str] | None = None) -> int:
     if not workspace.is_dir():
         sys.exit(f"superclaw: not a directory: {workspace}")
     settings = replace(defaults, model=args.model, mode=args.mode, context_window=args.context_window,
-                       budget_tokens=args.budget_tokens, db_path=Path(args.db))
+                       budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     try:
         rt = build_runtime(settings, workspace, Mode(args.mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace))
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills}.get(args.command, cmd_tui)
+    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
     except KeyError as e:

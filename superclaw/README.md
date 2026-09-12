@@ -72,9 +72,11 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Store path | `SUPERCLAW_DB_PATH`, `--db` | `~/.local/share/superclaw/brain` |
 | Model | `SUPERCLAW_MODEL`, `--model` | `openrouter/deepseek/deepseek-v4-flash` |
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
-| Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `128000` |
+| Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `0` = resolved from the bundled model catalog (1,000,000 for the default model); `128000` when the model is unknown |
 | Turn limit | `--max-turns` | `12` |
 | Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
+| Spend budget | `SUPERCLAW_BUDGET_USD`, `--budget-usd` | `0` (unlimited); priced per call from the catalog, cached input at the cache-read rate |
+| Every tunable | `superclaw/settings.py` `Limits` | one frozen dataclass holds every threshold, clamp, budget and preview width; nothing else in the package carries a literal |
 | Hooks | `~/.config/superclaw/hooks.json`, plus `<workspace>/.superclaw/hooks.json` with `--trust-workspace` | off until the file says `"enabled": true`; events `sessionStart` `beforeTool` `afterTool` `stop`, regex `matcher` on the tool name, JSON payload on stdin, exit 2 blocks a tool or asks the run to continue, stdout `{"additionalContext": ...}` is injected |
 | Intent gate | `--intent-gate` | off; one narrow model call classifies the request as `answer`, `diagnose`, `change` or `monitor`, and `answer` hides writes, shell and network while `diagnose` hides writes |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
@@ -114,7 +116,9 @@ superclaw exec --verify "..."                                     # plus a verif
 echo "prompt on stdin" | superclaw exec -
 ```
 
-Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `final` `run_end`, each tagged with `schemaVersion` and `runId`.
+Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `budget` `final` `run_end`, each tagged with `schemaVersion` and `runId`. `usage` carries `input_tokens` `output_tokens` `cache_read_tokens` `cost_usd` `run_cost_usd` `context_used` `context_window`.
+
+`superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window.
 
 </details>
 
@@ -154,7 +158,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 $ .venv/bin/ruff check .
 All checks passed!
 $ .venv/bin/python -m pytest -q -p no:randomly tests/test_superclaw_*.py
-204 passed
+145 passed
 $ superclaw --mode auto exec --output-format stream-json "test_calc.py fails. Find the bug in calc.py, fix it, and run pytest -q to prove it passes."
 ... "type": "tool_call", "name": "edit_file", "args": {"path": "calc.py", "old_string": "return a - b", "new_string": "return a + b"}
 ... "type": "run_end", "status": "success", "turns": 7, "exitCode": 0

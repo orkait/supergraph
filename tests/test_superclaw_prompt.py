@@ -2,8 +2,6 @@ from pathlib import Path
 
 from superclaw.policy import Mode
 from superclaw.prompt import (
-    MAX_FILE_BYTES,
-    MAX_TOTAL_BYTES,
     PromptInputs,
     build_system_prompt,
     core_prompt,
@@ -12,6 +10,7 @@ from superclaw.prompt import (
     skills_block,
 )
 from superclaw.runtime import approx_tokens
+from superclaw.settings import LIMITS
 from superclaw.skills import Skill
 
 
@@ -69,10 +68,10 @@ class TestProjectGuidelines:
 
     def test_per_file_cap(self, tmp_path):
         root = repo(tmp_path)
-        (root / "AGENTS.md").write_text("x" * (MAX_FILE_BYTES + 100))
+        (root / "AGENTS.md").write_text("x" * (LIMITS.guideline_file_bytes + 100))
         out = project_guidelines(root, root)
         assert "… (truncated)" in out
-        assert out.count("x") <= MAX_FILE_BYTES
+        assert out.count("x") <= LIMITS.guideline_file_bytes
 
     def test_total_cap_across_files(self, tmp_path):
         root = repo(tmp_path)
@@ -80,11 +79,11 @@ class TestProjectGuidelines:
         letters = "bfhkqv"
         cur = root
         for i in range(6):
-            (cur / "AGENTS.md").write_text(letters[i] * MAX_FILE_BYTES)
+            (cur / "AGENTS.md").write_text(letters[i] * LIMITS.guideline_file_bytes)
             cur = cur / f"d{i}"
             cur.mkdir()
         out = project_guidelines(cur, root)
-        assert sum(out.count(letters[i]) for i in range(6)) <= MAX_TOTAL_BYTES
+        assert sum(out.count(letters[i]) for i in range(6)) <= LIMITS.guideline_total_bytes
 
     def test_no_git_root_uses_cwd_only(self, tmp_path):
         (tmp_path / "AGENTS.md").write_text("ONLY")

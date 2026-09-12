@@ -6,22 +6,11 @@ from dataclasses import dataclass
 from collections.abc import Callable
 
 from superclaw.runtime import Message
+from superclaw.settings import LIMITS
 
 SUMMARY_LABEL = "[Summary of earlier conversation]"
 RESUME_NOTE = "Continue from here. Do not acknowledge this summary or restart finished work; the last user message is the current request."
 PRESERVED_LABEL = "## Preserved state (carried across compaction)"
-TRIGGER_RATIO = 0.7
-DEFAULT_PRESERVE_LAST = 6
-TOOL_RESULT_CLAMP = 2000
-TOOL_ARGS_CLAMP = 500
-USER_WORD_BUDGET = 256
-ASSISTANT_WORD_BUDGET = 200
-TOOL_CALLS_PER_TURN = 8
-TOOL_ARG_BYTES = 120
-ERROR_BYTES = 150
-RESULT_BYTES = 1200
-PREVIOUS_SUMMARY_BYTES = 16 * 1024
-BRIEF_MAX_BYTES = 24 * 1024
 _WORD = re.compile(r"\S+")
 
 SUMMARY_INSTRUCTIONS = (
@@ -44,7 +33,7 @@ class CompactionResult:
 
 
 def threshold(context_window: int) -> int:
-    return int(context_window * TRIGGER_RATIO) if context_window > 0 else 0
+    return int(context_window * LIMITS.compaction_trigger_ratio) if context_window > 0 else 0
 
 
 def _clamp(text: str, limit: int) -> str:
@@ -63,19 +52,19 @@ def _first_line(text: str) -> str:
 
 
 def _call_line(name: str, arguments: str) -> str:
-    return f"* {name}({_clamp(arguments, TOOL_ARG_BYTES)})"
+    return f"* {name}({_clamp(arguments, LIMITS.compaction_arg_bytes)})"
 
 
 def render_transcript(messages: list[Message]) -> str:
     lines = []
     for m in messages:
         if m.role == "tool":
-            lines.append(f"[tool {m.tool_call_id}{' error' if m.is_error else ''}] {_clamp(m.content, TOOL_RESULT_CLAMP)}")
+            lines.append(f"[tool {m.tool_call_id}{' error' if m.is_error else ''}] {_clamp(m.content, LIMITS.compaction_tool_result_clamp)}")
             continue
         if m.content:
             lines.append(f"[{m.role}] {m.content}")
         for c in m.tool_calls:
-            lines.append(f"[{m.role} tool_call {c.id}] {c.name}({_clamp(c.arguments, TOOL_ARGS_CLAMP)})")
+            lines.append(f"[{m.role} tool_call {c.id}] {c.name}({_clamp(c.arguments, LIMITS.compaction_tool_args_clamp)})")
     return "\n".join(lines)
 
 
@@ -86,8 +75,8 @@ def _tool_names(messages: list[Message]) -> dict[str, str]:
 def _assistant_section(index: int, m: Message) -> str:
     lines = []
     if m.content.strip():
-        lines.append(_words(m.content, ASSISTANT_WORD_BUDGET))
-    calls = m.tool_calls[-TOOL_CALLS_PER_TURN:]
+        lines.append(_words(m.content, LIMITS.compaction_assistant_words))
+    calls = m.tool_calls[-LIMITS.compaction_calls_per_turn:]
     if len(m.tool_calls) > len(calls):
         lines.append(f"* ({len(m.tool_calls) - len(calls)} earlier tool calls omitted)")
     lines += [_call_line(c.name, c.arguments) for c in calls]
@@ -98,20 +87,20 @@ def _assistant_section(index: int, m: Message) -> str:
 
 def _tool_section(index: int, m: Message, name: str) -> str:
     if m.is_error:
-        return f"[tool_error #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}"
+        return f"[tool_error #{index}] {name}\n{_clamp(_first_line(m.content), LIMITS.compaction_error_bytes)}"
     if name == "ask_user":
-        return f"[user_answer #{index}]\n{_clamp(m.content, RESULT_BYTES)}"
+        return f"[user_answer #{index}]\n{_clamp(m.content, LIMITS.compaction_result_bytes)}"
     if name in ("write_file", "edit_file"):
-        return f"[tool_result #{index}] {name}\n{_clamp(_first_line(m.content), ERROR_BYTES)}"
+        return f"[tool_result #{index}] {name}\n{_clamp(_first_line(m.content), LIMITS.compaction_error_bytes)}"
     return ""
 
 
 def _fit(brief: str) -> str:
-    if len(brief) <= BRIEF_MAX_BYTES:
+    if len(brief) <= LIMITS.compaction_brief_max_bytes:
         return brief
     marker = "\n\n...[middle omitted to fit the compaction budget]...\n\n"
-    head = (BRIEF_MAX_BYTES - len(marker)) * 2 // 5
-    tail = BRIEF_MAX_BYTES - len(marker) - head
+    head = int((LIMITS.compaction_brief_max_bytes - len(marker)) * LIMITS.compaction_head_share)
+    tail = LIMITS.compaction_brief_max_bytes - len(marker) - head
     return brief[:head] + marker + brief[-tail:]
 
 
@@ -123,9 +112,9 @@ def project(messages: list[Message]) -> str:
         if m.role == "user":
             content = m.content.split(PRESERVED_LABEL, 1)[0].strip()
             if content.startswith(SUMMARY_LABEL):
-                previous = _clamp(content[len(SUMMARY_LABEL):].replace(RESUME_NOTE, "").strip(), PREVIOUS_SUMMARY_BYTES)
+                previous = _clamp(content[len(SUMMARY_LABEL):].replace(RESUME_NOTE, "").strip(), LIMITS.compaction_previous_summary_bytes)
             elif content:
-                sections.append(f"[user #{index}]\n{_words(content, USER_WORD_BUDGET)}")
+                sections.append(f"[user #{index}]\n{_words(content, LIMITS.compaction_user_words)}")
         elif m.role == "assistant":
             if section := _assistant_section(index, m):
                 sections.append(section)
@@ -164,12 +153,12 @@ def preserved_state(middle: list[Message], plan_text: str) -> str:
 def compact(
     messages: list[Message],
     *,
-    preserve_last: int = DEFAULT_PRESERVE_LAST,
+    preserve_last: int = LIMITS.compaction_preserve_last,
     summarize: Callable[[str], str],
     plan_text: str = "",
 ) -> CompactionResult:
     if preserve_last <= 0:
-        preserve_last = DEFAULT_PRESERVE_LAST
+        preserve_last = LIMITS.compaction_preserve_last
     system_end = 0
     while system_end < len(messages) and messages[system_end].role == "system":
         system_end += 1

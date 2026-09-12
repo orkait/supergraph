@@ -12,6 +12,7 @@ from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.loop import Options, Result, run
 from superclaw.memory import Memory
+from superclaw.models import ModelInfo
 from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
@@ -50,8 +51,12 @@ class Runtime:
     hooks: Dispatcher | None = None
 
     @property
+    def model_info(self) -> ModelInfo:
+        return self.settings.model_info()
+
+    @property
     def context_window(self) -> int:
-        return self.settings.context_window
+        return self.settings.window()
 
     @property
     def mode(self) -> Mode:
@@ -144,7 +149,8 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
     return run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
         system_prompt=system_prompt, history=rt.store.replay(sid),
-        max_turns=rt.max_turns, token_budget=rt.token_budget, context_window=rt.context_window,
+        max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
+        context_window=rt.context_window, model_info=rt.model_info,
         require_completion_signal=require_completion, verify=verify,
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
         session=rt.store, session_id=sid, hooks=rt.hooks,

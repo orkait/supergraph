@@ -13,6 +13,8 @@ from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 from superclaw.app import Callbacks, Runtime, run_once
 from superclaw.loop import Result
 from superclaw.policy import Mode
+from superclaw.runtime import clip
+from superclaw.settings import LIMITS
 
 PROMPT_PLACEHOLDER = "Ask superclaw · /mode ask|auto|plan|unsafe · /new · /sessions · /quit"
 
@@ -35,7 +37,7 @@ class PermissionScreen(ModalScreen[str]):
         prefix = self.request.get("prefix") or []
         with Vertical(id="dialog"):
             yield Label(f"Permission: {self.request['tool']}", classes="title")
-            yield Static(args[:1200] + ("…" if len(args) > 1200 else ""), classes="args")
+            yield Static(clip(args, LIMITS.dialog_args_chars), classes="args")
             yield Static(f"{self.request['reason']}  ·  risk {self.request['risk']} ({', '.join(self.request['categories'])})", classes="reason")
             with Horizontal(classes="buttons"):
                 yield Button("Allow once (a)", id="allow", variant="primary")
@@ -145,7 +147,7 @@ class SuperclawApp(App[None]):
             self.query_one("#transcript", VerticalScroll).remove_children()
             self.refresh_status()
         elif parts[0] == "/sessions":
-            for s in self.rt.store.recent()[:20]:
+            for s in self.rt.store.recent()[:LIMITS.recent_sessions_shown]:
                 self.add(Static(f"{s['id']}  {s['event_count']} events  {s['cwd']}", classes="note"))
         else:
             self.add(Static(f"unknown command: {text}", classes="error"))
@@ -165,11 +167,11 @@ class SuperclawApp(App[None]):
             self.add(Markdown(event["text"]))
         elif kind == "tool_call":
             args = json.dumps(event["args"])
-            self.add(Static(f"→ {event['name']} {args[:160]}{'…' if len(args) > 160 else ''}", classes="note"))
+            self.add(Static(f"→ {event['name']} {clip(args, LIMITS.preview_args_chars)}", classes="note"))
         elif kind == "tool_result":
             if not event["ok"]:
                 first = event["output"].splitlines()[0] if event["output"] else ""
-                self.add(Static(f"✗ {event['name']}: {first[:200]}", classes="error"))
+                self.add(Static(f"✗ {event['name']}: {clip(first, LIMITS.preview_error_chars)}", classes="error"))
             for path in event.get("changed_files", []):
                 self.add(Static(f"✎ {path}", classes="note"))
         elif kind == "permission_decision":
