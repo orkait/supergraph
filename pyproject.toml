@@ -53,6 +53,7 @@ Issues = "https://github.com/orkait/supergraph/issues"
 [project.scripts]
 supergraph = "supergraph.cli:main"
 supergraph-mcp = "supergraph.mcp.server:main"
+superclaw = "superclaw.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -71,6 +72,8 @@ dev = [
     # Dead-code gate, see [tool.ruff]. Must live here and not only in
     # [dependency-groups] because CI installs the extra, not the uv group.
     "ruff>=0.16",
+    # superclaw's terminal UI, so tests/test_superclaw_tui.py runs in CI.
+    "textual>=8",
 ]
 embedders-extra = [
     "fastembed>=0.8",
@@ -117,6 +120,11 @@ mcp = [
 # ingestion (the local BonsaiIngestor manages only ~2 TPS on CPU).
 cloud = [
     "litellm>=1.72",
+]
+# superclaw: the harness in superclaw/. litellm transport plus the terminal UI.
+superclaw = [
+    "supergraphdb[cloud]",
+    "textual>=8",
 ]
 # onnxruntime-gpu for NER (TinyBERT) CUDA acceleration. Assumes host has
 # CUDA 12 + cuDNN 9 findable by the dynamic linker. Users needing bundled
@@ -179,15 +187,17 @@ all = [
 ]
 [tool.setuptools.package-dir]
 "" = "src"
+"superclaw" = "superclaw"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["supergraph*"]
+where = ["src", "."]
+include = ["supergraph*", "superclaw*"]
 
 [tool.setuptools.package-data]
 "supergraph"       = ["py.typed", "*.txt"]
 "supergraph.query" = ["py.typed"]
 "supergraph.dsl"   = ["*.lark"]
+"superclaw"        = ["prompts/*.md"]
 
 [tool.ruff]
 # Dead-code gate. Before this existed the library carried 116 unused imports
