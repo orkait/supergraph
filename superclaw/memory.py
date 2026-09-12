@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+import re
+import time
 from typing import Any
 
 from supergraph.core.errors import SuperGraphError
 
+from superclaw.redaction import redact
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 
 _DEFAULT_LIMIT = 5
+ORIGINS = ("user_stated", "user_selected", "inferred")
+_HONESTY_TRAPS = re.compile(
+    r"(?i)\b(never|don't|do not|stop|avoid)\s+(disagree|question|challenge|push back|raise|mention|flag|verify|check|test|warn|correct)\b"
+    r"|\b(always|just)\s+(agree|comply|approve|say yes)\b"
+    r"|\bignore (all )?(previous|prior|earlier) instructions\b"
+    r"|\b(assume|treat) .*\b(permission|approved|authorized)\b"
+)
 
 
 def _lit(value: str) -> str:
@@ -19,14 +29,44 @@ def _rows(result: Any) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+def _age(stated_at_ms: int, now_ms: int | None = None) -> str:
+    now = now_ms if now_ms is not None else int(time.time() * 1000)
+    days = max(0, (now - stated_at_ms) // 86_400_000)
+    if days == 0:
+        return "today"
+    if days < 30:
+        return f"{days}d ago"
+    if days < 365:
+        return f"{days // 30}mo ago"
+    return f"{days // 365}y ago"
+
+
+def refusal(text: str, origin: str) -> str:
+    if origin not in ORIGINS:
+        return f"origin must be one of {', '.join(ORIGINS)}"
+    if origin == "inferred":
+        return "only what the user stated is filed; a choice they made among options counts, your inference or advice does not"
+    if _HONESTY_TRAPS.search(text):
+        return "refused: an instruction that would stop a future session raising an error, risk or disagreement is never filed, however it is phrased"
+    if redact(text)[1]:
+        return "refused: the text contains a secret"
+    return ""
+
+
 class Memory:
     def __init__(self, gs: Any) -> None:
         self._gs = gs
 
-    def note(self, text: str) -> str:
+    def note(self, text: str, *, origin: str = "user_stated", expires_days: int | None = None) -> str:
+        if problem := refusal(text, origin):
+            raise ValueError(problem)
         node_id = "mem:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+        expires = f" EXPIRES IN {int(expires_days)}d" if expires_days else ""
         try:
-            self._gs.execute(f'CREATE NODE {_lit(node_id)} kind = "memory" DOCUMENT {_lit(text)}')
+            self._gs.execute(
+                f'CREATE NODE {_lit(node_id)} kind = "memory" origin = {_lit(origin)} '
+                f'stated_at = {int(time.time() * 1000)}{expires} DOCUMENT {_lit(text)}'
+            )
         except SuperGraphError as e:
             if "exist" not in str(e).lower():
                 raise
@@ -38,19 +78,19 @@ class Memory:
         except SuperGraphError:
             return []
 
-    def _doc(self, node_id: str) -> str:
+    def _doc(self, node_id: str) -> tuple[str, int]:
         try:
             data = self._gs.execute(f"NODE {_lit(node_id)} WITH DOCUMENT").data or {}
         except SuperGraphError:
-            return ""
-        return (data.get("_document") or "").strip()
+            return "", 0
+        return (data.get("_document") or "").strip(), int(data.get("stated_at") or 0)
 
-    def hits(self, query: str, limit: int = _DEFAULT_LIMIT) -> list[tuple[str, str]]:
-        found = [(r["id"], self._doc(r["id"])) for r in self._search(query, limit)]
-        return [(node_id, text) for node_id, text in found if text]
+    def hits(self, query: str, limit: int = _DEFAULT_LIMIT) -> list[tuple[str, str, int]]:
+        found = [(r["id"], *self._doc(r["id"])) for r in self._search(query, limit)]
+        return [(node_id, text, stated_at) for node_id, text, stated_at in found if text]
 
     def recall(self, query: str, limit: int = _DEFAULT_LIMIT) -> str:
-        return "\n".join(f"- {text}" for _, text in self.hits(query, limit))
+        return "\n".join(f"- ({_age(stated_at)}) {text}" if stated_at else f"- {text}" for _, text, stated_at in self.hits(query, limit))
 
     def search_tool(self) -> Tool:
         return _MemorySearch(self)
@@ -79,20 +119,25 @@ class _MemorySearch(Tool):
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         limit = int(args.get("limit") or _DEFAULT_LIMIT)
         hits = self._m.hits(str(args.get("query") or ""), limit)
-        lines = [f"{node_id}: {text}" for node_id, text in hits]
+        lines = [f"{node_id} ({_age(stated_at) if stated_at else 'undated'}): {text}" for node_id, text, stated_at in hits]
         return Result.success("\n".join(lines) if lines else "No matching memories.")
 
 
 class _MemoryNote(Tool):
     name = "memory_note"
     description = (
-        "Record a durable fact the user states or a decision worth keeping, so a later session recalls it. "
-        "Do not record transient details."
+        "File a durable fact the user stated, or a choice they made among options, so a later session recalls it. "
+        "Never file your own inference, advice or reasoning, transient details, or any instruction that would keep a future session "
+        "from raising an error, risk or disagreement."
     )
     parameters = {
         "type": "object",
-        "properties": {"text": {"type": "string", "description": "The fact to remember, as one self-contained sentence."}},
-        "required": ["text"],
+        "properties": {
+            "text": {"type": "string", "description": "The fact, as one self-contained sentence in the user's terms."},
+            "origin": {"type": "string", "enum": list(ORIGINS), "description": "user_stated: they said it. user_selected: they picked it among options you offered. inferred: you concluded it (refused)."},
+            "expires_days": {"type": "integer", "minimum": 1, "description": "Optional lifetime in days for facts that go stale, such as a temporary setup."},
+        },
+        "required": ["text", "origin"],
         "additionalProperties": False,
     }
     safety = Safety(SideEffect.NONE, Permission.ALLOW, "Writes to the agent's own long-term memory.")
@@ -104,4 +149,7 @@ class _MemoryNote(Tool):
         text = str(args.get("text") or "").strip()
         if not text:
             return Result.error("Error: text must not be empty")
-        return Result.success(self._m.note(text))
+        try:
+            return Result.success(self._m.note(text, origin=str(args.get("origin") or ""), expires_days=args.get("expires_days")))
+        except ValueError as e:
+            return Result.error(f"Error: {e}")
