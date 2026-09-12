@@ -32,7 +32,8 @@ class CompactionResult:
     compacted: bool = False
 
 
-PRUNE_MARKER = "\n\n[... tool result middle pruned to fit the context window ...]\n\n"
+PRUNE_MARKER = "\n\n[... tool result middle pruned to fit the context window{recall} ...]\n\n"
+_REF = re.compile(r"§([0-9a-f]{8,})")
 
 
 def _system_end(messages: list[Message]) -> int:
@@ -57,11 +58,14 @@ def cut_point(messages: list[Message], keep_tokens: int = LIMITS.compaction_keep
     return boundary
 
 
-def prune_tool_results(messages: list[Message], upto: int) -> list[tuple[int, str]]:
+def prune_tool_results(messages: list[Message], upto: int) -> list[tuple[int, str, str]]:
     pruned = []
     for index, m in enumerate(messages[:upto]):
         if m.role == "tool" and len(m.content) > LIMITS.prune_threshold_chars:
-            pruned.append((index, m.content[:LIMITS.prune_head_chars] + PRUNE_MARKER + m.content[-LIMITS.prune_tail_chars:]))
+            match = _REF.search(m.content)
+            ref = match.group(1) if match else ""
+            marker = PRUNE_MARKER.format(recall=f"; recall §{ref} to expand" if ref else "")
+            pruned.append((index, m.content[:LIMITS.prune_head_chars] + marker + m.content[-LIMITS.prune_tail_chars:], ref))
     return pruned
 
 

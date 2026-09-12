@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
 from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, cut_point, prune_tool_results
+from superclaw.delegate import SPAWN_KEY
 from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
@@ -23,10 +24,10 @@ from superclaw.guards import (
     tool_failure_hint,
     tool_failure_stop_answer,
 )
-from superclaw.meter import ContextMeter
+from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
-from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
+from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
@@ -67,6 +68,7 @@ class Options:
     session_id: str = ""
     summarize: Callable[[str], str] | None = None
     hooks: Dispatcher | None = None
+    depth: int = 0
 
 
 @dataclass
@@ -85,6 +87,7 @@ class _Run:
         self.o = options
         self.guards = Guards()
         self.meter = ContextMeter(options.context_window, options.reserve_tokens)
+        self.keep_tokens = bounded(options.keep_tokens, options.context_window)
         self.messages: list[Message] = []
         self.seqs: list[int] = []
         self.turns = 0
@@ -94,8 +97,9 @@ class _Run:
         self.nudges = 0
         self.promise_nudged = False
         self.objective = ""
+        self.changed: set[str] = set()
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
-        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan})
+        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan, SPAWN_KEY: self.spawn})
 
     def emit(self, event: dict[str, Any]) -> None:
         if self.o.on_event:
@@ -109,6 +113,7 @@ class _Run:
     def append(self, message: Message) -> None:
         self.messages.append(message)
         self.meter.append(message)
+        self.ctx.files.cursor = len(self.messages)
         if message.role == "tool":
             seq = self.persist("tool_result", {"tool_call_id": message.tool_call_id, "output": message.content, "ok": not message.is_error})
         else:
@@ -141,26 +146,28 @@ class _Run:
         if self.prune() and not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
         plan = self.ctx.state.get("plan", [])
-        res = compact(self.messages, keep_tokens=self.o.keep_tokens, summarize=self.summarize,
+        res = compact(self.messages, keep_tokens=self.keep_tokens, summarize=self.summarize,
                       plan_text=format_plan(plan) if plan else "")
         if not res.compacted:
             return
         system_end = sum(1 for m in self.messages if m.role == "system")
         through = self.seqs[system_end + res.removed - 1]
         summary_seq = self.persist("compaction", {"summary": res.summary, "through_seq": through})
+        self.ctx.files.compacted(system_end, res.removed)
         self.messages = res.messages
         self.seqs = [*self.seqs[:system_end], summary_seq, *self.seqs[system_end + res.removed:]]
         self.meter.reset()
         self.emit({"type": "compaction", "removed": res.removed})
 
     def prune(self) -> int:
-        pruned = prune_tool_results(self.messages, cut_point(self.messages, self.o.keep_tokens))
-        for index, content in pruned:
+        pruned = prune_tool_results(self.messages, cut_point(self.messages, self.keep_tokens))
+        for index, content, _ in pruned:
             self.messages[index].content = content
             self.persist("prune", {"seq": self.seqs[index], "output": content})
         if pruned:
+            self.ctx.files.evict({index for index, _, _ in pruned})
             self.meter.reset()
-            self.emit({"type": "prune", "results": len(pruned)})
+            self.emit({"type": "prune", "results": len(pruned), "refs": [ref for _, _, ref in pruned if ref]})
         return len(pruned)
 
     def decide(self, name: str, args: dict[str, Any]) -> tuple[bool, str]:
@@ -275,12 +282,51 @@ class _Run:
                 return self.nudge(text, verdict.reason, continue_nudge(f"verifier: {verdict.reason}. Next: {verdict.next_action}"))
         return self.result(text)
 
+    def spawn(self, args: dict[str, Any]) -> ToolResult:
+        o = self.o
+        if o.depth >= LIMITS.delegate_depth:
+            return ToolResult.error(f"Error: delegation depth {LIMITS.delegate_depth} reached; do this part yourself")
+        task = str(args.get("task") or "").strip()
+        if not task:
+            return ToolResult.error("Error: task must not be empty")
+        sid = o.session.create(cwd=str(o.workspace), model="", title=task, parent=o.session_id) if o.session else ""
+        child_options = replace(
+            o, history=[], session_id=sid, depth=o.depth + 1, on_ask_user=None, verify=False, require_completion_signal=True,
+            max_turns=min(int(args.get("max_turns") or LIMITS.delegate_max_turns), LIMITS.delegate_max_turns),
+            token_budget=max(int(args.get("budget_tokens") or LIMITS.delegate_budget_tokens), LIMITS.delegate_min_budget_tokens),
+            on_event=(lambda event: o.on_event({**event, "child": sid})) if o.on_event else None,
+        )
+        self.emit({"type": "delegate", "child": sid, "task": task, "depth": o.depth + 1})
+        child = _Run(self.provider, child_options)
+        res = child.run(self.handoff(task, args))
+        self.tokens_used += child.tokens_used
+        self.cost_usd += child.cost_usd
+        self.changed.update(child.changed)
+        status = f"incomplete ({res.incomplete_reason})" if res.incomplete else "done"
+        answer = clip(res.final_answer, LIMITS.delegate_answer_tokens * LIMITS.chars_per_token)
+        head = f"[delegate {sid or 'child'}] {status}, {res.turns} turns, {child.tokens_used:,} tokens, ${child.cost_usd:.4f}"
+        if child.changed:
+            head += "\nchanged: " + ", ".join(sorted(child.changed))
+        return ToolResult.success(f"{head}\n\n{answer}", changed_files=sorted(child.changed), meta={"full": res.final_answer})
+
+    def handoff(self, task: str, args: dict[str, Any]) -> str:
+        parts = [task]
+        store = self.o.registry.observations
+        for raw in args.get("refs") or []:
+            found = store.load(str(raw).lstrip("§")) if store else None
+            if found:
+                parts.append(f"<result ref=\"§{found.ref}\" tool=\"{found.tool}\">\n{clip(found.body, LIMITS.delegate_handoff_tokens * LIMITS.chars_per_token)}\n</result>")
+        if files := args.get("files"):
+            parts.append("Start by reading: " + ", ".join(str(f) for f in files))
+        return "\n\n".join(parts)
+
     def run_call(self, call: ToolCall) -> tuple[FailureOutcome, str]:
         res, denied = self.execute(call)
+        self.changed.update(res.changed_files)
         self.loaded.update(res.meta.get("load_tools", []))
         self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,
-                   "display": asdict(res.display), "artifact": res.artifact.path if res.artifact else "",
+                   "display": asdict(res.display), "ref": res.artifact.ref if res.artifact else "",
                    "diagnostics": asdict(res.diagnostics) if res.diagnostics else {}})
         outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
         if not outcome.hint:

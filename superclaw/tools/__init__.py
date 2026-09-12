@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from collections.abc import Callable
 
 from superclaw.redaction import redact
 from superclaw.runtime import approx_tokens
+from superclaw.settings import LIMITS
 from superclaw.tools.budget import Budget, Budgeted, Category, budget_output
-from superclaw.tools.spill import SpillStore
+
+
+class Observations(Protocol):
+    def save(self, session_id: str, tool: str, call_id: str, body: str) -> str: ...
+
+    def load(self, ref: str) -> Any: ...
 
 
 class SideEffect(str, Enum):
@@ -43,7 +49,7 @@ class Display:
 
 @dataclass(frozen=True)
 class Artifact:
-    path: str
+    ref: str
     complete: bool
 
 
@@ -79,16 +85,54 @@ class Result:
         return cls(False, output, **kw)
 
 
+@dataclass(frozen=True)
+class Window:
+    start: int
+    end: int
+    digest: str
+    message: int
+
+    def covers(self, start: int, end: int) -> bool:
+        return self.start <= start and end <= self.end
+
+
 class FileTracker:
     def __init__(self) -> None:
         self._hashes: dict[Path, str] = {}
+        self._windows: dict[Path, list[Window]] = {}
+        self.cursor = 0
 
     @staticmethod
     def _hash(content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
 
     def record(self, path: Path, content: bytes) -> None:
-        self._hashes[path] = self._hash(content)
+        digest = self._hash(content)
+        if self._hashes.get(path) != digest:
+            self._windows.pop(path, None)
+        self._hashes[path] = digest
+
+    def shown(self, path: Path, start: int, end: int) -> None:
+        self._windows.setdefault(path, []).append(Window(start, end, self._hashes[path], self.cursor))
+
+    def in_context(self, path: Path, start: int, end: int, current: bytes) -> Window | None:
+        digest = self._hash(current)
+        return next((w for w in self._windows.get(path, []) if w.digest == digest and w.covers(start, end)), None)
+
+    def evict(self, messages: set[int]) -> None:
+        self._rewrite(lambda w: None if w.message in messages else w)
+
+    def compacted(self, system_end: int, removed: int) -> None:
+        cut = system_end + removed
+        self._rewrite(lambda w: None if w.message < cut else replace(w, message=w.message - removed + 1))
+
+    def _rewrite(self, fn: Callable[[Window], Window | None]) -> None:
+        for path in list(self._windows):
+            kept = [moved for w in self._windows[path] if (moved := fn(w)) is not None]
+            if kept:
+                self._windows[path] = kept
+            else:
+                del self._windows[path]
 
     def seen(self, path: Path) -> bool:
         return path in self._hashes
@@ -156,15 +200,19 @@ class Tool:
 
 
 def truncation_notice(budgeted: Budgeted, artifact: Artifact | None) -> str:
-    where = f"full output saved to {artifact.path}" if artifact else "the omitted part is not recoverable"
+    where = f"recall §{artifact.ref} for the full output" if artifact else "the omitted part is not recoverable"
     return (f"\n[superclaw] output shortened from {budgeted.original_tokens:,} tokens ({budgeted.original_chars:,} chars) "
             f"to {budgeted.retained_tokens:,} tokens; {where}")
 
 
+def ref_trailer(ref: str) -> str:
+    return f"\n[§{ref}]"
+
+
 class Registry:
-    def __init__(self, spill: SpillStore | None = None, budget: Budget | None = None) -> None:
+    def __init__(self, observations: Observations | None = None, budget: Budget | None = None) -> None:
         self._tools: dict[str, Tool] = {}
-        self._spill = spill
+        self.observations = observations
         self._budget = budget
 
     def register(self, tool: Tool) -> None:
@@ -206,10 +254,14 @@ class Registry:
         category = tool.category(args) if tool else Category.DEFAULT
         budgeted = budget_output(boundary, category, self._budget)
         res.output = budgeted.text
+        body = redact(str(res.meta.pop("full", "")))[0] or boundary
+        if self.observations and res.ok and len(body) > LIMITS.obs_min_chars:
+            res.artifact = Artifact(self.observations.save(ctx.session_id, name, call_id, body), complete=True)
         if budgeted.truncated:
-            if self._spill and res.artifact is None:
-                res.artifact = Artifact(str(self._spill.save(ctx.session_id, name, call_id, boundary)), complete=True)
+            ctx.files.evict({ctx.files.cursor})
             res.output += truncation_notice(budgeted, res.artifact)
+        elif res.artifact:
+            res.output += ref_trailer(res.artifact.ref)
         res.truncated = res.truncated or budgeted.truncated
         if redacted:
             res.meta["redacted"] = True

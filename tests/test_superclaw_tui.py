@@ -8,6 +8,7 @@ from supergraph import SuperGraph
 
 from superclaw.app import Runtime, build_registry
 from superclaw.memory import Memory
+from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
@@ -26,7 +27,7 @@ class Scripted:
 def rt(tmp_path):
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     memory = Memory(gs)
-    rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, tmp_path),
+    rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), tmp_path),
                  policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model")
     yield rt
     gs.close()

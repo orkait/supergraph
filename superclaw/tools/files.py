@@ -70,6 +70,7 @@ class ReadFile(Tool):
             "path": {"type": "string"},
             "offset": {"type": "integer", "description": "1-based first line.", "minimum": 1},
             "limit": {"type": "integer", "minimum": 1},
+            "force": {"type": "boolean", "default": False, "description": "Only to re-send a range the tool reported as already in your context."},
         },
         "required": ["path"],
         "additionalProperties": False,
@@ -79,18 +80,22 @@ class ReadFile(Tool):
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         target = jail(ctx.workspace, args["path"])
+        rel = args["path"]
         if not target.exists():
-            return Result.error(f"Error: file not found: {args['path']}")
+            return Result.error(f"Error: file not found: {rel}")
         if target.is_dir():
-            return Result.error(f"Error: {args['path']} is a directory; use list_directory")
+            return Result.error(f"Error: {rel} is a directory; use list_directory")
         data = target.read_bytes()
-        ctx.files.record(target, data)
         truncated = len(data) > LIMITS.read_file_bytes
         lines = data[:LIMITS.read_file_bytes].decode("utf-8", errors="replace").split("\n")
         if lines and lines[-1] == "":
             lines.pop()
         start = max(1, int(args.get("offset") or 1))
         end = min(len(lines), start - 1 + int(args.get("limit") or LIMITS.read_file_lines))
+        if not args.get("force") and (window := ctx.files.in_context(target, start, end, data)):
+            return Result.success(f"{rel} lines {start}-{end} are already in your context (sent unchanged as lines {window.start}-{window.end}); use them, or pass force=true to re-send.")
+        ctx.files.record(target, data)
+        ctx.files.shown(target, start, end)
         out = "\n".join(f"{start + i}→{_clip_line(line)}" for i, line in enumerate(lines[start - 1:end]))
         if end < len(lines):
             out += f"\n[{len(lines) - end:,} more lines; call read_file with offset={end + 1} to continue]"

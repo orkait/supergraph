@@ -21,6 +21,7 @@ class Limits:
 
     compaction_reserve_tokens: int = 16_384
     compaction_keep_tokens: int = 20_000
+    compaction_window_share: float = 0.25
     prune_threshold_chars: int = 8192
     prune_head_chars: int = 4096
     prune_tail_chars: int = 1024
@@ -59,6 +60,14 @@ class Limits:
     hook_output_chars: int = 4000
     hook_error_chars: int = 200
 
+    eager_schema_tokens: int = 1300
+    obs_min_chars: int = 2048
+    ref_hex_chars: int = 8
+    ref_hex_step: int = 4
+    recall_chunk_tokens: int = 4000
+    recall_search_limit: int = 5
+    recall_preview_chars: int = 120
+
     tool_output_bytes: int = 64 * 1024
     tool_output_tokens: int = 10_000
     read_file_tokens: int = 25_000
@@ -84,6 +93,14 @@ class Limits:
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
+    capture_preview_lines: int = 5
+    kernel_trace_depth: int = 3
+    delegate_depth: int = 2
+    delegate_max_turns: int = 24
+    delegate_budget_tokens: int = 200_000
+    delegate_min_budget_tokens: int = 20_000
+    delegate_handoff_tokens: int = 8000
+    delegate_answer_tokens: int = 1500
 
     id_hash_chars: int = 16
     run_id_bytes: int = 4
@@ -139,10 +156,6 @@ class Settings:
     @property
     def user_hooks(self) -> Path:
         return self.config_dir / "hooks.json"
-
-    @property
-    def artifacts_dir(self) -> Path:
-        return self.data_dir / "artifacts"
 
     def model_info(self):
         from superclaw.models import lookup
