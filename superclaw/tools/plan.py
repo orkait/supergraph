@@ -52,6 +52,7 @@ def pending_items(state: dict[str, Any]) -> list[str]:
 
 class UpdatePlan(Tool):
     name = "update_plan"
+    deferred = True
     description = (
         "Create or update the plan for work spanning multiple components or many tool calls. "
         "Skip it for bounded changes, lookups and explanations. Pass the full ordered list each call; "

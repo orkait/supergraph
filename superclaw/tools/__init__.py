@@ -100,9 +100,13 @@ class Tool:
     description: str
     parameters: dict[str, Any]
     safety: Safety
+    deferred: bool = False
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         raise NotImplementedError
+
+    def summary(self) -> str:
+        return self.description.split(". ", 1)[0].rstrip(".")
 
     def definition(self) -> dict[str, Any]:
         return {
@@ -140,12 +144,16 @@ class Registry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
-    def definitions(self, visible: Callable[[Tool], bool] | None = None) -> list[dict[str, Any]]:
-        return [
-            t.definition()
-            for name, t in sorted(self._tools.items())
-            if visible is None or visible(t)
-        ]
+    def tools(self, visible: Callable[[Tool], bool] | None = None) -> list[Tool]:
+        return [t for _, t in sorted(self._tools.items()) if visible is None or visible(t)]
+
+    def definitions(self, visible: Callable[[Tool], bool] | None = None, loaded: set[str] | None = None) -> list[dict[str, Any]]:
+        if loaded is None:
+            return [t.definition() for t in self.tools(visible)]
+        return [t.definition() for t in self.tools(visible) if not t.deferred or t.name in loaded]
+
+    def deferred(self, visible: Callable[[Tool], bool] | None = None) -> list[Tool]:
+        return [t for t in self.tools(visible) if t.deferred]
 
     def run(self, name: str, args: dict[str, Any], ctx: ToolContext) -> Result:
         tool = self._tools.get(name)

@@ -24,6 +24,7 @@ def parse_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
 
 class AskUser(Tool):
     name = "ask_user"
+    deferred = True
     description = (
         "Ask the user one or more clarifying questions and wait for their answers. "
         "Only for decisions that are genuinely theirs to make; include 2-4 options and a recommended one when the answer is likely one of a small set."

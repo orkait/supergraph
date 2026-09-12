@@ -22,6 +22,7 @@ from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
+from superclaw.tools.search import ToolSearch
 from superclaw.tools.shell import Bash
 from superclaw.tools.skill import SkillTool
 
@@ -78,6 +79,7 @@ def build_registry(memory: Memory, workspace: Path, backend: Backend | None = No
     for tool in (*core_file_tools(), Bash(backend), UpdatePlan(), SkillTool(roots=default_roots(workspace)), AskUser(),
                  memory.search_tool(), memory.note_tool()):
         registry.register(tool)
+    registry.register(ToolSearch(registry))
     return registry
 
 

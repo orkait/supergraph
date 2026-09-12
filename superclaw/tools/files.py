@@ -46,16 +46,13 @@ def _walk(root: Path, max_depth: int | None):
 
 class ReadFile(Tool):
     name = "read_file"
-    description = (
-        "Read exact file text, each line prefixed with its line number and →. "
-        "Use offset and limit for a line range."
-    )
+    description = "Read a file with line numbers. offset and limit select a line range."
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path."},
-            "offset": {"type": "integer", "description": "Optional 1-based line to start from.", "minimum": 1},
-            "limit": {"type": "integer", "description": "Optional number of lines to return.", "minimum": 1},
+            "path": {"type": "string"},
+            "offset": {"type": "integer", "description": "1-based first line.", "minimum": 1},
+            "limit": {"type": "integer", "minimum": 1},
         },
         "required": ["path"],
         "additionalProperties": False,
@@ -87,14 +84,14 @@ class ReadFile(Tool):
 
 class WriteFile(Tool):
     name = "write_file"
-    description = "Create a new file, refusing to overwrite existing files unless overwrite is true."
+    description = "Create a file. Overwriting needs overwrite=true and a prior read."
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path of the file to write."},
-            "description": {"type": "string", "description": "Why this file is written, one short line."},
-            "content": {"type": "string", "description": "Full file contents to write."},
-            "overwrite": {"type": "boolean", "description": "Allow overwriting an existing file you have read this session.", "default": False},
+            "path": {"type": "string"},
+            "description": {"type": "string", "description": "Why, one short line."},
+            "content": {"type": "string"},
+            "overwrite": {"type": "boolean", "default": False},
         },
         "required": ["path", "description", "content"],
         "additionalProperties": False,
@@ -117,15 +114,15 @@ class WriteFile(Tool):
 
 class EditFile(Tool):
     name = "edit_file"
-    description = "Replace an exact string in an existing file. old_string must match exactly and be unique unless replace_all is true."
+    description = "Replace an exact, unique string in a file you have read. replace_all for every occurrence."
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Path of the file to edit. Read it first; the call fails otherwise."},
-            "description": {"type": "string", "description": "Why this edit is made, one short line."},
-            "old_string": {"type": "string", "description": "Exact string to replace."},
-            "new_string": {"type": "string", "description": "Replacement string. May be empty."},
-            "replace_all": {"type": "boolean", "description": "Replace every occurrence instead of requiring uniqueness.", "default": False},
+            "path": {"type": "string"},
+            "description": {"type": "string", "description": "Why, one short line."},
+            "old_string": {"type": "string"},
+            "new_string": {"type": "string"},
+            "replace_all": {"type": "boolean", "default": False},
         },
         "required": ["path", "description", "old_string", "new_string"],
         "additionalProperties": False,
@@ -159,7 +156,8 @@ class EditFile(Tool):
 
 class ListDirectory(Tool):
     name = "list_directory"
-    description = "List files and directories in a workspace path with optional recursion."
+    deferred = True
+    description = "List a directory, optionally recursive."
     parameters = {
         "type": "object",
         "properties": {
@@ -190,7 +188,8 @@ class ListDirectory(Tool):
 
 class Glob(Tool):
     name = "glob"
-    description = "Find files by glob pattern inside the workspace."
+    deferred = True
+    description = "Find files by glob pattern."
     parameters = {
         "type": "object",
         "properties": {
@@ -223,16 +222,16 @@ class Glob(Tool):
 
 class Grep(Tool):
     name = "grep"
-    description = "Search file contents with a regular expression inside the workspace."
+    description = "Search file contents with a regex."
     parameters = {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Regular expression pattern to search for."},
-            "path": {"type": "string", "description": "Directory or file to search. Defaults to workspace root.", "default": "."},
-            "glob": {"type": "string", "description": 'Optional glob filter on file names, for example "*.py".'},
+            "pattern": {"type": "string"},
+            "path": {"type": "string", "default": "."},
+            "glob": {"type": "string", "description": 'File-name filter such as "*.py".'},
             "output_mode": {"type": "string", "enum": ["content", "files_with_matches", "count"], "default": "content"},
             "case_insensitive": {"type": "boolean", "default": False},
-            "head_limit": {"type": "integer", "description": "Maximum content lines to return.", "default": 50, "minimum": 1},
+            "head_limit": {"type": "integer", "default": 50},
         },
         "required": ["pattern"],
         "additionalProperties": False,

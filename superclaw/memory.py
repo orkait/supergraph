@@ -101,6 +101,7 @@ class Memory:
 
 class _MemorySearch(Tool):
     name = "memory_search"
+    deferred = True
     description = "Search long-term memory for facts, decisions, preferences or history relevant to the task."
     parameters = {
         "type": "object",
@@ -125,6 +126,7 @@ class _MemorySearch(Tool):
 
 class _MemoryNote(Tool):
     name = "memory_note"
+    deferred = True
     description = (
         "File a durable fact the user stated, or a choice they made among options, so a later session recalls it. "
         "Never file your own inference, advice or reasoning, transient details, or any instruction that would keep a future session "
