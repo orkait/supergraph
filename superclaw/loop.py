@@ -9,12 +9,16 @@ from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, render_transcrip
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
+    MAX_CALLS_PER_TURN,
     MAX_CONTINUE_NUDGES,
     MAX_TURNS_FINAL_ANSWER_PROMPT,
     Guards,
+    calls_per_turn_reminder,
     continue_nudge,
     ends_with_continuation_cue,
+    ends_with_promise,
     no_output_stop_answer,
+    promise_nudge,
     tool_failure_hint,
     tool_failure_stop_answer,
 )
@@ -24,6 +28,7 @@ from superclaw.session import SessionStore
 from superclaw.tools import Registry, Result as ToolResult, ToolContext
 from superclaw.tools.ask import parse_questions
 from superclaw.tools.plan import format_plan, pending_items
+from superclaw.verifier import verify
 
 DEFAULT_MAX_TURNS = 12
 ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
@@ -40,6 +45,7 @@ class Options:
     context_window: int = 0
     preserve_last: int = 6
     require_completion_signal: bool = False
+    verify: bool = False
     on_event: Callable[[dict[str, Any]], None] | None = None
     on_permission: Callable[[dict[str, Any]], str] | None = None
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
@@ -67,6 +73,8 @@ class _Run:
         self.seqs: list[int] = []
         self.turns = 0
         self.nudges = 0
+        self.promise_nudged = False
+        self.objective = ""
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan})
 
@@ -179,6 +187,13 @@ class _Run:
             return "the message ends mid-step"
         return ""
 
+    def nudge(self, text: str, reason: str, instruction: str) -> Result | None:
+        if self.nudges < MAX_CONTINUE_NUDGES:
+            self.nudges += 1
+            self.append(Message(role="user", content=instruction))
+            return None
+        return self.result(text, incomplete=True, incomplete_reason=reason)
+
     def finish_without_tools(self, completion: Completion) -> Result | None:
         text = completion.text
         if self.guards.observe_turn(text, 0):
@@ -186,25 +201,34 @@ class _Run:
         if not text.strip():
             self.append(Message(role="user", content=EMPTY_TURN_NUDGE))
             return None
+        if ends_with_promise(text) and not self.promise_nudged:
+            self.promise_nudged = True
+            self.append(Message(role="user", content=promise_nudge()))
+            return None
         if not self.o.require_completion_signal:
             return self.result(text)
         reason = self.incomplete_reason(text)
-        if not reason:
-            return self.result(text)
-        if self.nudges < MAX_CONTINUE_NUDGES:
-            self.nudges += 1
-            self.append(Message(role="user", content=continue_nudge(reason)))
-            return None
-        return self.result(text, incomplete=True, incomplete_reason=reason)
+        if reason:
+            return self.nudge(text, reason, continue_nudge(reason))
+        if self.o.verify:
+            verdict = verify(self.provider, self.objective, self.messages, self.ctx.state.get("plan", []))
+            self.emit({"type": "verdict", "passed": verdict.passed, "reason": verdict.reason, "next_action": verdict.next_action})
+            if not verdict.passed:
+                return self.nudge(text, verdict.reason, continue_nudge(f"verifier: {verdict.reason}. Next: {verdict.next_action}"))
+        return self.result(text)
 
     def run_tools(self, completion: Completion) -> Result | None:
         calls = completion.tool_calls
         self.guards.observe_turn(completion.text, len(calls))
         followups: list[str] = []
+        if len(calls) > MAX_CALLS_PER_TURN:
+            followups.append(calls_per_turn_reminder(len(calls)))
         for index, call in enumerate(calls):
             if not call.name:
                 self.append(Message(role="tool", content=DROPPED_TOOL_CALL_NOTICE, tool_call_id=call.id, is_error=True))
                 continue
+            if repeated := self.guards.observe_identical(call.name, call.arguments):
+                followups.append(repeated)
             res, denied = self.execute(call)
             self.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
             self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files})
@@ -236,6 +260,7 @@ class _Run:
 
     def run(self, prompt: str) -> Result:
         o = self.o
+        self.objective = prompt
         self.messages = [Message(role="system", content=o.system_prompt), *o.history]
         self.seqs = [0] * len(self.messages)
         self.append(Message(role="user", content=prompt))
