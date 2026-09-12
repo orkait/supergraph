@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, threshold
+from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
@@ -60,6 +61,7 @@ class Options:
     session: SessionStore | None = None
     session_id: str = ""
     summarize: Callable[[str], str] | None = None
+    hooks: Dispatcher | None = None
 
 
 @dataclass
@@ -184,9 +186,17 @@ class _Run:
         allowed, reason = self.decide(call.name, args)
         if not allowed:
             return ToolResult.error(f"Error: {call.name} denied: {reason}"), True
+        if self.o.hooks:
+            before = self.o.hooks.dispatch("beforeTool", {"tool": call.name, "id": call.id, "args": args}, call.name)
+            if before.blocked:
+                return ToolResult.error(f"Error: {call.name} blocked by hook {before.blocked_by}: {' '.join(before.context)}".rstrip(": ")), True
         res = self.o.registry.run(call.name, args, self.ctx)
         if call.name == "update_plan" and res.ok:
             self.persist("plan", {"items": self.ctx.state.get("plan", [])})
+        if self.o.hooks:
+            after = self.o.hooks.dispatch("afterTool", {"tool": call.name, "id": call.id, "args": args, "ok": res.ok, "output": res.output[:4000]}, call.name)
+            if after.context:
+                res.output += "\n\n[hook] " + "\n[hook] ".join(after.context)
         return res, False
 
     def ask_user(self, args: dict[str, Any]) -> ToolResult:
@@ -223,6 +233,12 @@ class _Run:
             self.promise_nudged = True
             self.append(Message(role="user", content=promise_nudge()))
             return None
+        if self.o.hooks:
+            stop = self.o.hooks.dispatch("stop", {"text": text, "turns": self.turns})
+            if stop.blocked and self.nudges < MAX_CONTINUE_NUDGES:
+                self.nudges += 1
+                self.append(Message(role="user", content=f"A stop hook ({stop.blocked_by}) asked you to continue: {' '.join(stop.context) or 'work remains'}"))
+                return None
         if not self.o.require_completion_signal:
             return self.result(text)
         reason = self.incomplete_reason(text)
@@ -284,6 +300,9 @@ class _Run:
         self.seqs = [0] * len(self.messages)
         self.persist("prompt", {"hash": prompt_hash(o.system_prompt), "tokens": approx_tokens(o.system_prompt), "text": o.system_prompt})
         self.append(Message(role="user", content=prompt))
+        if o.hooks:
+            for line in o.hooks.dispatch("sessionStart", {"session": o.session_id, "prompt": prompt}).context:
+                self.append(Message(role="user", content=f"[hook] {line}"))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1
             if o.token_budget and self.tokens_used >= o.token_budget:

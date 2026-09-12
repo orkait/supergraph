@@ -75,6 +75,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `128000` |
 | Turn limit | `--max-turns` | `12` |
 | Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
+| Hooks | `~/.config/superclaw/hooks.json`, plus `<workspace>/.superclaw/hooks.json` with `--trust-workspace` | off until the file says `"enabled": true`; events `sessionStart` `beforeTool` `afterTool` `stop`, regex `matcher` on the tool name, JSON payload on stdin, exit 2 blocks a tool or asks the run to continue, stdout `{"additionalContext": ...}` is injected |
 | Intent gate | `--intent-gate` | off; one narrow model call classifies the request as `answer`, `diagnose`, `change` or `monitor`, and `answer` hides writes, shell and network while `diagnose` hides writes |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
 | Personal guidelines | `~/.config/superclaw/SUPERCLAW.md` | none |
@@ -144,7 +145,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 |---|---|
 | Linux-only sandbox | `bubblewrap` covers `bash`; file tools rely on the path jail, which resolves symlinks but has a check-to-use window. No macOS Seatbelt yet, and network approval is all-or-nothing rather than a domain allowlist |
 | No streaming | completions are collected whole, so text appears per turn rather than per token |
-| No MCP, no hooks, no LSP | extension points only |
+| No MCP, no LSP | extension points only |
 | Substrate gaps | no spend ceiling in `IngestConfig`, no `__origin__` on facts, no `__invalid_at__` window on beliefs |
 
 ## ✅ Verification
