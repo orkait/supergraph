@@ -1,4 +1,4 @@
-# graphstore - Pro CPU image (no GPU), built FROM LOCAL SOURCE for Railway.
+# supergraph - Pro CPU image (no GPU), built FROM LOCAL SOURCE for Railway.
 #
 # "Pro on CPU" here means:
 #   - Ternary-Bonsai NL->DSL ingest  (POST /api/ingest, n_gpu_layers=0)
@@ -6,7 +6,7 @@
 #   - model2vec embedder             (REMEMBER / RECALL / LEXICAL fusion)
 # all on CPU: prebuilt CPU llama-cpp wheel + CPU onnxruntime, no CUDA.
 #
-# Why build from source (not PyPI graphstore==0.6.0): the published wheel has no
+# Why build from source (not PyPI supergraph==0.6.0): the published wheel has no
 # /api/ingest Bonsai endpoint and no NER-opt-in graceful-skip. This tree does.
 #
 # Why models live at /models, not /data: Railway mounts a managed volume at /data
@@ -15,13 +15,13 @@
 #
 # Reranker (jina-reranker-v3) and the jina-v3 embedder are intentionally omitted:
 # on CPU, model2vec is faster + ~20x smaller and reranking gives marginal lift.
-# Swap the embedder via GRAPHSTORE_* env + a rebuilt prefetch layer if needed.
+# Swap the embedder via SUPERGRAPH_* env + a rebuilt prefetch layer if needed.
 #
 # Build (capped builder per Rule 13 - buildx ignores --cpus/--memory):
-#   docker buildx build --builder graphstore-builder -f Dockerfile.pro-cpu \
-#       -t graphstore-pro-cpu:src .
+#   docker buildx build --builder supergraph-builder -f Dockerfile.pro-cpu \
+#       -t supergraph-pro-cpu:src .
 # Run:
-#   docker run --cpus=8 --memory=16g -p 7200:7200 graphstore-pro-cpu:src
+#   docker run --cpus=8 --memory=16g -p 7200:7200 supergraph-pro-cpu:src
 #
 # Skip the model prefetch (~1.4 GB) with --build-arg SKIP_MODEL_PREFETCH=1; the
 # first /api/ingest then downloads on demand into /models (so do this only for
@@ -36,13 +36,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    GRAPHSTORE_DB_PATH=/data \
-    GRAPHSTORE_HOST=0.0.0.0 \
-    GRAPHSTORE_PORT=7200 \
-    GRAPHSTORE_GPU=0 \
+    SUPERGRAPH_DB_PATH=/data \
+    SUPERGRAPH_HOST=0.0.0.0 \
+    SUPERGRAPH_PORT=7200 \
+    SUPERGRAPH_GPU=0 \
     MODELS_DIR=/models \
     HF_HOME=/models/hf \
-    GRAPHSTORE_BONSAI_GGUF=/models/bonsai/Ternary-Bonsai-4B-TQ1_0.gguf
+    SUPERGRAPH_BONSAI_GGUF=/models/bonsai/Ternary-Bonsai-4B-TQ1_0.gguf
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /uvx /usr/local/bin/
 
@@ -58,7 +58,7 @@ RUN uv pip install --system \
         "onnxruntime>=1.17" "fastembed>=0.8" "tokenizers>=0.15" \
         "huggingface-hub>=0.24" "model2vec>=0.4"
 
-# Bake models at /models BEFORE the source install, so editing graphstore code
+# Bake models at /models BEFORE the source install, so editing supergraph code
 # only rebuilds the small install layer below - models stay cached (no 1.4GB redownload).
 ARG SKIP_MODEL_PREFETCH=0
 RUN if [ "$SKIP_MODEL_PREFETCH" = "0" ]; then \
@@ -74,7 +74,7 @@ RUN if [ "$SKIP_MODEL_PREFETCH" = "0" ]; then \
     fi \
     && rm -rf /root/.cache/pip /tmp/*
 
-# Build graphstore from this source tree (/api/ingest + NER/threads fixes).
+# Build supergraph from this source tree (/api/ingest + NER/threads fixes).
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN uv pip install --system ".[playground,mcp]" \
@@ -82,8 +82,8 @@ RUN uv pip install --system ".[playground,mcp]" \
         \( -type d \( -name '__pycache__' -o -name 'tests' -o -name 'test' \) \
         -o -name '*.pyc' \) -exec rm -rf {} + 2>/dev/null || true
 
-COPY docker/entrypoint.sh /usr/local/bin/graphstore-entrypoint
-RUN chmod +x /usr/local/bin/graphstore-entrypoint \
+COPY docker/entrypoint.sh /usr/local/bin/supergraph-entrypoint
+RUN chmod +x /usr/local/bin/supergraph-entrypoint \
     && mkdir -p /data \
     && rm -f /usr/local/bin/uv /usr/local/bin/uvx
 
@@ -95,4 +95,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import socket; s=socket.socket(); s.settimeout(3); \
         s.connect(('127.0.0.1', 7200)); s.close()" || exit 1
 
-ENTRYPOINT ["/usr/local/bin/graphstore-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/supergraph-entrypoint"]

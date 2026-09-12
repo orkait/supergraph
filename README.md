@@ -110,6 +110,8 @@ The **DSL** is Lark LALR(1). Every write, read, `INGEST`, and `SYS *` goes throu
 
 Deep dive: [Architecture](website/docs/concepts/architecture.md) · [Edge matrix](website/docs/concepts/edge-matrix.md).
 
+The two parts of the project - this substrate and the `superclaw` harness - are mapped in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## 🧠 REMEMBER
 
 `REMEMBER` fuses four signals at retrieval time. `SIMILAR`, `LEXICAL`, `RECALL` each expose a single leg.
