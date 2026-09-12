@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from superclaw.intent import Kind
 from superclaw.tools import PathEscapes, Permission, SideEffect, Tool, jail
 
 
@@ -211,6 +212,7 @@ class Policy:
         self.workspace = Path(workspace)
         self.mode = mode
         self.sandboxed = sandboxed
+        self.request_kind = Kind.CHANGE
         self._session_grants: set[str] = set()
         self._prefix_grants: list[list[str]] = []
 
@@ -220,12 +222,19 @@ class Policy:
     def grant_prefix(self, prefix: list[str]) -> None:
         self._prefix_grants.append(list(prefix))
 
+    def _kind_blocks(self, se: SideEffect) -> str:
+        if self.request_kind == Kind.ANSWER and se in (SideEffect.WRITE, SideEffect.SHELL, SideEffect.NETWORK):
+            return "the request was classified as answer, which does not authorize writes, shell or network; ask the user for a change"
+        if self.request_kind == Kind.DIAGNOSE and se == SideEffect.WRITE:
+            return "the request was classified as diagnose; report the cause, do not implement the fix unless the user asks"
+        return ""
+
     def visible(self, tool: Tool) -> bool:
         if tool.safety.permission == Permission.DENY:
             return False
         if self.mode == Mode.PLAN:
             return tool.safety.side_effect in (SideEffect.NONE, SideEffect.READ)
-        return True
+        return not self._kind_blocks(tool.safety.side_effect)
 
     def _prefix_covers(self, segments: list[list[str]]) -> bool:
         if not segments or not self._prefix_grants:
@@ -299,6 +308,8 @@ class Policy:
             return Decision(Action.ALLOW, "read-only", risk)
         if self.mode == Mode.PLAN:
             return Decision(Action.DENY, "plan mode is read-only", risk)
+        if blocked := self._kind_blocks(se):
+            return Decision(Action.DENY, blocked, risk)
         if se == SideEffect.SHELL:
             return self._evaluate_shell(tool, args)
         if self.mode == Mode.UNSAFE:

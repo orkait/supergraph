@@ -92,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", default=None, help="supergraph store path (default: $SUPERCLAW_DB_PATH or ~/.local/share/superclaw/brain)")
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--context-window", type=int, default=int(os.environ.get("SUPERCLAW_CONTEXT_WINDOW", DEFAULT_CONTEXT_WINDOW)))
+    parser.add_argument("--budget-tokens", type=int, default=int(os.environ.get("SUPERCLAW_BUDGET_TOKENS", "0")), help="stop a run once this many tokens were spent (0 = unlimited)")
+    parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--resume", default=None, help="session id, or 'latest'")
     sub = parser.add_subparsers(dest="command")
     ex = sub.add_parser("exec", help="run one prompt headless and exit")
@@ -111,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: not a directory: {workspace}")
     try:
         rt = build_runtime(workspace, Mode(args.mode), args.model, Path(args.db) if args.db else default_db_path(),
-                           max_turns=args.max_turns, context_window=args.context_window)
+                           max_turns=args.max_turns, context_window=args.context_window,
+                           token_budget=args.budget_tokens, intent_gate=args.intent_gate)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills}.get(args.command, cmd_tui)

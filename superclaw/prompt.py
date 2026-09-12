@@ -4,6 +4,7 @@ import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from superclaw.intent import GUIDANCE, Kind
 from superclaw.policy import Mode
 from superclaw.skills import Skill
 
@@ -27,6 +28,7 @@ class PromptInputs:
     user_guidelines: Path | None = None
     provider: str = ""
     model: str = ""
+    request_kind: Kind | None = None
 
 
 def core_prompt() -> str:
@@ -191,6 +193,8 @@ def build_system_prompt(inputs: PromptInputs) -> str:
             session.append(f"Active provider: {inputs.provider}")
         if inputs.model:
             session.append(f"Active model: {inputs.model}")
+        if inputs.request_kind:
+            session.append(f"Request kind: {GUIDANCE[inputs.request_kind]}. A terminal condition such as \"finish\" or \"do not stop\" requires persistence toward the outcome but does not broaden the authorized actions.")
         session.append("</session>")
         sections.append("\n".join(session))
     user = user_guidelines(inputs.user_guidelines)
