@@ -13,6 +13,7 @@ from superclaw.intent import classify
 from superclaw.loop import Options, Result, run
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
+from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
@@ -28,7 +29,6 @@ from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.search import ToolSearch
 from superclaw.tools.shell import Bash
 from superclaw.tools.skill import SkillTool
-from superclaw.tools.spill import SpillStore
 
 
 class NoProviderKey(RuntimeError):
@@ -79,12 +79,12 @@ def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> D
     return Dispatcher(hooks, workspace) if hooks else None
 
 
-def build_registry(memory: Memory, workspace: Path, backend: Backend | None = None, settings: Settings | None = None) -> Registry:
+def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None, settings: Settings | None = None) -> Registry:
     settings = settings or Settings.from_env()
-    registry = Registry(spill=SpillStore(settings.artifacts_dir))
+    registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
     for tool in (*core_file_tools(), Bash(backend), UpdatePlan(), SkillTool(roots=roots), AskUser(),
-                 memory.search_tool(), memory.note_tool()):
+                 memory.search_tool(), memory.note_tool(), Recall(observations)):
         registry.register(tool)
     registry.register(ToolSearch(registry))
     return registry
@@ -107,7 +107,7 @@ def build_runtime(
     memory = Memory(gs)
     backend = detect()
     return Runtime(
-        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, workspace, backend, settings),
+        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), workspace, backend, settings),
         policy=Policy(workspace, mode, sandboxed=backend is not None), provider=LitellmProvider(chain),
         workspace=workspace, model=settings.model, settings=settings, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks,

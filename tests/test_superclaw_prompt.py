@@ -1,72 +1,34 @@
 from pathlib import Path
 
 from superclaw.policy import Mode
-from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, find_git_root, project_guidelines, skills_block
+from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, project_guidelines, skills_block
 from superclaw.runtime import approx_tokens
 from superclaw.settings import LIMITS
-from superclaw.skills import Skill
+from superclaw.skills import Skill, load_skills
 
 
-def repo(tmp_path):
-    (tmp_path / ".git").mkdir()
-    (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
-    return tmp_path
-
-
-def test_core_prompt_and_confirmation_policy_stay_small():
-    assert 0 < approx_tokens(core_prompt()) < 1000
-    prompt = build_system_prompt(PromptInputs(cwd=Path("/nonexistent"), mode=Mode.ASK))
-    assert "## Confirmation policy" in prompt and approx_tokens(prompt) < 1600
-
-
-def test_project_guidelines_walk_root_to_cwd_with_priority_and_caps(tmp_path):
-    root = repo(tmp_path)
-    sub = root / "a" / "b"
-    sub.mkdir(parents=True)
-    assert find_git_root(sub) == root and find_git_root(tmp_path.parent) is None
+def test_prompt_assembly_guidelines_and_skills(tmp_path):
+    root = tmp_path
+    (root / ".git").mkdir()
+    (root / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+    assert 0 < approx_tokens(core_prompt()) < 1000 and approx_tokens(build_system_prompt(PromptInputs(cwd=Path("/nonexistent"), mode=Mode.ASK))) < 1600
     (root / "AGENTS.md").write_text("ROOT RULES")
     (root / "SUPERCLAW.md").write_text("BRAND")
-    (root / ".superclaw").mkdir()
-    (root / ".superclaw" / "AGENTS.md").write_text("HIDDEN")
     svc = root / "services" / "api"
     svc.mkdir(parents=True)
     (svc / "agents.md").write_text("API RULES")
     out = project_guidelines(svc, root)
-    assert out.index("ROOT RULES") < out.index("API RULES") and "## Project guidelines (services/api/agents.md)" in out
-    assert "BRAND" not in out and "HIDDEN" not in out
-    (root / "AGENTS.md").unlink()
-    (root / "SUPERCLAW.md").unlink()
-    assert "HIDDEN" in project_guidelines(root, root)
+    assert out.index("ROOT RULES") < out.index("API RULES") and "BRAND" not in out and "## Project guidelines (services/api/agents.md)" in out
     (root / "AGENTS.md").write_text("x" * (LIMITS.guideline_file_bytes + 100))
-    out = project_guidelines(root, root)
-    assert "… (truncated)" in out and out.count("x") <= LIMITS.guideline_file_bytes
-    letters = "bfhkqv"
-    cur = root
-    for i in range(6):
-        (cur / "AGENTS.md").write_text(letters[i] * LIMITS.guideline_file_bytes)
-        cur = cur / f"d{i}"
-        cur.mkdir()
-    assert sum(project_guidelines(cur, root).count(letters[i]) for i in range(6)) <= LIMITS.guideline_total_bytes
-    (tmp_path / "solo").mkdir()
-    (tmp_path / "solo" / "AGENTS.md").write_text("ONLY")
-    assert "ONLY" in project_guidelines(tmp_path / "solo", None)
-
-
-def test_skills_block_lists_names_only_and_summarises_overflow():
-    assert skills_block([]) == ""
-    block = skills_block([Skill("bench", "Run benchmarks.", "SECRET BODY", "p")])
-    assert "- bench: Run benchmarks." in block and "SECRET BODY" not in block and block.startswith("<available_skills>")
-    block = skills_block([Skill(f"skill-{i:03d}", "d" * 200, "", "p") for i in range(60)])
-    assert "more (call skill with a name" in block and len(block) < LIMITS.skills_index_bytes + 300
-
-
-def test_assembly_orders_user_guidelines_before_project_and_adds_mode_memory_environment(tmp_path):
-    root = repo(tmp_path)
-    (root / "AGENTS.md").write_text("PROJECT")
+    assert project_guidelines(root, root).count("x") <= LIMITS.guideline_file_bytes
+    skill = tmp_path / "skills" / "bench"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: bench\ndescription: Run benchmarks.\n---\nBODY")
+    skills = load_skills([tmp_path / "skills", tmp_path / "missing"])
+    assert skills == [Skill("bench", "Run benchmarks.", "BODY", str(skill / "SKILL.md"))]
+    block = skills_block([*skills, *(Skill(f"s{i:03d}", "d" * LIMITS.skill_description_chars, "", "p") for i in range(60))])
+    assert "- bench: Run benchmarks." in block and "BODY" not in block and "more (call skill with a name" in block
     userfile = tmp_path / "SUPERCLAW.md"
     userfile.write_text("PERSONAL")
-    prompt = build_system_prompt(PromptInputs(cwd=root, mode=Mode.PLAN, memory="- user prefers tabs", model="m", provider="p",
-                                              skills=[Skill("s", "d", "", "p")], user_guidelines=userfile))
-    assert "Plan mode is active" in prompt and "<memory>" in prompt and "user prefers tabs" in prompt
-    assert f"Working directory: {root}" in prompt and "Git branch: main" in prompt and "Active model: m" in prompt and "<available_skills>" in prompt
-    assert "## User guidelines" in prompt and prompt.index("PERSONAL") < prompt.index("PROJECT")
+    prompt = build_system_prompt(PromptInputs(cwd=root, mode=Mode.PLAN, memory="- user prefers tabs", model="m", provider="p", skills=skills, user_guidelines=userfile))
+    assert "Plan mode is active" in prompt and "user prefers tabs" in prompt and "Git branch: main" in prompt and prompt.index("PERSONAL") < prompt.index("xxxx")

@@ -23,7 +23,7 @@ from superclaw.guards import (
     tool_failure_hint,
     tool_failure_stop_answer,
 )
-from superclaw.meter import ContextMeter
+from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
@@ -85,6 +85,7 @@ class _Run:
         self.o = options
         self.guards = Guards()
         self.meter = ContextMeter(options.context_window, options.reserve_tokens)
+        self.keep_tokens = bounded(options.keep_tokens, options.context_window)
         self.messages: list[Message] = []
         self.seqs: list[int] = []
         self.turns = 0
@@ -142,7 +143,7 @@ class _Run:
         if self.prune() and not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
         plan = self.ctx.state.get("plan", [])
-        res = compact(self.messages, keep_tokens=self.o.keep_tokens, summarize=self.summarize,
+        res = compact(self.messages, keep_tokens=self.keep_tokens, summarize=self.summarize,
                       plan_text=format_plan(plan) if plan else "")
         if not res.compacted:
             return
@@ -156,14 +157,14 @@ class _Run:
         self.emit({"type": "compaction", "removed": res.removed})
 
     def prune(self) -> int:
-        pruned = prune_tool_results(self.messages, cut_point(self.messages, self.o.keep_tokens))
-        for index, content in pruned:
+        pruned = prune_tool_results(self.messages, cut_point(self.messages, self.keep_tokens))
+        for index, content, _ in pruned:
             self.messages[index].content = content
             self.persist("prune", {"seq": self.seqs[index], "output": content})
         if pruned:
-            self.ctx.files.evict({index for index, _ in pruned})
+            self.ctx.files.evict({index for index, _, _ in pruned})
             self.meter.reset()
-            self.emit({"type": "prune", "results": len(pruned)})
+            self.emit({"type": "prune", "results": len(pruned), "refs": [ref for _, _, ref in pruned if ref]})
         return len(pruned)
 
     def decide(self, name: str, args: dict[str, Any]) -> tuple[bool, str]:
@@ -283,7 +284,7 @@ class _Run:
         self.loaded.update(res.meta.get("load_tools", []))
         self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,
-                   "display": asdict(res.display), "artifact": res.artifact.path if res.artifact else "",
+                   "display": asdict(res.display), "ref": res.artifact.ref if res.artifact else "",
                    "diagnostics": asdict(res.diagnostics) if res.diagnostics else {}})
         outcome = self.guards.observe_tool_result(call.name, not res.ok and not denied, res.output)
         if not outcome.hint:

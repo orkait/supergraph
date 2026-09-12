@@ -21,6 +21,7 @@ class Limits:
 
     compaction_reserve_tokens: int = 16_384
     compaction_keep_tokens: int = 20_000
+    compaction_window_share: float = 0.25
     prune_threshold_chars: int = 8192
     prune_head_chars: int = 4096
     prune_tail_chars: int = 1024
@@ -58,6 +59,14 @@ class Limits:
     error_signature_chars: int = 160
     hook_output_chars: int = 4000
     hook_error_chars: int = 200
+
+    eager_schema_tokens: int = 1100
+    obs_min_chars: int = 2048
+    ref_hex_chars: int = 8
+    ref_hex_step: int = 4
+    recall_chunk_tokens: int = 4000
+    recall_search_limit: int = 5
+    recall_preview_chars: int = 120
 
     tool_output_bytes: int = 64 * 1024
     tool_output_tokens: int = 10_000
@@ -139,10 +148,6 @@ class Settings:
     @property
     def user_hooks(self) -> Path:
         return self.config_dir / "hooks.json"
-
-    @property
-    def artifacts_dir(self) -> Path:
-        return self.data_dir / "artifacts"
 
     def model_info(self):
         from superclaw.models import lookup

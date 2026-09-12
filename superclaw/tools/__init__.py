@@ -4,13 +4,17 @@ import hashlib
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from collections.abc import Callable
 
 from superclaw.redaction import redact
 from superclaw.runtime import approx_tokens
+from superclaw.settings import LIMITS
 from superclaw.tools.budget import Budget, Budgeted, Category, budget_output
-from superclaw.tools.spill import SpillStore
+
+
+class Observations(Protocol):
+    def save(self, session_id: str, tool: str, call_id: str, body: str) -> str: ...
 
 
 class SideEffect(str, Enum):
@@ -43,7 +47,7 @@ class Display:
 
 @dataclass(frozen=True)
 class Artifact:
-    path: str
+    ref: str
     complete: bool
 
 
@@ -194,15 +198,19 @@ class Tool:
 
 
 def truncation_notice(budgeted: Budgeted, artifact: Artifact | None) -> str:
-    where = f"full output saved to {artifact.path}" if artifact else "the omitted part is not recoverable"
+    where = f"recall §{artifact.ref} for the full output" if artifact else "the omitted part is not recoverable"
     return (f"\n[superclaw] output shortened from {budgeted.original_tokens:,} tokens ({budgeted.original_chars:,} chars) "
             f"to {budgeted.retained_tokens:,} tokens; {where}")
 
 
+def ref_trailer(ref: str) -> str:
+    return f"\n[§{ref}]"
+
+
 class Registry:
-    def __init__(self, spill: SpillStore | None = None, budget: Budget | None = None) -> None:
+    def __init__(self, observations: Observations | None = None, budget: Budget | None = None) -> None:
         self._tools: dict[str, Tool] = {}
-        self._spill = spill
+        self._observations = observations
         self._budget = budget
 
     def register(self, tool: Tool) -> None:
@@ -244,11 +252,13 @@ class Registry:
         category = tool.category(args) if tool else Category.DEFAULT
         budgeted = budget_output(boundary, category, self._budget)
         res.output = budgeted.text
+        if self._observations and res.ok and len(boundary) > LIMITS.obs_min_chars:
+            res.artifact = Artifact(self._observations.save(ctx.session_id, name, call_id, boundary), complete=True)
         if budgeted.truncated:
             ctx.files.evict({ctx.files.cursor})
-            if self._spill and res.artifact is None:
-                res.artifact = Artifact(str(self._spill.save(ctx.session_id, name, call_id, boundary)), complete=True)
             res.output += truncation_notice(budgeted, res.artifact)
+        elif res.artifact:
+            res.output += ref_trailer(res.artifact.ref)
         res.truncated = res.truncated or budgeted.truncated
         if redacted:
             res.meta["redacted"] = True

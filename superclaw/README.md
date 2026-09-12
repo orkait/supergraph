@@ -31,7 +31,8 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 |---|---|
 | Edits code | `read_file` `write_file` `edit_file` `list_directory` `glob` `grep`, all jailed to the workspace; an edit or overwrite fails unless the file was read this session and is unchanged on disk since. `read_file` pages at 2,000 lines with a continuation offset and clips lines past 2,000 chars; `grep` skips binaries and files over 256 KiB |
 | Never re-reads what it holds | the harness tracks every file range the model has seen, keyed by content hash and by the message that carried it. A `read_file` for a range still in the context returns a one-line pointer instead of the bytes (`force=true` overrides); an edit, an external change, a pruned or compacted message, or a truncated result drops the claim, so the next read is real |
-| Keeps tool output inside the window | every result crosses one boundary: redact, then a token budget per output category (file, search, test, process, diff) that keeps the lines that matter - both ends of a file range, one hit per file, failure lines with context, distinct errors plus the tail - then the full redacted text is saved under `~/.local/share/superclaw/artifacts/<session>/` and the model view cites the path, the original size and what survived. Hook feedback passes the same boundary. Edits carry a unified diff for the TUI that never enters the model context |
+| Keeps tool output inside the window | every result crosses one boundary: redact, then a token budget per output category (file, search, test, process, diff) that keeps the lines that matter - both ends of a file range, one hit per file, failure lines with context, distinct errors plus the tail - then the full redacted text becomes an `obs:<id>` node in the substrate and the model view carries `§id`, the original size and what survived. Hook feedback passes the same boundary. Edits carry a unified diff for the TUI that never enters the model context |
+| Loses nothing to pressure | pruning replaces the middle of an old result with `recall §id to expand`; `recall` returns any stored result in 4,000-token chunks, or searches every stored result by meaning (`REMEMBER` over the `obs` nodes) when the id is unknown. Recalled chunks are ordinary results, so they are pruned again when pressure returns |
 | Labels what it did not write | tool output arrives in `<untrusted source=…>` blocks the prompt ranks below the user; secrets (API keys, tokens, JWTs, private keys, auth headers, `*_password=` values) are scrubbed at the tool boundary before the model sees them |
 | Runs commands | `bash` inside a `bubblewrap` sandbox: read-only root, writable workspace and `/tmp`, no network, `~/.ssh` `~/.aws` `~/.gnupg` masked; destructive and network commands classified and gated; `require_escalated` with a `justification` runs on the host after approval |
 | Plans | `update_plan`, persisted per session and restored on resume |
@@ -41,7 +42,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
 | Fits the window | pressure is measured against the model's real window minus a 16,384-token reserve, anchored on the provider's reported usage rather than a local estimate. Under pressure the harness first prunes older tool results (over 8,192 chars) to a head and tail with no model call, and only if that is not enough summarises everything before the last 20,000 tokens, never cutting between a tool call and its result. The summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary. Prunes and compactions are session events, so a resumed session replays the same shortened context |
 
-The system prompt is 541 tokens (838 with the confirmation policy). Only six tool schemas ride every request (`read_file` `edit_file` `write_file` `grep` `bash` `tool_search`); the rest are listed one line each and load on demand through `tool_search`, so a first turn is about 1.6k tokens before the user's message (eager=964 all=2035 prompt=873 first_turn=1837).
+The system prompt is 653 tokens (950 with the confirmation policy). Only six tool schemas ride every request (`read_file` `edit_file` `write_file` `grep` `bash` `tool_search`); the rest are listed one line each and load on demand through `tool_search`, so a first turn is about 2k tokens before the user's message (eager=1000 all=2194 prompt=969 first_turn=1969, measured with the ink-quarter estimator).
 
 ## 🔐 Permission modes
 
@@ -60,6 +61,7 @@ Anything outside the workspace is denied in every mode. Interactive programs (`v
 |---|---|
 | Sessions and events | namespace `superclaw`: `session:<id>` nodes, `ev:<id>:<seq>` nodes with the payload as the document, `has_event` edges |
 | Fork | a new session with the events copied and a `forked_from` edge |
+| Tool results | `obs:<id>` nodes with the full redacted output as the document, id = hash of tool, call and body; the window carries `§id` |
 | Plan | `plan` events; the last one is restored on resume |
 | Compaction | a `compaction` event; replay substitutes the summary for the events it covered |
 | Prompt and failures | every run logs a `prompt` event (hash, token count, full text) so what the model saw is reconstructable; a resumed session reports `prompt_drift` when the rebuilt prompt differs; provider failures are `error` events |
@@ -160,7 +162,7 @@ Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_
 $ .venv/bin/ruff check .
 All checks passed!
 $ .venv/bin/python -m pytest -q -p no:randomly tests/test_superclaw_*.py
-37 passed
+15 passed
 $ superclaw --mode auto exec --output-format stream-json "test_calc.py fails. Find the bug in calc.py, fix it, and run pytest -q to prove it passes."
 ... "type": "tool_call", "name": "edit_file", "args": {"path": "calc.py", "old_string": "return a - b", "new_string": "return a + b"}
 ... "type": "run_end", "status": "success", "turns": 7, "exitCode": 0

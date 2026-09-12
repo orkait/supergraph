@@ -28,4 +28,8 @@ class ContextMeter:
         return self.anchor + self.since if self.anchor else estimate
 
     def pressure(self, estimate: int) -> bool:
-        return self.window > 0 and self.used(estimate) > self.window - self.reserve
+        return self.window > 0 and self.used(estimate) > self.window - bounded(self.reserve, self.window)
+
+
+def bounded(tokens: int, window: int) -> int:
+    return min(tokens, int(window * LIMITS.compaction_window_share)) if window > 0 else tokens
