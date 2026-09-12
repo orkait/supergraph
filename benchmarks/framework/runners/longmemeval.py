@@ -11,7 +11,6 @@ from pathlib import Path
 
 from supergraph import SuperGraph
 
-# --- Download models if missing ---
 try:
     from tools.scripts.download_models import download_all
     download_all()
@@ -28,12 +27,8 @@ except ImportError:
 
 _EMBEDDER_UNSET = object()
 
-# ---------------------------------------------------------------------------
-# Native-ingest helpers
-# ---------------------------------------------------------------------------
 
 def _corpus_id_from_node_id(node_id: str) -> str:
-    """Strip :chunk:N or :section:N suffix produced by INGEST to get corpus_id."""
     for marker in (":chunk:", ":section:"):
         if marker in node_id:
             return node_id.split(marker, 1)[0]
@@ -45,18 +40,10 @@ def _safe_filename(corpus_id: str) -> str:
 
 
 def _format_session_for_ingest(item: CorpusItem) -> str:
-    """Format corpus text for supergraph INGEST.
-
-    Wraps the conversation in a minimal markdown structure so the heading
-    chunker produces one logical chunk for the whole session / turn.
-    Plain text (no headings) falls through to chunk_by_paragraph, which
-    splits on double newlines - also fine for conversations.
-    """
     return item.text
 
 
 def _ingest_corpus_item(gs: SuperGraph, item: CorpusItem, ingest_dir: Path) -> None:
-    """Write item text to a .txt file and INGEST through supergraph's native pipeline."""
     txt_path = ingest_dir / f"{_safe_filename(item.corpus_id)}.txt"
     txt_path.write_text(_format_session_for_ingest(item), encoding="utf-8")
     gs.execute(
@@ -67,7 +54,6 @@ def _ingest_corpus_item(gs: SuperGraph, item: CorpusItem, ingest_dir: Path) -> N
 
 
 def _normalize_ranked_rows(rows: list[dict], item_by_id: dict[str, CorpusItem]) -> list[dict]:
-    """Map chunk/section node IDs back to corpus IDs and dedupe by corpus_id (first-seen wins)."""
     seen: set[str] = set()
     normalized: list[dict] = []
     for row in rows:
@@ -126,14 +112,7 @@ def build_corpus(entry: dict, granularity: str) -> list[CorpusItem]:
             if corpus_id in seen_corpus_ids:
                 continue
             seen_corpus_ids.add(corpus_id)
-            # Follow MemPalace's LongMemEval convention: embed only the user
-            # turns when building a session document. Assistant responses
-            # dilute the vector with chatter/rephrasing that isn't in the
-            # ground-truth answer signal. Filtering to user turns closed a
-            # ~3pp gap vs MemPalace's 96.6% R@5 benchmark number.
             user_turns = [turn["content"] for turn in session if turn.get("role") == "user"]
-            # Fall back to all turns if the dataset doesn't carry role labels
-            # (some LongMemEval variants omit them on older cleaned dumps).
             text = "\n".join(user_turns) if user_turns else "\n".join(t["content"] for t in session)
             items.append(
                 CorpusItem(
@@ -240,14 +219,12 @@ def _create_benchmark_node(gs: SuperGraph, item: CorpusItem, question_id: str) -
         fields.append(f"turn_id = {item.turn_id}")
     fields.append(f'DOCUMENT {_dsl_quote(item.text)}')
     gs.execute(" ".join(fields))
-    # DOCUMENT auto-populates doc_fts BM25 for text content since PR #102.
 
 
 def _result_rows(result, item_by_id: dict[str, CorpusItem]) -> list[dict]:
     rows = []
     for node in result.data:
         corpus_id = node["id"]
-        # Native ingest returns chunk/section node IDs - strip the suffix to get corpus_id.
         item = item_by_id.get(corpus_id) or item_by_id.get(_corpus_id_from_node_id(corpus_id))
         if item is None:
             continue
@@ -360,9 +337,6 @@ def run_benchmark(
                         _ingest_corpus_item(gs, item, ingest_dir)
                 else:
                     _register_benchmark_kind(gs)
-                    # Defer embeddings and flush in batches - critical for
-                    # transformer embedders (EmbeddingGemma, Harrier) where
-                    # per-call inference overhead dominates.
                     with gs.deferred_embeddings(batch_size=64):
                         for item in items:
                             _create_benchmark_node(gs, item, question_id=entry["question_id"])
@@ -468,9 +442,8 @@ def run_benchmark(
 
 
 def _resolve_embedder(name: str | None):
-    """Resolve --embedder CLI arg to an Embedder instance or sentinel."""
     if name is None or name == "default":
-        return _EMBEDDER_UNSET  # supergraph picks model2vec M2V_base_output
+        return _EMBEDDER_UNSET
 
     if name.startswith("model2vec:"):
         model_id = name[len("model2vec:"):]
@@ -520,7 +493,6 @@ def _resolve_embedder(name: str | None):
             print(f"[embedder] {model_id} not installed - running: supergraph install-embedder {model_id}", flush=True)
             install_embedder(model_id)
         print(f"[embedder] loading installed model: {model_id}", flush=True)
-        # Use GPU if SUPERGRAPH_VECTOR_GPU_LAYERS is set
         gpu_layers = int(os.environ.get("SUPERGRAPH_VECTOR_GPU_LAYERS", 0))
         gpu_mem_limit = os.environ.get("SUPERGRAPH_GPU_MEM_LIMIT")
         if gpu_mem_limit:
@@ -533,7 +505,6 @@ def _resolve_embedder(name: str | None):
             gpu_mem_limit=gpu_mem_limit
         )
 
-    # FastEmbed shortcuts - strong encoder models with pre-exported ONNX.
     _FASTEMBED_ALIASES = {
         "bge-large":       "BAAI/bge-large-en-v1.5",
         "bge-base":        "BAAI/bge-base-en-v1.5",

@@ -1,9 +1,3 @@
-"""Enforce algos/ purity contract.
-
-Source of truth: benchmarks/algos/allowlist.py
-Algos may import only from that allowlist (stdlib + core + optional).
-Any supergraph.* import is rejected. Any unknown module is rejected.
-"""
 
 import ast
 import sys

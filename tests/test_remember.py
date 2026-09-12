@@ -1,10 +1,8 @@
-"""Tests for REMEMBER hybrid retrieval command."""
 import tempfile
 from supergraph import SuperGraph
 
 
 def test_remember_basic():
-    """REMEMBER returns results from an in-memory store."""
     gs = SuperGraph()
     gs.execute('CREATE NODE "fact1" kind = "fact" summary = "quantum entanglement is spooky"')
     gs.execute('CREATE NODE "fact2" kind = "fact" summary = "classical physics is deterministic"')
@@ -12,16 +10,12 @@ def test_remember_basic():
 
     result = gs.execute('REMEMBER "quantum" LIMIT 5')
     assert result.kind == "nodes"
-    # Should find results (even without embedder, BM25 may not be available,
-    # but recency scoring still works)
     gs.close()
 
 
 def test_remember_with_persistence():
-    """REMEMBER works with persisted store (has FTS5 for BM25)."""
     with tempfile.TemporaryDirectory() as td:
         gs = SuperGraph(path=td)
-        # Create nodes with summaries that will be in DocumentStore
         gs.execute('CREATE NODE "doc1" kind = "fact" summary = "photosynthesis converts light"')
         gs.execute('CREATE NODE "doc2" kind = "fact" summary = "mitochondria produces energy"')
         gs.execute('CREATE NODE "doc3" kind = "fact" summary = "chlorophyll absorbs light"')
@@ -32,7 +26,6 @@ def test_remember_with_persistence():
 
 
 def test_remember_returns_scores():
-    """REMEMBER results include breakdown scores."""
     gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "test" summary = "hello world"')
     result = gs.execute('REMEMBER "hello" LIMIT 5')
@@ -44,7 +37,6 @@ def test_remember_returns_scores():
 
 
 def test_remember_with_where():
-    """REMEMBER respects WHERE clause."""
     gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "fact" summary = "quantum physics"')
     gs.execute('CREATE NODE "b" kind = "opinion" summary = "quantum is weird"')
@@ -55,7 +47,6 @@ def test_remember_with_where():
 
 
 def test_remember_empty_store():
-    """REMEMBER on empty store returns empty."""
     gs = SuperGraph()
     result = gs.execute('REMEMBER "anything" LIMIT 5')
     assert result.kind == "nodes"
@@ -64,7 +55,6 @@ def test_remember_empty_store():
 
 
 def test_remember_limit():
-    """REMEMBER respects LIMIT."""
     gs = SuperGraph()
     for i in range(20):
         gs.execute(f'CREATE NODE "n{i}" kind = "test" summary = "test item {i}"')
@@ -151,8 +141,6 @@ def test_remember_nucleus_respects_visit_budget():
 
 
 def test_document_clause_populates_bm25_index():
-    """CREATE NODE ... DOCUMENT "text" must make the content searchable via
-    REMEMBER's BM25 channel without a separate put_summary() call."""
     gs = SuperGraph(embedder=None)
     try:
         gs.execute('CREATE NODE "a" kind = "doc" text = "tag1" DOCUMENT "quantum entanglement"')
@@ -166,8 +154,6 @@ def test_document_clause_populates_bm25_index():
 
 
 def test_remember_empty_reports_diagnostic_reasons():
-    """When REMEMBER returns zero, meta.debug.empty_result_reasons must
-    explain why - no embedder, no FTS content, etc."""
     gs = SuperGraph(embedder=None)
     try:
         gs.execute('CREATE NODE "a" kind = "doc" text = "just a column, no DOCUMENT"')

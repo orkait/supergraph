@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Pre-push Kaggle validation. Runs locally against real models.
-
-Tests:
-  1. Core imports (supergraph, onnxruntime, etc.)
-  2. Circular import check
-  3. Model path structure (jina + tinybert)
-  4. Benchmark pipeline - 1 record, CPU mode
-  5. sys.argv config matches docker_runner expectations
-
-Usage:
-    python benchmarks/kaggle/validate_before_push.py
-    python benchmarks/kaggle/validate_before_push.py --skip-run
-"""
 import argparse
 import json
 import sys
@@ -82,7 +69,6 @@ def validate_models():
         assert d.exists(), f"dir missing: {d}"
         onnx_files = list((d / "onnx").glob("*.onnx")) if (d / "onnx").exists() else []
         assert onnx_files, f"no .onnx files in {d}/onnx/"
-        # tokenizer.json at root (ONNX format from Kaggle) OR safetensors (local full model)
         has_tok = (d / "tokenizer.json").exists()
         has_sf = bool(list(d.glob("*.safetensors")))
         assert has_tok or has_sf, "neither tokenizer.json nor *.safetensors found"
@@ -164,7 +150,6 @@ def validate_argv_config():
     ok = True
 
     def check_arg(flag, val=None):
-        # Just verify the flag is in our expected argv set
         expected = [
             "--system", "--dataset", "--data-path", "--variant",
             "--embedder", "--embedder-model-dir", "--embedder-pooling",

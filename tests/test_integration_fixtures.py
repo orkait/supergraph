@@ -1,9 +1,3 @@
-"""Integration tests exercising all three storage engines (graph, vector, document) with real fixture artifacts.
-
-Uses a mock embedder (deterministic hash-based vectors) so tests run without
-downloading models. Tests verify the full pipeline: ingest -> store -> query
--> retrieve.
-"""
 
 import pytest
 import numpy as np
@@ -12,15 +6,12 @@ from pathlib import Path
 from supergraph import SuperGraph
 from supergraph.embedding.base import Embedder
 
-# Slow suite (~40s). Skip by default; opt in via --run-slow or
-# SUPERGRAPH_RUN_SLOW=1. See conftest.py for the gating logic.
 pytestmark = pytest.mark.slow
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class MockEmbedder(Embedder):
-    """Deterministic mock embedder for testing. Returns hash-based vectors."""
 
     @property
     def name(self) -> str:
@@ -51,7 +42,6 @@ class MockEmbedder(Embedder):
 
 @pytest.fixture
 def gs(tmp_path):
-    """SuperGraph with mock embedder and persistence."""
     store = SuperGraph(
         path=str(tmp_path / "brain"),
         embedder=MockEmbedder(),
@@ -63,7 +53,6 @@ def gs(tmp_path):
 
 @pytest.fixture
 def gs_queued(tmp_path):
-    """Queued SuperGraph with mock embedder (submission queue + cron enabled)."""
     store = SuperGraph(
         path=str(tmp_path / "brain"),
         embedder=MockEmbedder(),
@@ -75,22 +64,15 @@ def gs_queued(tmp_path):
 
 
 def _fixture_path(subdir, filename):
-    """Return fixture path string, skip test if file is absent."""
     p = FIXTURES / subdir / filename
     if not p.exists():
         pytest.skip(f"Fixture not found: {p}")
     return str(p)
 
 
-# ===================================================================
-# Engine 1: Core Graph (nodes, edges, traversal)
-# ===================================================================
-
 class TestCoreGraphWithFixtures:
-    """Build knowledge graphs from fixture metadata."""
 
     def test_build_paper_citation_graph(self, gs):
-        """Create a citation graph from PDF fixture names and traverse it."""
         papers = [
             "attention-is-all-you-need", "bert", "rag",
             "generative-agents", "node2vec", "word2vec", "toolformer",
@@ -117,7 +99,6 @@ class TestCoreGraphWithFixtures:
         assert result.data == 7
 
     def test_build_book_catalog_from_text_fixtures(self, gs):
-        """Create a node catalog from text fixture filenames."""
         txt_dir = FIXTURES / "text"
         if not txt_dir.exists():
             pytest.skip("text fixtures not present")
@@ -135,7 +116,6 @@ class TestCoreGraphWithFixtures:
         assert result.data[0]["COUNT()"] == len(books)
 
     def test_edges_from_markdown_fixtures(self, gs):
-        """Wire markdown fixtures as related documents with edges."""
         md_dir = FIXTURES / "markdown"
         if not md_dir.exists():
             pytest.skip("markdown fixtures not present")
@@ -146,7 +126,6 @@ class TestCoreGraphWithFixtures:
         for doc in docs:
             gs.execute(f'CREATE NODE "doc:{doc}" kind = "docs" name = "{doc}"')
 
-        # Wire as a chain
         for i in range(len(docs) - 1):
             gs.execute(
                 f'CREATE EDGE "doc:{docs[i]}" -> "doc:{docs[i+1]}" kind = "related"'
@@ -156,14 +135,9 @@ class TestCoreGraphWithFixtures:
         assert result.count >= 1
 
 
-# ===================================================================
-# Engine 2: DSL (queries, filters, aggregation, pattern matching)
-# ===================================================================
-
 class TestDSLWithFixtures:
 
     def test_complex_queries_on_fixture_metadata(self, gs):
-        """Exercise WHERE/AGGREGATE/ORDER/LIMIT on fixture-derived dataset."""
         categories = {
             "text": [f.stem for f in (FIXTURES / "text").glob("*.txt")][:5]
             if (FIXTURES / "text").exists() else [],
@@ -199,7 +173,6 @@ class TestDSLWithFixtures:
             assert result.data[0]["size"] >= result.data[1]["size"]
 
     def test_match_pattern_on_fixture_graph(self, gs):
-        """MATCH pattern query on a graph built from fixture names."""
         gs.execute('CREATE NODE "db:faiss" kind = "vectordb" name = "faiss"')
         gs.execute('CREATE NODE "db:chroma" kind = "vectordb" name = "chroma"')
         gs.execute('CREATE NODE "paper:rag" kind = "paper" name = "rag"')
@@ -211,7 +184,6 @@ class TestDSLWithFixtures:
         assert len(result.data["bindings"]) == 2
 
     def test_count_and_aggregate_csv_fixtures(self, gs):
-        """Build dataset names from CSV fixtures and run aggregate queries."""
         csv_dir = FIXTURES / "csv"
         if not csv_dir.exists():
             pytest.skip("csv fixtures not present")
@@ -234,14 +206,9 @@ class TestDSLWithFixtures:
         assert result.data[0]["SUM(rows)"] > 0
 
 
-# ===================================================================
-# Engine 3: Vector Search (SIMILAR TO, REMEMBER)
-# ===================================================================
-
 class TestVectorSearchWithFixtures:
 
     def test_similar_to_text_with_mock_embedder(self, gs):
-        """SIMILAR TO text with mock embedder finds nodes tagged with EMBED."""
         gs.execute(
             'SYS REGISTER NODE KIND "concept" REQUIRED topic:string EMBED topic'
         )
@@ -262,7 +229,6 @@ class TestVectorSearchWithFixtures:
         assert result.kind == "nodes"
 
     def test_remember_hybrid_retrieval(self, gs):
-        """REMEMBER fuses vector + recency scoring."""
         gs.execute(
             'SYS REGISTER NODE KIND "fact" REQUIRED claim:string EMBED claim'
         )
@@ -278,7 +244,6 @@ class TestVectorSearchWithFixtures:
             assert "_remember_score" in result.data[0]
 
     def test_similar_to_node_reference(self, gs):
-        """SIMILAR TO NODE resolves a node's vector and finds neighbors."""
         gs.execute(
             'SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text'
         )
@@ -290,7 +255,6 @@ class TestVectorSearchWithFixtures:
         assert result.kind == "nodes"
 
     def test_remember_with_persistence(self, tmp_path):
-        """REMEMBER uses FTS5 BM25 when a persistent store is available."""
         gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
@@ -310,15 +274,10 @@ class TestVectorSearchWithFixtures:
             gs.close()
 
 
-# ===================================================================
-# Engine 4: Document Ingestion (text, markdown, HTML, CSV, PDF)
-# ===================================================================
-
 @pytest.mark.needs_ingest
 class TestDocumentIngestion:
 
     def test_ingest_text_fixture(self, gs):
-        """Ingest a real plain-text fixture and verify chunk graph."""
         path = _fixture_path("text", "art-of-war.txt")
         result = gs.execute(f'INGEST "{path}" AS "doc:artofwar" KIND "book"')
         assert result.data["doc_id"] == "doc:artofwar"
@@ -332,27 +291,23 @@ class TestDocumentIngestion:
         assert edges.count > 0
 
     def test_ingest_markdown_fixture(self, gs):
-        """Ingest a real markdown fixture."""
         path = _fixture_path("markdown", "faiss.md")
         result = gs.execute(f'INGEST "{path}" AS "doc:faiss" KIND "docs"')
         assert result.data["doc_id"] == "doc:faiss"
         assert result.data["chunks"] > 0
 
     def test_ingest_html_fixture(self, gs):
-        """Ingest a real HTML fixture."""
         path = _fixture_path("html", "transformer.html")
         result = gs.execute(f'INGEST "{path}" AS "doc:transformer-html"')
         assert result.data["doc_id"] == "doc:transformer-html"
         assert result.data["chunks"] >= 0
 
     def test_ingest_csv_fixture(self, gs):
-        """Ingest a real CSV fixture."""
         path = _fixture_path("csv", "iris.csv")
         result = gs.execute(f'INGEST "{path}" AS "doc:iris"')
         assert result.data["doc_id"] == "doc:iris"
 
     def test_ingest_pdf_fixture(self, gs):
-        """Ingest a real PDF fixture (requires pymupdf4llm or markitdown)."""
         path = _fixture_path("pdf", "attention-is-all-you-need.pdf")
         try:
             result = gs.execute(f'INGEST "{path}" AS "doc:attention"')
@@ -368,7 +323,6 @@ class TestDocumentIngestion:
             raise
 
     def test_ingest_then_lexical_search(self, tmp_path):
-        """Ingest then run LEXICAL SEARCH against real text content."""
         path = str(FIXTURES / "text" / "metamorphosis.txt")
         if not Path(path).exists():
             pytest.skip("metamorphosis.txt not found")
@@ -385,7 +339,6 @@ class TestDocumentIngestion:
             gs.close()
 
     def test_ingest_multiple_markdown_docs(self, gs):
-        """Ingest multiple markdown files and verify they all land in the graph."""
         md_fixtures = [
             ("markdown", "faiss.md", "doc:faiss"),
             ("markdown", "chroma.md", "doc:chroma"),
@@ -407,7 +360,6 @@ class TestDocumentIngestion:
         assert result.data == len(ingested)
 
     def test_ingest_all_csv_fixtures(self, gs):
-        """Ingest all CSV fixtures and verify each creates a document node."""
         csv_dir = FIXTURES / "csv"
         if not csv_dir.exists():
             pytest.skip("csv fixtures not present")
@@ -424,7 +376,6 @@ class TestDocumentIngestion:
         assert result.data >= len(csv_files)
 
     def test_ingest_connect_workflow(self, tmp_path):
-        """Ingest multiple docs then run SYS CONNECT to wire similar chunks."""
         gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
@@ -447,14 +398,9 @@ class TestDocumentIngestion:
             gs.close()
 
 
-# ===================================================================
-# Engine 5: Belief System (ASSERT, RETRACT, RECALL)
-# ===================================================================
-
 class TestBeliefSystemWithFixtures:
 
     def test_assert_retract_lifecycle(self, gs):
-        """Full belief lifecycle: assert, query, retract, verify."""
         gs.execute(
             'ASSERT "belief:transformers-best" kind = "belief" '
             'claim = "transformers are the best architecture" '
@@ -483,7 +429,6 @@ class TestBeliefSystemWithFixtures:
         assert gs.execute('NODE "belief:cnns-vision"').data is not None
 
     def test_recall_spreading_activation(self, gs):
-        """RECALL with spreading activation traverses the knowledge graph."""
         gs.execute(
             'CREATE NODE "topic:ml" kind = "topic" name = "machine learning" importance = 1.0'
         )
@@ -500,9 +445,6 @@ class TestBeliefSystemWithFixtures:
         gs.execute('CREATE EDGE "topic:dl" -> "topic:nlp" kind = "contains"')
         gs.execute('CREATE EDGE "topic:dl" -> "topic:cv" kind = "contains"')
 
-        # RECALL activation overwrites each step (not cumulative), so
-        # depth=1 reaches direct neighbors (deep learning) and
-        # depth=2 reaches 2-hop nodes (NLP, computer vision).
         result = gs.execute('RECALL FROM "topic:ml" DEPTH 1 LIMIT 10')
         assert result.kind == "nodes"
         names = {n.get("name") for n in result.data}
@@ -511,11 +453,9 @@ class TestBeliefSystemWithFixtures:
         result = gs.execute('RECALL FROM "topic:ml" DEPTH 2 LIMIT 10')
         assert result.kind == "nodes"
         names2 = {n.get("name") for n in result.data}
-        # depth=2 activates nodes that are 2 hops away
         assert len(names2) >= 1
 
     def test_propagate_field_across_graph(self, gs):
-        """PROPAGATE pushes a field value down connected nodes."""
         gs.execute(
             'SYS REGISTER NODE KIND "belief" REQUIRED confidence:float'
         )
@@ -532,7 +472,6 @@ class TestBeliefSystemWithFixtures:
         assert result.data["updated"] >= 1
 
     def test_assert_upsert_semantics(self, gs):
-        """ASSERT on an existing ID updates the node (upsert semantics)."""
         gs.execute(
             'ASSERT "f:evolving" kind = "fact" value = 1 CONFIDENCE 0.5'
         )
@@ -544,14 +483,9 @@ class TestBeliefSystemWithFixtures:
         assert gs.node_count == 1
 
 
-# ===================================================================
-# Engine 6: System + Observability (LOG, CRON, HEALTH, EVICT)
-# ===================================================================
-
 class TestSystemWithFixtures:
 
     def test_full_lifecycle_stats_and_health(self, gs):
-        """Exercise SYS STATS, STATUS, HEALTH, LOG after building data."""
         for i, book in enumerate(["dracula", "frankenstein", "pride-and-prejudice"]):
             gs.execute(
                 f'CREATE NODE "book:{book}" kind = "book" title = "{book}" rank = {i}'
@@ -575,7 +509,6 @@ class TestSystemWithFixtures:
         gs.checkpoint()
 
     def test_snapshot_and_rollback(self, gs):
-        """Snapshot, mutate, rollback restores original state."""
         gs.execute('CREATE NODE "s1" kind = "test" val = 1')
         gs.execute('SYS SNAPSHOT "before"')
         gs.execute('CREATE NODE "s2" kind = "test" val = 2')
@@ -587,14 +520,12 @@ class TestSystemWithFixtures:
         assert gs.execute('NODE "s2"').data is None
 
     def test_evict_removes_nodes(self, gs):
-        """SYS EVICT executes without error and returns ok."""
         for i in range(50):
             gs.execute(f'CREATE NODE "evict:{i}" kind = "temp" val = {i}')
         result = gs.execute('SYS EVICT')
         assert result.kind == "ok"
 
     def test_optimize_runs_successfully(self, gs):
-        """SYS OPTIMIZE completes without error."""
         for i in range(10):
             gs.execute(f'CREATE NODE "opt:{i}" kind = "test" val = {i}')
         result = gs.execute('SYS OPTIMIZE')
@@ -602,7 +533,6 @@ class TestSystemWithFixtures:
 
     @pytest.mark.needs_scheduler
     def test_cron_lifecycle(self, gs_queued):
-        """CRON add, list, run, delete full lifecycle."""
         gs_queued.execute(
             'SYS CRON ADD "test-job" SCHEDULE "@hourly" QUERY "SYS STATS"'
         )
@@ -617,7 +547,6 @@ class TestSystemWithFixtures:
         assert len(result.data) == 0
 
     def test_log_with_trace_id(self, gs):
-        """Trace binding surfaces in SYS LOG TRACE output."""
         gs.bind_trace("test-session")
         gs.execute('CREATE NODE "traced" kind = "test"')
         gs.discard_trace()
@@ -627,7 +556,6 @@ class TestSystemWithFixtures:
         assert all(e["trace_id"] == "test-session" for e in result.data)
 
     def test_kinds_and_describe(self, gs):
-        """SYS KINDS and SYS DESCRIBE reflect registered schemas."""
         gs.execute(
             'SYS REGISTER NODE KIND "paper" REQUIRED title:string, year:int'
         )
@@ -639,15 +567,9 @@ class TestSystemWithFixtures:
         assert "title" in str(result.data)
 
 
-# ===================================================================
-# Cross-Engine: Full Agent Workflow
-# ===================================================================
-
 class TestAgentWorkflow:
-    """Simulate real agent sessions using fixture data."""
 
     def test_research_agent_session(self, tmp_path):
-        """Agent ingests docs, builds knowledge graph, queries, then maintains."""
         gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
@@ -705,7 +627,6 @@ class TestAgentWorkflow:
             gs.close()
 
     def test_memory_pressure_workflow(self, gs):
-        """Agent fills memory then evicts and optimizes."""
         for i in range(200):
             gs.execute(
                 f'CREATE NODE "mem:{i}" kind = "memory" '
@@ -722,7 +643,6 @@ class TestAgentWorkflow:
         assert result.kind == "ok"
 
     def test_persistence_survives_restart(self, tmp_path):
-        """Data created before close() is readable after re-open."""
         path = str(tmp_path / "persist")
         gs = SuperGraph(path=path, embedder=MockEmbedder())
         gs.execute('CREATE NODE "survive" kind = "test" val = 42')
@@ -738,7 +658,6 @@ class TestAgentWorkflow:
             gs2.close()
 
     def test_batch_transaction_with_variables(self, gs):
-        """BEGIN/COMMIT batch with $variable wiring."""
         gs.execute(
             'BEGIN\n'
             '$a = CREATE NODE "batch:a" kind = "item" name = "alpha"\n'
@@ -751,7 +670,6 @@ class TestAgentWorkflow:
         assert result.data[0]["target"] == "batch:b"
 
     def test_fixture_metadata_knowledge_graph(self, gs):
-        """Build a comprehensive metadata graph from all fixture directories."""
         fixture_dirs = {
             "text": "*.txt",
             "markdown": "*.md",
@@ -790,7 +708,6 @@ class TestAgentWorkflow:
         assert result.data["node_count"] == total_nodes
 
     def test_image_fixture_metadata_nodes(self, gs):
-        """Create metadata nodes for each image fixture."""
         img_dir = FIXTURES / "images"
         if not img_dir.exists():
             pytest.skip("images fixtures not present")
@@ -814,7 +731,6 @@ class TestAgentWorkflow:
         assert set(names) == {img.stem for img in images}
 
     def test_voice_fixture_metadata_nodes(self, gs):
-        """Create metadata nodes for each voice fixture organized by language."""
         voice_dir = FIXTURES / "voice"
         if not voice_dir.exists():
             pytest.skip("voice fixtures not present")

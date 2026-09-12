@@ -1,4 +1,3 @@
-"""The Research facade: the lean 8-verb deep-research SDK over SuperGraph."""
 import numpy as np
 import pytest
 

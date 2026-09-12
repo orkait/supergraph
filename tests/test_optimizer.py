@@ -1,4 +1,3 @@
-"""Tests for the self-balancing optimizer."""
 
 import pytest
 from supergraph import SuperGraph, OptimizationInProgress
@@ -68,7 +67,6 @@ class TestOptimizeCompact:
         assert gs._store._next_slot == 5
         assert len(gs._store.node_tombstones) == 0
 
-        # Remaining nodes still accessible
         for i in range(5, 10):
             node = gs.execute(f'NODE "n{i}"')
             assert node.data is not None
@@ -148,7 +146,6 @@ class TestOptimizeVectors:
         gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         gs.execute('CREATE NODE "b" kind = "test" VECTOR [0.0, 1.0, 0.0, 0.0]')
-        # RETRACT now immediately removes the vector (no ghost until optimize)
         str_id = gs._store.string_table.intern("a")
         slot = gs._store.id_to_slot[str_id]
         assert gs._vector_store.has_vector(slot)
@@ -191,7 +188,6 @@ class TestAutoOptimize:
     def test_auto_optimize_triggers_at_interval(self, tmp_path):
         gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
 
-        # Build pressure manually (auto_optimize disabled by default)
         for i in range(10):
             gs.execute(f'CREATE NODE "n{i}" kind = "test"')
         for i in range(8):
@@ -200,11 +196,9 @@ class TestAutoOptimize:
         assert gs._store._next_slot == 10
         assert len(gs._store.node_tombstones) == 8
 
-        # Simulate what auto-optimize does: health check sets flag
         gs._optimizer._check_health()
         assert gs._optimizer._needs_optimize is True
 
-        # Next query runs auto-optimize at safe point
         result = gs.execute('NODE "n8"')
         assert gs._optimizer._needs_optimize is False
         assert len(gs._store.node_tombstones) == 0

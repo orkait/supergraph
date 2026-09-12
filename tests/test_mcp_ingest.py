@@ -1,4 +1,3 @@
-"""MCP sg_ingest tool: structured NL->graph via gs.ingest_nl."""
 import types
 
 

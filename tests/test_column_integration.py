@@ -1,4 +1,3 @@
-"""End-to-end tests for column-accelerated DSL queries."""
 
 import pytest
 from supergraph.core.store import CoreStore
@@ -15,7 +14,6 @@ def _make_runtime(store):
 
 @pytest.fixture
 def graph():
-    """Graph with columnarized numeric and string fields."""
     store = CoreStore()
     store.put_node("fn1", "function", {"name": "main", "line": 1, "score": 100})
     store.put_node("fn2", "function", {"name": "helper", "line": 10, "score": 50})
@@ -151,25 +149,21 @@ COMMIT''')
 
 class TestSysRebuildColumns:
     def test_rebuild_restores_secondary_indices(self):
-        """REBUILD should restore secondary indices from columns (source of truth)."""
         store = CoreStore()
         store.put_node("n1", "fn", {"score": 42})
         store.add_index("score")
         sys_exec = SystemExecutor(_make_runtime(store))
 
-        # Corrupt secondary indices
         store.secondary_indices["score"] = {}
         assert store.query_by_index("score", 42) == []
 
         ast = parse("SYS REBUILD INDICES")
         sys_exec.execute(ast)
 
-        # Columns still intact (they are the source of truth)
         assert store.columns.has_column("score")
         mask = store.columns.get_mask("score", "=", 42, store._next_slot)
         assert mask[0]
 
-        # Secondary index rebuilt from columns
         slots = store.query_by_index("score", 42)
         assert len(slots) == 1
 
@@ -226,7 +220,6 @@ class TestEndToEnd:
 
 
 def test_compact_preserves_document_slots(tmp_path):
-    """After compaction, document search must still find nodes by their new slots."""
     from supergraph import SuperGraph
     gs = SuperGraph(path=str(tmp_path))
 
@@ -234,17 +227,15 @@ def test_compact_preserves_document_slots(tmp_path):
     gs.execute('CREATE NODE "b" kind = "doc"')
     gs.execute('CREATE NODE "c" kind = "doc"')
 
-    # Populate FTS summaries (same pattern as test_gaps.py::TestLexicalRecall)
     for nid, summary in [("a", "alpha content"), ("b", "beta content"), ("c", "gamma content")]:
         str_id = gs._store.string_table.intern(nid)
         slot = gs._store.id_to_slot[str_id]
         gs._document_store.put_summary(slot, summary)
 
-    gs.execute('DELETE NODE "a"')  # creates tombstone at slot 0
+    gs.execute('DELETE NODE "a"')
 
     gs.execute("SYS OPTIMIZE COMPACT")
 
-    # After compaction, b and c must still be reachable via lexical search
     r = gs.execute('LEXICAL SEARCH "beta" LIMIT 5')
     ids = [n["id"] for n in r.data]
     assert "b" in ids, f"'b' missing after compaction; got {ids}"

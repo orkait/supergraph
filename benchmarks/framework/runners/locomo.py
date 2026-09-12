@@ -1,16 +1,3 @@
-"""LoCoMo benchmark runner - official protocol.
-
-Protocol (matches snap-research/locomo):
-    - Ingest ALL sessions for a conversation ONCE
-    - Query ALL QAs against that ingested state
-    - Score with token-level F1 (Porter stemming, Counter-based)
-    - Report per-category (official order: 4,1,2,3,5) and overall
-    - Use ALL 10 conversations, ALL questions (no sampling)
-
-Usage:
-    python -m benchmarks.framework.runners.locomo --data-path /path/to/locomo
-    python -m benchmarks.framework.runners.locomo --max-conversations 1 --max-questions 20
-"""
 
 from __future__ import annotations
 
@@ -26,36 +13,14 @@ from ..transport.llm_client import (
     compute_f1, compute_llm_judge, health_check,
 )
 
-# Official LoCoMo category IDs per snap-research/locomo task_eval/evaluation.py:
-#   cat 1 = multi-hop (comma-split sub-answer F1)
-#   cat 2 = single-hop (direct F1)
-#   cat 3 = temporal (direct F1 after gold.split(';')[0])
-#   cat 4 = open-domain (direct F1)
-#   cat 5 = adversarial (abstention: "no information available"/"not mentioned")
 _CAT_TO_ID = {
     "multi-hop": 1, "single-hop": 2, "temporal": 3,
     "open-domain": 4, "adversarial": 5,
 }
 
-# Official reporting order
 _CAT_ORDER = ["open-domain", "single-hop", "multi-hop", "temporal", "adversarial"]
 
 
-# ---------------------------------------------------------------------------
-# LoCoMo-specific QA prompt. Single unified prompt - NO category routing.
-#
-# The question category (single-hop / multi-hop / temporal / open-domain /
-# adversarial) is a label ON the question, not information the system would
-# have at inference time in production. Using it to switch prompts would be
-# oracle routing - a form of test-time leakage. We avoid it. Peer systems
-# (Mem0, Zep, MemMachine) all use a single-prompt reader too.
-#
-# Rules below cover every category in one prompt. The reader infers question
-# shape from the question text, same as it would in real deployment.
-#
-# Lives in the bench, not in supergraph core. supergraph stays dataset-
-# agnostic; LoCoMo's phrasing requirements stay here.
-# ---------------------------------------------------------------------------
 _LOCOMO_QA_PROMPT = """\
 You have memory of a user's conversations. A hybrid retrieval engine
 (semantic + keyword + recency + graph) returned the top-{k} items most
@@ -93,16 +58,6 @@ Answer:"""
 
 
 def _build_locomo_prompt(question: str, retrieved: list[str]) -> str:
-    """Assemble the LoCoMo QA prompt for a single question.
-
-    Single prompt, category-blind. The reader sees only the question text
-    and retrieved context - no per-question category hints, since category
-    would not be known at inference time in production.
-
-    Explicit cross-reference framing: the prompt tells the reader that
-    context items are the top-K retrieval results (not self-contained
-    candidates to pick between) and invites combining facts across items.
-    """
     context = "\n\n".join(f"[{j + 1}]: {t}" for j, t in enumerate(retrieved))
     return _LOCOMO_QA_PROMPT.format(
         k=len(retrieved) if retrieved else 0,
@@ -121,14 +76,8 @@ def run_locomo(
     judge: str = "token-f1",
     verbose: bool = False,
 ) -> dict:
-    """Run LoCoMo: ingest once per conversation, query all QAs.
-
-    Official protocol: all conversations, all questions, F1 with stemming.
-    """
-    # Verify LLM is reachable before wasting time on retrieval
     health_check()
 
-    # Group records by conversation
     conversations: dict[str, list] = defaultdict(list)
     sessions_by_conv: dict[str, list] = {}
 
@@ -154,7 +103,6 @@ def run_locomo(
         sessions = sessions_by_conv[conv_id]
         print(f"\n[{conv_idx+1}/{n_convs}] [{conv_id}] Ingesting {len(sessions)} sessions, {len(qas)} questions...")
 
-        # Ingest ONCE per conversation
         adapter.reset()
         t0 = time.perf_counter()
         has_ingest_done = hasattr(adapter, "ingest_done")
@@ -169,7 +117,6 @@ def run_locomo(
         total_ingest_ms += ingest_ms
         print(f"  Ingested in {ingest_ms:.0f}ms")
 
-        # Phase 1: Retrieval (serial - SuperGraph is single-writer)
         print(f"[{conv_id}] Retrieving {len(qas)} questions...")
         has_query_ctx = hasattr(adapter, "query_with_context")
 
@@ -185,7 +132,6 @@ def run_locomo(
                 else:
                     qres = adapter.query(rec.question.question, k=k)
 
-                # Rerank if provided
                 if reranker and len(qres.retrieved_memories) > k:
                     scores = reranker.score(rec.question.question, qres.retrieved_memories)
                     ranked = sorted(zip(scores, qres.retrieved_memories), reverse=True)
@@ -194,8 +140,6 @@ def run_locomo(
             total_query_ms += t.elapsed_ms
             retrieval_results.append(qres)
 
-        # Phase 2: LLM answer generation via the shared LLMRunner
-        # (rate-limit + retry + provider fallback handled centrally).
         from ..transport.llm_runner import get_shared_runner
         import asyncio
 
@@ -221,7 +165,6 @@ def run_locomo(
         answered_total = sum(1 for a in answers if a)
         print(f"  [{conv_id}] LLM complete: {answered_total}/{len(qas)} answered")
 
-        # Phase 3: Score (official F1 with category-aware handling + optional LLM judge)
         want_token = judge in ("token-f1", "both")
         want_llm = judge in ("llm", "both")
         for i, rec in enumerate(qas):
@@ -246,12 +189,11 @@ def run_locomo(
                 "category_id": cat_id,
                 "retrieved": retrieval_results[i].retrieved_memories[:3],
             }
-            # Always record which was computed, never drop data.
             if token_f1 is not None:
                 detail["token_f1"] = round(token_f1, 4)
             if judge_score is not None:
                 detail["llm_judge"] = round(judge_score, 4)
-            detail["f1"] = round(primary, 4)  # back-compat: primary under "f1"
+            detail["f1"] = round(primary, 4)
             all_details.append(detail)
             q_count += 1
             if verbose:
@@ -266,7 +208,6 @@ def run_locomo(
         conv_f1 = sum(all_f1[-len(qas):]) / len(qas) if qas else 0
         print(f"  [{conv_id}] {len(qas)} Qs, conv_f1={conv_f1:.3f}, running_avg={sum(all_f1)/len(all_f1):.3f}")
 
-    # Summary - official format
     overall_f1 = sum(all_f1) / len(all_f1) if all_f1 else 0
 
     by_category = {}
@@ -346,7 +287,6 @@ def main():
     )
     print(f"LoCoMo: {len(ds)} total QA pairs, {len(set(r.question.metadata.get('sample_id') for r in ds.records))} conversations")
 
-    # Use config.py defaults - no hardcoded benchmark overrides
     config = {"ceiling_mb": 512}
     if ":" in args.embedder:
         backend, model = args.embedder.split(":", 1)
@@ -369,7 +309,6 @@ def main():
             config["bonsai_prompt_path"] = args.bonsai_prompt
         if args.bonsai_kv_cache:
             config["bonsai_kv_cache_path"] = args.bonsai_kv_cache
-        # Conversations are long (hundreds of turns); need room for KNOWN FACTS block
         config["bonsai_n_ctx"] = 4096
         adapter = SuperGraphBonsaiAdapter(config=config)
     else:

@@ -1,8 +1,3 @@
-"""Property tests for F algebra + escape.
-
-Manual property tests (no hypothesis dep). Covers algebra laws under
-combinatoric inputs + adversarial strings.
-"""
 from __future__ import annotations
 
 import itertools
@@ -11,8 +6,6 @@ import itertools
 from supergraph.query.filters import F
 from supergraph.query.escape import dsl_literal
 
-
-# -- Algebra laws ----------------------------------------------------------
 
 _atoms = [
     F.eq("a", 1),
@@ -25,8 +18,6 @@ _atoms = [
 
 def test_and_commutative_semantic():
     for a, b in itertools.combinations(_atoms, 2):
-        # DSL may differ textually but both must parse to the same semantic
-        # (we approximate by checking both emissions parse, which they must)
         from supergraph.dsl.parser import parse
         parse(f"NODES WHERE {(a & b).to_dsl()}")
         parse(f"NODES WHERE {(b & a).to_dsl()}")
@@ -76,8 +67,6 @@ def test_or_absorption_true():
         assert (a | F.true()).to_dsl() == "true"
 
 
-# -- Escape / injection sweep ----------------------------------------------
-
 ADVERSARIAL_STRINGS = [
     'simple',
     'with "quotes" inside',
@@ -98,9 +87,6 @@ ADVERSARIAL_STRINGS = [
 
 
 def test_every_adversarial_string_emits_balanced_quotes():
-    """Quoted string literal must start + end with unescaped ``"``,
-    every embedded ``"`` must be ``\\"``, and the full thing must
-    round-trip through the parser inside a NODES WHERE."""
     from supergraph.dsl.parser import parse
     for s in ADVERSARIAL_STRINGS:
         out = dsl_literal(s)
@@ -117,15 +103,12 @@ def test_every_adversarial_string_in_F_eq():
 
 
 def test_every_adversarial_string_in_document_clause():
-    """DOCUMENT clause is the biggest injection surface for user-generated text."""
     from supergraph import q
     from supergraph.dsl.parser import parse
     for s in ADVERSARIAL_STRINGS:
         dsl = q.create_node("m1", kind="memory", document=s).dsl()
         parse(dsl)
 
-
-# -- Value type combinatorics ----------------------------------------------
 
 def test_every_value_type_round_trips_in_where():
     from datetime import date, datetime
@@ -147,8 +130,6 @@ def test_every_value_type_round_trips_in_where():
         f = F.eq("x", v) if v is not None else F.is_null("x")
         parse(f"NODES WHERE {f.to_dsl()}")
 
-
-# -- Compose depth ---------------------------------------------------------
 
 def test_deeply_nested_and():
     from supergraph.dsl.parser import parse

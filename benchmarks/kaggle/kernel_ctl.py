@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Kaggle kernel control via kagglesdk (KGAT bearer token auth).
-
-Usage:
-    python kernel_ctl.py status
-    python kernel_ctl.py logs
-    python kernel_ctl.py cancel
-    python kernel_ctl.py run
-    python kernel_ctl.py run --kernel supergraph-pipeline-refactored
-"""
 
 import argparse
 import json
@@ -23,7 +14,6 @@ DEFAULT_KERNEL = "supergraph-jina-v5-small"
 
 
 def get_client():
-    # Auto-loads KGAT from ~/.kaggle/access_token or KAGGLE_API_TOKEN env var
     return KaggleClient()
 
 
@@ -59,8 +49,6 @@ def logs(kernel: str):
 
 
 def cancel(kernel: str):
-    # Note: cancel_kernel_session requires kernel_session_id from a prior run() response.
-    # Workaround: use kaggle CLI instead
     import subprocess
     try:
         subprocess.check_call(["kaggle", "kernels", "status", f"{OWNER}/{kernel}"])

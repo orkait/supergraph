@@ -1,4 +1,3 @@
-"""Tests for graph intelligence: RECALL, PROPAGATE, COUNTERFACTUAL, SNAPSHOT, CONTEXT."""
 import pytest
 from supergraph import SuperGraph
 from supergraph.core.errors import NodeNotFound
@@ -52,7 +51,7 @@ class TestRecall:
         g.execute('CREATE EDGE "b" -> "c" kind = "r"')
         result = g.execute('RECALL FROM "a" DEPTH 2 LIMIT 10')
         ids = [n["id"] for n in result.data]
-        assert "c" in ids  # reachable at depth 2
+        assert "c" in ids
 
     def test_recall_reaches_incoming_neighbors_from_sink_node(self):
         g = SuperGraph(ceiling_mb=256)
@@ -94,7 +93,6 @@ class TestCounterfactual:
         g.execute('CREATE EDGE "b1" -> "c1" kind = "supports"')
         result = g.execute('WHAT IF RETRACT "b1"')
         assert result.data["affected_count"] >= 1
-        # Original still exists
         assert g.execute('NODE "b1"').data is not None
 
     def test_what_if_nonexistent_raises(self):
@@ -132,7 +130,6 @@ class TestBindContext:
         g.execute('CREATE NODE "global" kind = "fact" name = "visible"')
         g.execute('BIND CONTEXT "session-1"')
         g.execute('CREATE NODE "local" kind = "hypothesis" name = "maybe"')
-        # Only context nodes visible while bound
         result = g.execute('NODES')
         assert len(result.data) == 1
         assert result.data[0]["id"] == "local"
@@ -143,14 +140,12 @@ class TestBindContext:
         g.execute('BIND CONTEXT "session-1"')
         g.execute('CREATE NODE "local" kind = "temp" name = "discard"')
         g.execute('DISCARD CONTEXT "session-1"')
-        # Back to global view, local deleted
         result = g.execute('NODES')
         assert len(result.data) == 1
         assert result.data[0]["id"] == "global"
 
 
 def test_combined_transpose_cached():
-    """get_combined_transpose() must return the same object on repeated calls."""
     from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {}), (1, 2, {})]}, num_nodes=3)
@@ -160,7 +155,6 @@ def test_combined_transpose_cached():
 
 
 def test_combined_transpose_invalidated_on_rebuild():
-    """Rebuild must invalidate the combined transpose cache."""
     from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {})]}, num_nodes=2)
@@ -171,7 +165,6 @@ def test_combined_transpose_invalidated_on_rebuild():
 
 
 def test_combined_spread_matrix_cached():
-    """Spread matrix cache should be stable across repeated calls."""
     from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {}), (1, 2, {})]}, num_nodes=3)
@@ -181,7 +174,6 @@ def test_combined_spread_matrix_cached():
 
 
 def test_combined_spread_matrix_invalidated_on_rebuild():
-    """Spread matrix cache must refresh after rebuild."""
     from supergraph.core.edges import EdgeMatrices
     em = EdgeMatrices()
     em.rebuild({"knows": [(0, 1, {})]}, num_nodes=2)

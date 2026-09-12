@@ -1,4 +1,3 @@
-"""Tests for SYS CONNECT, SYS REEMBED, RETRACT/DELETE cascade, and SYS STATUS."""
 import pytest
 from supergraph import SuperGraph
 
@@ -18,7 +17,7 @@ class TestSysConnect:
         g.execute('CREATE NODE "b" kind = "chunk" VECTOR [0.95, 0.05, 0.0, 0.0]')
         r1 = g.execute('SYS CONNECT THRESHOLD 0.8')
         r2 = g.execute('SYS CONNECT THRESHOLD 0.8')
-        assert r2.data["edges_created"] == 0  # already connected
+        assert r2.data["edges_created"] == 0
 
     def test_connect_node(self, tmp_path):
         g = SuperGraph(path=str(tmp_path / "db"))
@@ -39,7 +38,6 @@ class TestSysConnect:
         g.execute('CREATE NODE "x" kind = "chunk" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "y" kind = "chunk" VECTOR [0.99, 0.01, 0.0, 0.0]')
         result = g.execute('SYS CONNECT')
-        # Default threshold is 0.85, similarity between x and y should be high
         assert result.data["edges_created"] >= 1
 
 
@@ -53,16 +51,14 @@ class TestRetractCascade:
         assert len(chunks_before.data) >= 2
         g.execute('RETRACT "doc:test"')
         chunks_after = g.execute('NODES WHERE kind = "chunk"')
-        assert len(chunks_after.data) == 0  # all retracted
+        assert len(chunks_after.data) == 0
 
     def test_retract_non_doc_no_cascade(self, tmp_path):
-        """Retracting a non-document node should not cascade."""
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test"')
         g.execute('CREATE NODE "b" kind = "chunk" summary = "other"')
         g.execute('CREATE EDGE "a" -> "b" kind = "has_chunk"')
         g.execute('RETRACT "a"')
-        # Node b should still be visible
         b_result = g.execute('NODE "b"')
         assert b_result.data is not None
 
@@ -76,13 +72,11 @@ class TestRetractCascade:
         assert g.execute('NODE "doc:del"').data is None
 
     def test_delete_non_doc_no_cascade(self, tmp_path):
-        """Deleting a non-document node should not cascade."""
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test"')
         g.execute('CREATE NODE "b" kind = "chunk" summary = "other"')
         g.execute('CREATE EDGE "a" -> "b" kind = "has_chunk"')
         g.execute('DELETE NODE "a"')
-        # Node b should still exist
         b_result = g.execute('NODE "b"')
         assert b_result.data is not None
 
@@ -94,10 +88,8 @@ class TestSysReembed:
             g.execute('SYS REEMBED')
 
     def test_embedder_dirty_flag(self, tmp_path):
-        """Dirty flag should block SIMILAR TO queries."""
         g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
-        # Manually set dirty flag
         g._embedder_dirty = True
         with pytest.raises(Exception, match="Embedder changed"):
             g.execute('SIMILAR TO [1.0, 0.0, 0.0, 0.0]')
@@ -105,9 +97,7 @@ class TestSysReembed:
     @pytest.mark.needs_embedder
     def test_reembed_clears_dirty_flag(self, tmp_path):
         g = SuperGraph(path=str(tmp_path / "db"))
-        # Create node using auto-embed (embedder creates proper vector dimensions)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "hello world"')
-        # Manually embed to initialize vector store with correct dims
         if g._embedder:
             vec = g._embedder.encode_documents(["hello world"])[0]
             g._ensure_vector_store(len(vec))

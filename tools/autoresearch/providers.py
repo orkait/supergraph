@@ -1,9 +1,3 @@
-"""Shared provider + model resolution from autoresearch config.json.
-
-Single source of truth for reading config.json and building the ordered
-(provider, model) candidate list used by both the bench transport layer
-and the autoresearch run_loop.
-"""
 from __future__ import annotations
 
 import json
@@ -15,12 +9,6 @@ CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
 
 def load_config() -> dict:
-    """One-shot read of config.json. No caching, no migration.
-
-    Use when you want the providers section now. For the long-running
-    autoresearch loop use run_loop.load_config which caches + applies
-    schema migration.
-    """
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text())
     return {}
@@ -30,20 +18,6 @@ def resolve_providers(
     config: dict,
     model_priority: list[str] | None = None,
 ) -> list[dict]:
-    """Build an ordered list of (provider, model) candidates.
-
-    Returns a flat list of dicts: {pid, litellm_model, api_base, api_key}.
-    Ordered by provider_fallback_order (active provider first).
-
-    model_priority: explicit ordered model names to prefer.
-        For each provider only models in this list are included; first match
-        per provider is returned (one entry per provider). Used by bench
-        runners that target a specific eval model (e.g. gemma4:31b-cloud).
-
-        None: use active_model + provider's model_fallback_order. All matching
-        models per provider are returned in order. Used by autoresearch which
-        tries every model in sequence before giving up.
-    """
     providers = config.get("providers", {})
     active_pid = config.get("active_provider", "")
     provider_order = [active_pid] + [
@@ -60,12 +34,6 @@ def resolve_providers(
         if not base_url:
             continue
         is_local = p.get("is_local", "localhost" in base_url or "127.0.0.1" in base_url)
-        # Each provider config declares `env_key` pointing at an ENV field
-        # (see env.py). Typos raise KeyError from ENV.__getitem__. Non-local
-        # providers MUST declare env_key - silent fallback to a dummy key
-        # would produce bogus auth failures far from the root cause.
-        # Local providers (e.g. Ollama) accept any non-empty string so we
-        # tolerate missing env_key there.
         env_field = p.get("env_key", "")
         if not env_field:
             if not is_local:

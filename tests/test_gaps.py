@@ -1,4 +1,3 @@
-"""Tests for the 4 summary.md gaps: lexical recall, vision ingest, blob lifecycle, section hierarchy."""
 
 import time
 from unittest.mock import patch, MagicMock
@@ -7,10 +6,6 @@ from supergraph import SuperGraph
 from supergraph.dsl.parser import parse_uncached
 from supergraph.dsl.ast_nodes import LexicalSearchQuery, ForgetNode, SysRetain
 
-
-# ============================================================
-# Gap 1: Lexical Recall (FTS5)
-# ============================================================
 
 class TestLexicalRecall:
     def test_parse_lexical_search(self):
@@ -31,7 +26,6 @@ class TestLexicalRecall:
         gs.execute('CREATE NODE "c2" kind = "chunk" summary = "deep neural network training"')
         gs.execute('CREATE NODE "c3" kind = "chunk" summary = "database indexing strategies"')
 
-        # Manually put summaries into DocumentStore for FTS
         for nid, summary in [("c1", "machine learning algorithms"),
                               ("c2", "deep neural network training"),
                               ("c3", "database indexing strategies")]:
@@ -66,10 +60,6 @@ class TestLexicalRecall:
         gs.close()
 
 
-# ============================================================
-# Gap 2: Vision Ingest (grammar + AST wiring, no real VLM)
-# ============================================================
-
 class TestVisionIngest:
     def test_parse_ingest_with_vision(self):
         ast = parse_uncached('INGEST "photo.png" USING VISION "smolvlm2:2.2b"')
@@ -96,10 +86,6 @@ class TestVisionIngest:
         assert node.data["summary"] == "A test image showing a diagram"
         gs.close()
 
-
-# ============================================================
-# Gap 3: Blob Lifecycle (FORGET + SYS RETAIN + __blob_state__)
-# ============================================================
 
 class TestForgetNode:
     def test_parse_forget(self):
@@ -151,7 +137,6 @@ class TestSysRetain:
         result = gs.execute('SYS RETAIN')
         assert result.data["archived"] >= 1
 
-        # Check the node is now archived
         blob_col = gs._store.columns.get_column("__blob_state__", gs._store._next_slot)
         assert blob_col is not None
         _, pres, _ = blob_col
@@ -175,15 +160,10 @@ class TestBlobStateOnIngest:
         assert blob_col is not None
         col_data, col_pres, dtype_str = blob_col
         assert col_pres[slot]
-        # Verify it's "warm" (interned string)
         warm_id = gs._store.string_table.intern("warm")
         assert int(col_data[slot]) == warm_id
         gs.close()
 
-
-# ============================================================
-# Gap 4: Structural Recall (section hierarchy)
-# ============================================================
 
 class TestSectionHierarchy:
     def test_ingest_creates_sections(self, tmp_path):
@@ -207,7 +187,6 @@ class TestSectionHierarchy:
         edge_kinds = [e["kind"] for e in edges.data]
         assert "has_section" in edge_kinds
 
-        # Verify section nodes exist and have __confidence__ = 0.6
         section_edges = [e for e in edges.data if e["kind"] == "has_section"]
         assert len(section_edges) >= 2
 
@@ -238,11 +217,9 @@ class TestSectionHierarchy:
         result = gs.execute(f'INGEST "{test_file}"')
         doc_id = result.data["doc_id"]
 
-        # Get section nodes
         doc_edges = gs.execute(f'EDGES FROM "{doc_id}"')
         section_ids = [e["target"] for e in doc_edges.data if e["kind"] == "has_section"]
 
-        # Each section should have has_chunk edges to its chunks
         for sec_id in section_ids:
             sec_edges = gs.execute(f'EDGES FROM "{sec_id}"')
             chunk_edges = [e for e in sec_edges.data if e["kind"] == "has_chunk"]
@@ -251,7 +228,6 @@ class TestSectionHierarchy:
         gs.close()
 
     def test_flat_doc_no_sections(self, tmp_path):
-        """A doc without headings should have chunks directly under parent."""
         test_file = tmp_path / "flat.txt"
         test_file.write_text("Just a paragraph of text without any headings at all.")
 

@@ -1,4 +1,3 @@
-"""Tests for supergraph.store.CoreStore."""
 
 import pytest
 
@@ -7,15 +6,7 @@ from supergraph.core.memory import BYTES_PER_EDGE, BYTES_PER_NODE
 from supergraph.core.store import CoreStore
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
-
-
 def _populated_store():
-    """Build a store with three nodes and two edges.
-
-    Nodes: alice (person), bob (person), acme (org)
-    Edges: alice -[knows]-> bob, alice -[works_at]-> acme
-    """
     s = CoreStore()
     s.put_node("alice", "person", {"age": 30, "city": "NYC"})
     s.put_node("bob", "person", {"age": 25, "city": "LA"})
@@ -23,9 +14,6 @@ def _populated_store():
     s.put_edge("alice", "bob", "knows")
     s.put_edge("alice", "acme", "works_at")
     return s
-
-
-# ── 1. put_node creates node, get_node retrieves it ────────────────
 
 
 class TestPutAndGet:
@@ -49,9 +37,6 @@ class TestPutAndGet:
         assert s.get_node("n1")["x"] == 1
 
 
-# ── 2. put_node raises NodeExists on duplicate ─────────────────────
-
-
 class TestPutDuplicate:
     def test_raises_node_exists(self):
         s = CoreStore()
@@ -67,9 +52,6 @@ class TestPutDuplicate:
         assert exc_info.value.id == "n1"
 
 
-# ── 3. get_node returns None for missing ───────────────────────────
-
-
 class TestGetMissing:
     def test_totally_unknown_id(self):
         s = CoreStore()
@@ -80,9 +62,6 @@ class TestGetMissing:
         s.put_node("n1", "thing", {})
         s.delete_node("n1")
         assert s.get_node("n1") is None
-
-
-# ── 4. update_node modifies data ───────────────────────────────────
 
 
 class TestUpdateNode:
@@ -104,9 +83,6 @@ class TestUpdateNode:
         assert result["kind"] == "thing"
 
 
-# ── 5. update_node raises NodeNotFound ─────────────────────────────
-
-
 class TestUpdateMissing:
     def test_unknown_id(self):
         s = CoreStore()
@@ -119,9 +95,6 @@ class TestUpdateMissing:
         s.delete_node("n1")
         with pytest.raises(NodeNotFound):
             s.update_node("n1", {"x": 1})
-
-
-# ── 6. upsert_node creates if new, updates if existing ────────────
 
 
 class TestUpsert:
@@ -153,9 +126,6 @@ class TestUpsert:
         assert s.get_node("n1")["x"] == 99
 
 
-# ── 7. delete_node tombstones node ─────────────────────────────────
-
-
 class TestDeleteNode:
     def test_node_not_retrievable_after_delete(self):
         s = CoreStore()
@@ -172,9 +142,6 @@ class TestDeleteNode:
         assert s.node_count == 1
 
 
-# ── 8. delete_node raises NodeNotFound ─────────────────────────────
-
-
 class TestDeleteMissing:
     def test_unknown_id(self):
         s = CoreStore()
@@ -189,9 +156,6 @@ class TestDeleteMissing:
             s.delete_node("n1")
 
 
-# ── 9. delete_node cascades edge deletion ──────────────────────────
-
-
 class TestCascadeEdgeDelete:
     def test_outgoing_edges_removed(self):
         s = _populated_store()
@@ -202,15 +166,11 @@ class TestCascadeEdgeDelete:
     def test_incoming_edges_removed(self):
         s = _populated_store()
         s.delete_node("bob")
-        # alice->bob edge should be gone, alice->acme remains
         edges_from_alice = s.get_edges_from("alice")
         targets = [e["target"] for e in edges_from_alice]
         assert "bob" not in targets
         assert "acme" in targets
         assert s.edge_count == 1
-
-
-# ── 10. put_edge creates edge, get_edges_from/to retrieves ────────
 
 
 class TestEdgeCRUD:
@@ -250,9 +210,6 @@ class TestEdgeCRUD:
         assert s.get_edges_to("ghost") == []
 
 
-# ── 11. put_edge raises NodeNotFound for missing endpoints ─────────
-
-
 class TestEdgeMissingNode:
     def test_missing_source(self):
         s = CoreStore()
@@ -288,9 +245,6 @@ class TestEdgeMissingNode:
             s.put_edge("alice", "bob", "knows")
 
 
-# ── 12. put_edge rejects duplicate edges ───────────────────────────
-
-
 class TestDuplicateEdge:
     def test_exact_duplicate_raises(self):
         s = CoreStore()
@@ -305,11 +259,8 @@ class TestDuplicateEdge:
         s.put_node("a", "t", {})
         s.put_node("b", "t", {})
         s.put_edge("a", "b", "rel1")
-        s.put_edge("a", "b", "rel2")  # different kind, should work
+        s.put_edge("a", "b", "rel2")
         assert s.edge_count == 2
-
-
-# ── 13. delete_edge removes edge ──────────────────────────────────
 
 
 class TestDeleteEdge:
@@ -329,12 +280,8 @@ class TestDeleteEdge:
 
     def test_delete_nonexistent_edge_no_error(self):
         s = _populated_store()
-        # Should not raise - just a no-op
         s.delete_edge("bob", "alice", "knows")
         assert s.edge_count == 2
-
-
-# ── 14. add_index + query_by_index works ──────────────────────────
 
 
 class TestSecondaryIndex:
@@ -363,13 +310,10 @@ class TestSecondaryIndex:
     def test_nodes_without_field_not_indexed(self):
         s = CoreStore()
         s.put_node("a", "person", {"city": "NYC"})
-        s.put_node("b", "person", {})  # no city field
+        s.put_node("b", "person", {})
         s.add_index("city")
         all_slots = s.query_by_index("city", "NYC")
         assert len(all_slots) == 1
-
-
-# ── 15. Secondary index maintenance on put/update/delete ──────────
 
 
 class TestIndexMaintenance:
@@ -401,17 +345,12 @@ class TestIndexMaintenance:
         assert s.query_by_index("city", "NYC") == []
 
 
-# ── 16. Array growth when exceeding initial capacity ──────────────
-
-
 class TestArrayGrowth:
     def test_exceeds_initial_capacity(self):
         s = CoreStore()
-        # Default capacity is 1024; insert more to trigger _grow
         for i in range(1100):
             s.put_node(f"n{i}", "thing", {"i": i})
         assert s.node_count == 1100
-        # Verify first and last are retrievable
         assert s.get_node("n0")["i"] == 0
         assert s.get_node("n1099")["i"] == 1099
 
@@ -426,14 +365,10 @@ class TestArrayGrowth:
         s = CoreStore()
         for i in range(1025):
             s.put_node(f"n{i}", "thing", {"val": i})
-        # Every node still valid
         for i in range(1025):
             node = s.get_node(f"n{i}")
             assert node is not None
             assert node["val"] == i
-
-
-# ── 17. Tombstone reuse after delete ──────────────────────────────
 
 
 class TestTombstoneReuse:
@@ -442,7 +377,6 @@ class TestTombstoneReuse:
         slot0 = s.put_node("a", "thing", {})
         s.put_node("b", "thing", {})
         s.delete_node("a")
-        # Next put should reuse slot0
         slot2 = s.put_node("c", "thing", {})
         assert slot2 == slot0
 
@@ -453,10 +387,7 @@ class TestTombstoneReuse:
         next_before = s._next_slot
         s.delete_node("a")
         s.put_node("c", "thing", {})
-        assert s._next_slot == next_before  # didn't advance
-
-
-# ── 18. node_count and edge_count properties ──────────────────────
+        assert s._next_slot == next_before
 
 
 class TestCounts:
@@ -496,9 +427,6 @@ class TestCounts:
         assert s.edge_count == 0
 
 
-# ── 19. increment_field ───────────────────────────────────────────
-
-
 class TestIncrementField:
     def test_increment_existing_int(self):
         s = CoreStore()
@@ -534,9 +462,6 @@ class TestIncrementField:
         s.put_node("n1", "t", {"name": "alice"})
         with pytest.raises(TypeError, match="not numeric"):
             s.increment_field("n1", "name", 1)
-
-
-# ── 20. get_all_nodes with and without kind filter ────────────────
 
 
 class TestGetAllNodes:
@@ -577,20 +502,15 @@ class TestGetAllNodes:
         assert s.get_all_nodes() == []
 
 
-# ── Memory ceiling ─────────────────────────────────────────────────
-
-
 class TestMemoryCeiling:
     def test_put_node_exceeds_ceiling(self):
-        # Set ceiling so tight only 1 node fits (check uses strict >)
-        ceiling = BYTES_PER_NODE * 2 - 1  # room for 1, adding 2nd exceeds
+        ceiling = BYTES_PER_NODE * 2 - 1
         s = CoreStore(ceiling_bytes=ceiling)
         s.put_node("a", "t", {})
         with pytest.raises(CeilingExceeded):
             s.put_node("b", "t", {})
 
     def test_put_edge_exceeds_ceiling(self):
-        # Enough room for 2 nodes + 0 edges but not 1 edge
         ceiling = BYTES_PER_NODE * 2 + BYTES_PER_EDGE - 1
         s = CoreStore(ceiling_bytes=ceiling)
         s.put_node("a", "t", {})
@@ -599,11 +519,7 @@ class TestMemoryCeiling:
             s.put_edge("a", "b", "rel")
 
 
-# ── TTL / retraction visibility in store-level methods ─────────────────────
-
-
 class TestLiveSlotsVisibility:
-    """_live_slots and _live_mask must honour TTL and retracted, not just tombstones."""
 
     def _store_with_node(self, node_id="n1", kind="t", data=None):
         s = CoreStore()
@@ -612,9 +528,8 @@ class TestLiveSlotsVisibility:
 
     def test_ttl_expired_node_hidden_in_get_all_nodes(self):
         s = self._store_with_node()
-        # Set __expires_at__ to 1ms ago (already expired)
         slot = s.id_to_slot[s.string_table.intern("n1")]
-        s.columns.set_reserved(slot, "__expires_at__", 1)  # epoch+1ms - long past
+        s.columns.set_reserved(slot, "__expires_at__", 1)
         nodes = s.get_all_nodes()
         assert nodes == [], "expired node must not appear in get_all_nodes"
 
@@ -622,7 +537,7 @@ class TestLiveSlotsVisibility:
         import time
         s = self._store_with_node()
         slot = s.id_to_slot[s.string_table.intern("n1")]
-        future_ms = int(time.time() * 1000) + 60_000  # 60 s from now
+        future_ms = int(time.time() * 1000) + 60_000
         s.columns.set_reserved(slot, "__expires_at__", future_ms)
         nodes = s.get_all_nodes()
         assert len(nodes) == 1, "non-expired node must still appear"
@@ -661,31 +576,24 @@ class TestLiveSlotsVisibility:
         assert "a" in ids
 
     def test_non_ttl_store_still_caches_live_slots(self):
-        """Without TTL columns the cache must be used (fast path)."""
         s = CoreStore()
         s.put_node("a", "t", {})
-        # First call populates cache
         _ = s._live_slots()
         version_before = s._live_version
-        # Second call with same version must hit cache
         slots2 = s._live_slots()
-        assert s._live_version == version_before  # no mutation
+        assert s._live_version == version_before
         assert s._live_slots_cache.get(None) is not None
         assert len(slots2) == 1
 
     def test_ttl_store_does_not_use_stale_cache(self):
-        """With TTL column present, cache must be bypassed so expiry is re-evaluated."""
         import time
         s = CoreStore()
         future_ms = int(time.time() * 1000) + 60_000
         s.put_node("a", "t", {})
         slot = s.id_to_slot[s.string_table.intern("a")]
         s.columns.set_reserved(slot, "__expires_at__", future_ms)
-        # First call
         slots1 = s._live_slots()
         assert len(slots1) == 1
-        # Manually expire the node without triggering _invalidate_live_cache
         s.columns.set_reserved(slot, "__expires_at__", 1)
-        # Cache should NOT be used - node must now be absent
         slots2 = s._live_slots()
         assert len(slots2) == 0, "expired node leaked through cache"

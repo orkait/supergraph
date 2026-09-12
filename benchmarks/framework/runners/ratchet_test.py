@@ -1,8 +1,3 @@
-"""Ratchet test runner for LoCoMo retrieval improvements.
-
-Runs 50Q (random 10/cat, seed=42) with configurable retrieval settings.
-Usage: uv run python3 -m benchmarks.framework.runners.ratchet_test --label baseline
-"""
 
 from __future__ import annotations
 
@@ -48,7 +43,6 @@ def run_test(label: str, config: dict, k: int = 10, reranker=None) -> dict:
     print(f'  {"OVERALL":<20} n={summary["n_questions"]:<4} f1={summary["overall_f1"]:.4f}')
     print(flush=True)
 
-    # Save
     out_dir = Path('benchmarks/framework/results')
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f'ratchet_{label}.json'

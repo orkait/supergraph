@@ -1,4 +1,3 @@
-"""PR 7: typed builders for MATCH pattern / AGGREGATE agg_func / EVOLVE rule expr."""
 import pytest
 
 from supergraph import q, F, P, agg, EvolveWhen, EvolveThen
@@ -16,8 +15,6 @@ def _roundtrip(query_obj):
 
 class TestPattern:
     def test_single_bound_step(self):
-        # Single-step MATCH is invalid in grammar (needs arrow). Just check
-        # DSL emission for the Pattern itself.
         p = P.node("fn_main")
         assert p.to_dsl() == '("fn_main")'
 
@@ -52,7 +49,6 @@ class TestPattern:
         assert '("a") -[kind = "r1"]-> (b) -[]-> (c)' in dsl
 
     def test_match_still_accepts_string(self):
-        """Backwards compat: raw string still works."""
         dsl = _roundtrip(q.match('("a") -[]-> (b)'))
         assert "MATCH" in dsl
 
@@ -186,6 +182,5 @@ class TestImmutability:
 
     def test_evolve_cond_immutable(self):
         c = EvolveWhen.cond("x", ">", 0.5)
-        # frozen dataclass - attempting to set attr raises
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(Exception):
             c.value = 99

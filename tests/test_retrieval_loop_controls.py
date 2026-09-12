@@ -1,4 +1,3 @@
-"""Tests for benchmark adapter routing and retrieval tuning config output."""
 
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -22,7 +21,7 @@ def test_adapter_routes_categories_when_no_explicit_strategy():
 
 def test_adapter_passes_temporal_anchor_to_dispatch():
     adapter = SuperGraphAdapter(config={})
-    adapter._gs = SimpleNamespace()  # truthy, no internal access needed
+    adapter._gs = SimpleNamespace()
 
     seen = {}
 

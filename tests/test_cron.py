@@ -1,4 +1,3 @@
-"""Tests for the CRON scheduler: CRUD, tick, persistence, DSL commands."""
 import pytest
 from supergraph import SuperGraph
 from supergraph.cron import CronScheduler
@@ -66,7 +65,6 @@ class TestCronCRUD:
 
 
 class TestCronExpressions:
-    """Verify croniter handles full cron syntax."""
 
     def test_standard_five_field(self, tmp_path):
         gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
@@ -106,7 +104,6 @@ class TestCronPersistence:
 
 class TestCronSchedulerUnit:
     def test_tick_fires_due_job(self, tmp_path):
-        """Manually trigger tick and verify job executes."""
         from concurrent.futures import Future
         from supergraph.persistence.database import open_database
 
@@ -121,7 +118,6 @@ class TestCronSchedulerUnit:
         conn = open_database(str(tmp_path / "test.db"))
         sched = CronScheduler(conn, fake_submit)
         sched.add("test_job", "* * * * *", "SYS STATS")
-        # Force next_run to the past so the job is immediately due
         conn.execute("UPDATE cron_jobs SET next_run = 0 WHERE name = 'test_job'")
         conn.commit()
         sched._tick()

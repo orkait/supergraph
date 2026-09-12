@@ -1,4 +1,3 @@
-"""Tests for extensibility injection points."""
 import pytest
 from supergraph.ingest.base import Ingestor, IngestResult
 
@@ -29,7 +28,6 @@ class TestIngestorRegistry:
     def test_resolve_using_unknown_name_raises(self):
         from supergraph.ingest.registry import IngestorRegistry
         reg = IngestorRegistry()
-        # using= with an unknown builtin name raises ValueError from _make_builtin_ingestor
         with pytest.raises(ValueError):
             reg.resolve("file.txt", using="nonexistent_parser_xyz")
 
@@ -95,7 +93,7 @@ class TestChunkerProtocol:
         from supergraph.ingest.chunker import HeadingChunker
         chunker = HeadingChunker()
         chunks = chunker.chunk("# H\n" + "word " * 1000, max_chunk_size=200)
-        assert len(chunks) > 1  # kwargs were honored
+        assert len(chunks) > 1
 
     def test_custom_chunker_satisfies_protocol(self):
         from supergraph.ingest.base import ChunkerProtocol
@@ -163,7 +161,6 @@ class TestSuperGraphInjection:
         assert len(chunk_calls) >= 1
 
     def test_default_path_preserved_without_ingestors(self, tmp_path):
-        """No ingestors= passed → existing router path still active (no regression)."""
         from supergraph import SuperGraph
 
         f = tmp_path / "notes.txt"
@@ -171,6 +168,5 @@ class TestSuperGraphInjection:
 
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}" AS "doc:default"')
-        # router.py fast-paths .txt/.md as "direct"
         assert result.data["parser"] in ("markitdown", "direct")
         g.close()

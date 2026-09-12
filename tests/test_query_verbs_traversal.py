@@ -1,7 +1,3 @@
-"""PR 2: traversal verbs + remaining reads.
-
-Every verb: emit + parser roundtrip + at least one injection case.
-"""
 import pytest
 
 from supergraph import q, F

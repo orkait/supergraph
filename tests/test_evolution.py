@@ -1,8 +1,3 @@
-"""Tests for the metacognitive evolution layer (Layer 5).
-
-All 27 spec test cases plus infrastructure tests for Step 1 counter setup.
-Written first (RED phase) - all should fail until implementation is complete.
-"""
 import time
 import warnings
 import pytest
@@ -10,24 +5,16 @@ import pytest
 from supergraph import SuperGraph
 from supergraph.core.types import Result
 
-# Slow suite (~25s). Skip by default; opt in via --run-slow or
-# SUPERGRAPH_RUN_SLOW=1. See conftest.py for the gating logic.
 pytestmark = pytest.mark.slow
 
 
-# ============================================================
-# Infrastructure: Result.meta (Step 1)
-# ============================================================
-
 def test_result_meta_field_exists():
-    """Result dataclass must have a meta field defaulting to empty dict."""
     r = Result(kind="ok", data=None, count=0)
     assert hasattr(r, "meta")
     assert r.meta == {}
 
 
 def test_result_meta_in_to_dict_when_non_empty():
-    """to_dict() must include meta when it is non-empty."""
     r = Result(kind="ok", data=None, count=0, meta={"evolution": [{"rule": "x"}]})
     d = r.to_dict()
     assert "meta" in d
@@ -35,25 +22,18 @@ def test_result_meta_in_to_dict_when_non_empty():
 
 
 def test_result_meta_absent_from_to_dict_when_empty():
-    """to_dict() must NOT include meta when it is empty (keep payload lean)."""
     r = Result(kind="ok", data=None, count=0)
     d = r.to_dict()
     assert "meta" not in d
 
 
-# ============================================================
-# Infrastructure: EvolutionConfig (Step 1)
-# ============================================================
-
 def test_evolution_config_exists_in_supergraph_config():
-    """SuperGraphConfig must have an evolution section."""
     from supergraph.config import SuperGraphConfig
     cfg = SuperGraphConfig()
     assert hasattr(cfg, "evolution")
 
 
 def test_evolution_config_defaults():
-    """EvolutionConfig must have correct default values per spec."""
     from supergraph.config import EvolutionConfig
     cfg = EvolutionConfig()
     assert cfg.similarity_buffer_size == 100
@@ -62,19 +42,13 @@ def test_evolution_config_defaults():
     assert cfg.history_retention == 1000
 
 
-# ============================================================
-# Infrastructure: SuperGraph counters (Step 1)
-# ============================================================
-
 def test_supergraph_has_counters():
-    """SuperGraph must have _counters dict initialized at __init__."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     assert hasattr(db, "_counters")
     assert isinstance(db._counters, dict)
 
 
 def test_counters_track_execute_ok():
-    """Successful execute() calls must increment _counters['execute_ok']."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     initial = db._counters.get("execute_ok", 0)
     db.execute('CREATE NODE "c1" kind="test" x="1"')
@@ -82,7 +56,6 @@ def test_counters_track_execute_ok():
 
 
 def test_counters_track_execute_err():
-    """Failed execute() calls must increment _counters['execute_err']."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     initial = db._counters.get("execute_err", 0)
     try:
@@ -93,7 +66,6 @@ def test_counters_track_execute_err():
 
 
 def test_supergraph_has_start_time():
-    """SuperGraph must have _start_time set at __init__ for query_rate signal."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     assert hasattr(db, "_start_time")
     assert isinstance(db._start_time, float)
@@ -101,7 +73,6 @@ def test_supergraph_has_start_time():
 
 
 def test_supergraph_has_similarity_buffer():
-    """SuperGraph must have _similarity_buffer deque for avg_similarity signal."""
     from collections import deque
     db = SuperGraph(ceiling_mb=100, embedder=None)
     assert hasattr(db, "_similarity_buffer")
@@ -109,18 +80,12 @@ def test_supergraph_has_similarity_buffer():
 
 
 def test_supergraph_has_last_evolution_events():
-    """SuperGraph must have _last_evolution_events list for D4 feedback."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     assert hasattr(db, "_last_evolution_events")
     assert isinstance(db._last_evolution_events, list)
 
 
-# ============================================================
-# Infrastructure: DB tables (Step 1)
-# ============================================================
-
 def test_db_evolution_tables_created(tmp_path):
-    """evolution_rules and evolution_history tables must be created in SQLite."""
     db_dir = tmp_path / "evo_tables"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -135,7 +100,6 @@ def test_db_evolution_tables_created(tmp_path):
 
 
 def test_evolution_rules_table_schema(tmp_path):
-    """evolution_rules must have name, rule_json, created_at columns."""
     db_dir = tmp_path / "evo_schema"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -149,7 +113,6 @@ def test_evolution_rules_table_schema(tmp_path):
 
 
 def test_evolution_history_table_schema(tmp_path):
-    """evolution_history must have id, timestamp, rule_name, signals_json, actions_json, prev_values_json, status."""
     db_dir = tmp_path / "evo_hist_schema"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -161,12 +124,7 @@ def test_evolution_history_table_schema(tmp_path):
     db.close()
 
 
-# ============================================================
-# Engine Core: EvolutionEngine (Step 2)
-# ============================================================
-
 def test_create_rule():
-    """Test 1: Rule stored and retrievable via SYS EVOLVE LIST."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     res = db.execute(
         'SYS EVOLVE RULE "pressure" WHEN memory_pct > 85 THEN SET eviction_target_ratio = 0.6 COOLDOWN 300'
@@ -180,7 +138,6 @@ def test_create_rule():
 
 
 def test_create_duplicate_name():
-    """Test 2: Duplicate rule name must be rejected."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     db.execute(
         'SYS EVOLVE RULE "dup" WHEN memory_pct > 80 THEN SET eviction_target_ratio = 0.7 COOLDOWN 60'
@@ -193,7 +150,6 @@ def test_create_duplicate_name():
 
 
 def test_create_invalid_signal():
-    """Test 3: Unknown signal must be rejected with 'unknown signal' message."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     res = db.execute(
         'SYS EVOLVE RULE "bad" WHEN bogus_signal > 5 THEN SET eviction_target_ratio = 0.7 COOLDOWN 60'
@@ -203,7 +159,6 @@ def test_create_invalid_signal():
 
 
 def test_create_invalid_param():
-    """Test 4: Unknown parameter must be rejected with 'unknown parameter' message."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     res = db.execute(
         'SYS EVOLVE RULE "bad2" WHEN memory_pct > 50 THEN SET fake_param = 0.5 COOLDOWN 60'
@@ -213,7 +168,6 @@ def test_create_invalid_param():
 
 
 def test_enable_disable_cycle():
-    """Test 5: Enable/disable toggle works correctly."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     db.execute(
         'SYS EVOLVE RULE "toggle" WHEN memory_pct > 90 THEN SET eviction_target_ratio = 0.5 COOLDOWN 60'
@@ -231,7 +185,6 @@ def test_enable_disable_cycle():
 
 
 def test_delete_rule():
-    """Test 6: Deleted rule is removed from storage."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     db.execute(
         'SYS EVOLVE RULE "todelete" WHEN memory_pct > 80 THEN SET eviction_target_ratio = 0.7 COOLDOWN 60'
@@ -245,33 +198,26 @@ def test_delete_rule():
 
 
 def test_rule_fires_on_condition():
-    """Test 7: When condition is met, action is applied to config."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     initial_ratio = db._sys_executor._eviction_target_ratio
 
-    # Create rule targeting eviction_target_ratio
     db.execute(
         'SYS EVOLVE RULE "fire" WHEN memory_pct >= 0 THEN SET eviction_target_ratio = 0.65 COOLDOWN 10'
     )
 
-    # Manually trigger engine evaluation
     if hasattr(db, "_evolution_engine"):
         signals = db._evolution_engine.compute_signals()
         db._evolution_engine.evaluate(signals)
 
-    # The ratio should have changed
     new_ratio = db._sys_executor._eviction_target_ratio
     assert new_ratio == pytest.approx(0.65)
 
 
 def test_rule_skips_false_condition():
-    """Test 8: When condition is not met, action is NOT applied."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # Set initial known value
     db._sys_executor._eviction_target_ratio = 0.8
 
-    # Rule fires only when memory_pct > 999 (impossible)
     db.execute(
         'SYS EVOLVE RULE "nope" WHEN memory_pct > 999 THEN SET eviction_target_ratio = 0.5 COOLDOWN 10'
     )
@@ -280,12 +226,10 @@ def test_rule_skips_false_condition():
         signals = db._evolution_engine.compute_signals()
         db._evolution_engine.evaluate(signals)
 
-    # Should be unchanged
     assert db._sys_executor._eviction_target_ratio == pytest.approx(0.8)
 
 
 def test_cooldown_prevents_refire():
-    """Test 9: Rule won't fire twice within cooldown window."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
     db.execute(
         'SYS EVOLVE RULE "cd" WHEN memory_pct >= 0 THEN SET eviction_target_ratio = 0.65 COOLDOWN 3600'
@@ -297,26 +241,20 @@ def test_cooldown_prevents_refire():
     engine = db._evolution_engine
     signals = engine.compute_signals()
 
-    # First fire
     engine.evaluate(signals)
     ratio_after_first = db._sys_executor._eviction_target_ratio
 
-    # Reset ratio to detect if rule fires again
     db._sys_executor._eviction_target_ratio = 0.9
 
-    # Second evaluation (still within cooldown)
     engine.evaluate(signals)
     ratio_after_second = db._sys_executor._eviction_target_ratio
 
-    # Should still be 0.9 (rule was in cooldown)
     assert ratio_after_second == pytest.approx(0.9)
 
 
 def test_priority_ordering():
-    """Test 10: Lower priority number fires first and wins conflicts."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # Both rules fire (memory_pct >= 0), different target values, different priorities
     db.execute(
         'SYS EVOLVE RULE "low-pri" WHEN memory_pct >= 0 THEN SET eviction_target_ratio = 0.5 COOLDOWN 10 PRIORITY 10'
     )
@@ -331,33 +269,25 @@ def test_priority_ordering():
     signals = engine.compute_signals()
     engine.evaluate(signals)
 
-    # Priority 1 fires first, sets to 0.7. Priority 10 fires next but conflict - skipped.
-    # Actually: lowest number = highest priority. Priority 1 wins.
     assert db._sys_executor._eviction_target_ratio == pytest.approx(0.7)
 
 
 def test_frozen_signals():
-    """Test 11: Rule B evaluates against snapshot, not Rule A's side effects."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     if not hasattr(db, "_evolution_engine"):
         pytest.skip("EvolutionEngine not wired yet")
 
-    # Rules target different params - use compute_signals to verify snapshot
     engine = db._evolution_engine
     snap1 = engine.compute_signals()
     snap2 = engine.compute_signals()
 
-    # Two calls to compute_signals at same tick should give consistent readings
-    # (within float rounding - node_count should be identical)
     assert snap1["node_count"] == snap2["node_count"]
     assert snap1["memory_pct"] == pytest.approx(snap2["memory_pct"], abs=0.01)
 
 
 def test_conflict_detection_at_create():
-    """Test 12: Same param + same priority is unresolvable - must warn at creation."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
-    # Both rules: same param, same priority (default 5) - unresolvable conflict
     db.execute(
         'SYS EVOLVE RULE "r1" WHEN memory_pct > 80 THEN SET eviction_target_ratio = 0.6 COOLDOWN 60'
     )
@@ -371,7 +301,6 @@ def test_conflict_detection_at_create():
             "same param + same priority must emit a conflict warning"
         )
 
-    # Both rules must still be stored (warning does not block creation)
     lst = db.execute("SYS EVOLVE LIST")
     names = [r["name"] for r in lst.data] if isinstance(lst.data, list) else []
     assert "r1" in names
@@ -379,7 +308,6 @@ def test_conflict_detection_at_create():
 
 
 def test_conflict_runtime_highest_wins():
-    """Test 13: When two rules fire targeting same param, lowest priority number wins."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -400,11 +328,8 @@ def test_conflict_runtime_highest_wins():
 
 
 def test_adjust_clamps():
-    """Test 14: ADJUST past min/max constraint clamps to boundary."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # similarity_threshold has constraint [0.5, 0.99]
-    # Set it near the top, then try to push past
     db.execute(
         'SYS EVOLVE RULE "clamp" WHEN memory_pct >= 0 THEN ADJUST similarity_threshold BY 0.5 COOLDOWN 10'
     )
@@ -416,20 +341,15 @@ def test_adjust_clamps():
     signals = engine.compute_signals()
     engine.evaluate(signals)
 
-    # similarity_threshold should be clamped to 0.99, not exceed it
     threshold = db._config.vector.similarity_threshold
-    # After ADJUST, the engine updates the live config value
-    # Check via a getter if available
     if hasattr(engine, "_get_param"):
         val = engine._get_param("similarity_threshold")
         assert val <= 0.99
 
 
 def test_adjust_until_stops():
-    """Test 15: ADJUST UNTIL stops when target reached."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # Start at 0.85, adjust by -0.05 until 0.70
     db.execute(
         'SYS EVOLVE RULE "until" WHEN memory_pct >= 0 THEN ADJUST recall_decay BY -0.1 UNTIL 0.5 COOLDOWN 10'
     )
@@ -439,23 +359,19 @@ def test_adjust_until_stops():
 
     engine = db._evolution_engine
 
-    # Run multiple ticks - should stop at 0.5 not go below
     for _ in range(10):
         signals = engine.compute_signals()
         engine.evaluate(signals)
-        # Reset cooldown so it can fire again
         if hasattr(engine, "_rules") and engine._rules:
             for r in engine._rules.values():
                 if r.name == "until":
                     r.last_fired_at = 0.0
 
-    # recall_decay should not have gone below 0.5
     val = db._executor._recall_decay
-    assert val >= 0.5 - 0.001  # small float tolerance
+    assert val >= 0.5 - 0.001
 
 
 def test_adjust_ceiling_negative_noop():
-    """Test 16: ADJUST ceiling_mb by negative amount is a no-op (monotonic)."""
     db = SuperGraph(ceiling_mb=256, embedder=None)
     initial_ceiling = db.ceiling_mb
 
@@ -470,15 +386,12 @@ def test_adjust_ceiling_negative_noop():
     signals = engine.compute_signals()
     engine.evaluate(signals)
 
-    # ceiling_mb must not decrease
     assert db.ceiling_mb >= initial_ceiling
 
 
 def test_set_respects_constraints():
-    """Test 17: SET out-of-range value is clamped to constraint boundary."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # recall_decay has constraint [0.1, 1.0]; set to 2.0
     db.execute(
         'SYS EVOLVE RULE "clamp2" WHEN memory_pct >= 0 THEN SET recall_decay = 2.0 COOLDOWN 10'
     )
@@ -490,12 +403,10 @@ def test_set_respects_constraints():
     signals = engine.compute_signals()
     engine.evaluate(signals)
 
-    # Should be clamped to 1.0 (max)
     assert db._executor._recall_decay <= 1.0
 
 
 def test_protected_kinds_always_schema():
-    """Test 18: REMOVE protected_kinds cannot remove 'schema' or 'config'."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -509,7 +420,6 @@ def test_protected_kinds_always_schema():
     signals = engine.compute_signals()
     engine.evaluate(signals)
 
-    # 'schema' must remain protected
     if hasattr(engine, "_get_param"):
         kinds = engine._get_param("protected_kinds")
         assert "schema" in kinds
@@ -517,10 +427,8 @@ def test_protected_kinds_always_schema():
 
 
 def test_remember_weights_normalization():
-    """Test 19: After SET remember_weights, values are auto-normalized to sum=1.0."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
-    # Set weights that don't sum to 1 (sum = 1.3)
     db.execute(
         'SYS EVOLVE RULE "weights" WHEN memory_pct >= 0 THEN SET remember_weights = [0.6, 0.4, 0.3] COOLDOWN 10'
     )
@@ -537,7 +445,6 @@ def test_remember_weights_normalization():
 
 
 def test_run_action_does_not_raise():
-    """Test 20: THEN RUN never raises - bad DSL fails gracefully."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -556,7 +463,6 @@ def test_run_action_does_not_raise():
 
 
 def test_run_action_executes_dsl():
-    """THEN RUN dispatches valid DSL and reports status 'applied'."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -576,7 +482,6 @@ def test_run_action_executes_dsl():
 
 
 def test_run_action_bad_dsl_graceful():
-    """THEN RUN with unparseable DSL fails gracefully - status 'failed:...' not a crash."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -597,7 +502,6 @@ def test_run_action_bad_dsl_graceful():
 
 
 def test_run_action_status_in_history(tmp_path):
-    """History entry records final RUN status ('applied') not 'pending'."""
     db_dir = tmp_path / "run_hist"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -617,7 +521,6 @@ def test_run_action_status_in_history(tmp_path):
 
 
 def test_recall_misses_signal_exists():
-    """recall_misses is a known signal and returned by compute_signals()."""
     from supergraph.core.evolve import KNOWN_SIGNALS
 
     assert "recall_misses" in KNOWN_SIGNALS
@@ -630,7 +533,6 @@ def test_recall_misses_signal_exists():
 
 
 def test_reentrancy_guard():
-    """Test 21: Nested _check_health call during evolution tick skips evolution."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     if not hasattr(db, "_evolution_engine"):
@@ -638,10 +540,8 @@ def test_reentrancy_guard():
 
     engine = db._evolution_engine
 
-    # Manually set _evaluating = True
     engine._evaluating = True
 
-    # Trigger _check_health - should not cause recursive evaluate()
     try:
         db._optimizer._check_health()
     except Exception as e:
@@ -651,7 +551,6 @@ def test_reentrancy_guard():
 
 
 def test_history_logged(tmp_path):
-    """Test 22: When a rule fires, history entry is recorded with signals + prev values."""
     db_dir = tmp_path / "hist_log"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -679,7 +578,6 @@ def test_history_logged(tmp_path):
 
 
 def test_history_limit(tmp_path):
-    """Test 23: HISTORY LIMIT n returns at most n most recent entries."""
     db_dir = tmp_path / "hist_limit"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -693,11 +591,9 @@ def test_history_limit(tmp_path):
 
     engine = db._evolution_engine
 
-    # Fire multiple times
     for _ in range(5):
         signals = engine.compute_signals()
         engine.evaluate(signals)
-        # Reset cooldown
         if "many" in engine._rules:
             engine._rules["many"].last_fired_at = 0.0
 
@@ -708,7 +604,6 @@ def test_history_limit(tmp_path):
 
 
 def test_reset_reverts():
-    """Test 24: SYS EVOLVE RESET disables all rules and reverts config to defaults."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -720,13 +615,11 @@ def test_reset_reverts():
 
     lst = db.execute("SYS EVOLVE LIST")
     rules = lst.data if isinstance(lst.data, list) else []
-    # All rules disabled after reset
     for rule in rules:
         assert rule.get("enabled") is False
 
 
 def test_feedback_on_result():
-    """Test 25: result.meta['evolution'] is populated when rules fire."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     db.execute(
@@ -739,21 +632,16 @@ def test_feedback_on_result():
     engine = db._evolution_engine
     signals = engine.compute_signals()
     engine.evaluate(signals)
-    # _last_evolution_events should be populated
     assert len(db._last_evolution_events) >= 1
 
-    # Next execute() should attach events to result.meta
     result = db.execute('CREATE NODE "fb1" kind="test" x="1"')
-    # meta["evolution"] should be populated
     assert "evolution" in result.meta
     assert len(result.meta["evolution"]) >= 1
 
-    # Events should be cleared after attachment
     assert db._last_evolution_events == []
 
 
 def test_persistence_across_restart(tmp_path):
-    """Test 26: Rules survive close + reopen."""
     db_dir = tmp_path / "persist_evo"
     db_dir.mkdir()
 
@@ -763,7 +651,6 @@ def test_persistence_across_restart(tmp_path):
     )
     db.close()
 
-    # Reopen
     db2 = SuperGraph(path=str(db_dir), embedder=None)
     lst = db2.execute("SYS EVOLVE LIST")
     names = [r["name"] for r in lst.data] if isinstance(lst.data, list) else []
@@ -772,7 +659,6 @@ def test_persistence_across_restart(tmp_path):
 
 
 def test_starter_rules_disabled():
-    """Test 27: Starter rules from evolve_defaults are present but disabled by default."""
     from supergraph.core.evolve import STARTER_RULES
 
     assert len(STARTER_RULES) >= 3
@@ -780,12 +666,7 @@ def test_starter_rules_disabled():
         assert rule.get("enabled", True) is False, f"Starter rule {rule.get('name')} should be disabled"
 
 
-# ============================================================
-# Infrastructure: WAL pending_count property
-# ============================================================
-
 def test_wal_pending_count_property(tmp_path):
-    """WALManager must expose a pending_count property."""
     db_dir = tmp_path / "wal_pending"
     db_dir.mkdir()
     db = SuperGraph(path=str(db_dir), embedder=None)
@@ -796,12 +677,7 @@ def test_wal_pending_count_property(tmp_path):
     db.close()
 
 
-# ============================================================
-# Engine: Known signals + tunable params (Step 2)
-# ============================================================
-
 def test_known_signals_registry():
-    """KNOWN_SIGNALS must contain all 12 spec-defined signals."""
     from supergraph.core.evolve import KNOWN_SIGNALS
 
     expected = {
@@ -813,7 +689,6 @@ def test_known_signals_registry():
 
 
 def test_tunable_params_registry():
-    """TUNABLE_PARAMS must contain all 10 spec-defined parameters."""
     from supergraph.core.evolve import TUNABLE_PARAMS
 
     expected = {
@@ -825,7 +700,6 @@ def test_tunable_params_registry():
 
 
 def test_compute_signals_returns_all_keys():
-    """compute_signals() must return all 12 signal keys."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     if not hasattr(db, "_evolution_engine"):
@@ -843,7 +717,6 @@ def test_compute_signals_returns_all_keys():
 
 
 def test_recall_hit_rate_defaults_to_1_when_no_queries():
-    """recall_hit_rate must be 1.0 when no RECALL queries have been made yet."""
     db = SuperGraph(ceiling_mb=100, embedder=None)
 
     if not hasattr(db, "_evolution_engine"):

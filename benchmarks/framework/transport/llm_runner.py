@@ -1,4 +1,3 @@
-"""Re-export from canonical location: src/supergraph/llm_runner.py."""
 from supergraph.llm_runner import (  # noqa: F401
     LLMRunner,
     get_shared_runner,

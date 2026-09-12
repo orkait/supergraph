@@ -146,7 +146,6 @@ class OnnxTokenClassificationEntityExtractor:
         active_providers = self._session.get_providers()
         print(f"  [NER] Model loaded. Provider: {active_providers[0]}")
         
-        # Check strict enforcement
         if any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in resolved_providers):
             if not any(p in ("CUDAExecutionProvider", "TensorrtExecutionProvider") for p in active_providers):
                 raise RuntimeError(
@@ -228,7 +227,6 @@ class OnnxTokenClassificationEntityExtractor:
         stripped_texts = [_strip_prefix(t) for t in texts]
         encodings = [self._tokenizer.encode(t) for t in stripped_texts]
         
-        # Simple padding for batch inference
         max_len = max(len(e.ids) for e in encodings)
         input_ids = []
         attention_mask = []

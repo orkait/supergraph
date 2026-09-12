@@ -1,4 +1,3 @@
-"""Tests for ONNX entity extraction and co-reference resolution."""
 from supergraph.ingest.entity_extract import (
     extract_entities, CoReferenceResolver
 )
@@ -35,7 +34,6 @@ class TestEntityExtractor:
         assert extract_entities("Caroline moved.", model_dir=None) == []
 
     def test_high_threshold_filters_low_confidence(self):
-        """Spotify subword 'ify' should be filtered at default 0.6 threshold."""
         entities = extract_entities("She works at Spotify.", model_dir=MODEL_DIR)
         assert all(e.score >= 0.6 for e in entities)
         assert not any(e.text == "ify" for e in entities)

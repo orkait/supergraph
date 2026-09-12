@@ -1,4 +1,3 @@
-"""Tests for sentence-level query expansion."""
 from supergraph import SuperGraph
 from supergraph.algos.sentence_split import split_sentences
 
@@ -31,7 +30,7 @@ class TestSentenceSplitter:
 
     def test_multi_sentence_query(self):
         result = split_sentences("Where did she move from? She traveled there. When did it happen?")
-        assert len(result) >= 2  # at least 2, may merge some
+        assert len(result) >= 2
 
     def test_three_sentences(self):
         result = split_sentences("Caroline moved from Sweden. She was born in 1990. Melanie met her there.")
@@ -40,7 +39,6 @@ class TestSentenceSplitter:
 
 class TestSentenceQueryExpansion:
     def test_disabled_by_default(self):
-        """sentence_query_expansion defaults to True after pipeline refactoring."""
         g = SuperGraph(ceiling_mb=256)
         assert getattr(g._executor, '_sentence_query_expansion', False) is True
 
@@ -62,7 +60,6 @@ class TestSentenceQueryExpansion:
         assert g._executor._sentence_query_expansion is True
 
     def test_single_sentence_query_unchanged(self):
-        """Single-sentence queries should behave identically with/without expansion."""
         g_on = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g_on.execute('SYS REGISTER NODE KIND "memory" REQUIRED content:string EMBED content')
         g_on.execute('CREATE NODE "msg1" kind = "memory" content = "Caroline moved from Sweden in 2023."')
@@ -72,21 +69,17 @@ class TestSentenceQueryExpansion:
         assert "Sweden" in result.data[0]["content"]
 
     def test_multi_sentence_query_finds_both_topics(self):
-        """Multi-sentence query should find messages about different topics."""
         g = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g.execute('SYS REGISTER NODE KIND "memory" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "msg1" kind = "memory" content = "Caroline moved from Sweden in 2023. She met Melanie there."')
         g.execute('CREATE NODE "msg2" kind = "memory" content = "The weather was great. They traveled together."')
         g.execute('CREATE NODE "msg3" kind = "memory" content = "Programming in Python is fun. Machine learning is interesting too."')
 
-        # Multi-sentence query targeting different topics
         result = g.execute('REMEMBER "Where did she move? The weather was great." LIMIT 10')
         ids = [n["id"] for n in result.data]
-        # msg1 should rank higher due to "Sweden/move" sentence match
         assert "msg1" in ids
 
     def test_expansion_adds_more_candidates(self):
-        """Multi-sentence query with expansion should find candidates that single-sentence misses."""
         g_on = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g_on.execute('SYS REGISTER NODE KIND "memory" REQUIRED content:string EMBED content')
         g_on.execute('CREATE NODE "msg1" kind = "memory" content = "Caroline moved from Sweden in 2023."')

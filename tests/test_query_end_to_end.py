@@ -1,8 +1,3 @@
-"""End-to-end: build Query via builder, run on real SuperGraph, verify result.
-
-Catches bugs the parser-only roundtrip misses: executor dispatch,
-handler-level argument coercion, result shape, semantic correctness.
-"""
 from __future__ import annotations
 
 import tempfile
@@ -138,7 +133,6 @@ class TestSysEndToEnd:
     def test_kinds_lists_registered(self, gs_mem):
         q.sys.register_node_kind("post", required={"title": "string"}).execute(gs_mem)
         r = q.sys.kinds().execute(gs_mem)
-        # Find the registered kind in the result
         names = []
         for item in r.data:
             if isinstance(item, dict):

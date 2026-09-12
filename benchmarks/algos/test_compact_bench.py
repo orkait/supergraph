@@ -1,4 +1,3 @@
-"""Compact primitives micro-benchmarks."""
 
 import numpy as np
 

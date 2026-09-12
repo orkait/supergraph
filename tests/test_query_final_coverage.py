@@ -1,15 +1,3 @@
-"""Final 100%-DSL-coverage audit.
-
-Programmatically enumerates every lark production in grammar.lark,
-then asserts:
-
-  1. Every verb-producing rule has a builder that emits a parser-valid example.
-  2. Every value/clause sub-grammar (expires_at, time_expr, etc.) is reachable.
-  3. Every WHERE condition type is reachable via F.
-
-This is the final backstop. If anything in the builder regresses or
-grammar grows a new verb without a builder, this test fails loud.
-"""
 from __future__ import annotations
 
 
@@ -19,10 +7,7 @@ from supergraph import q, F, P, Time, agg, EvolveWhen, EvolveThen
 from supergraph.dsl.parser import parse
 
 
-# Canonical one-liner for every top-level user/SYS/vault verb in grammar.lark.
-# Each emission MUST parse.
 CANONICAL_EXAMPLES = {
-    # Reads (22)
     "node_q":          q.node("n1"),
     "nodes_q":         q.nodes(kind="m", limit=10),
     "edges_q":         q.edges("n1"),
@@ -49,7 +34,6 @@ CANONICAL_EXAMPLES = {
     "lexical_q":       q.lexical("x", limit=5),
     "remember_q":      q.remember("x", at="2024-03", tokens=1000, limit=10),
 
-    # Writes (21 + 2 control)
     "create_node":     q.create_node("n1", kind="m", document="d"),
     "create_node_auto": q.create_node_auto(kind="m"),
     "update_node":     q.update_node("n1", x=1),
@@ -72,7 +56,6 @@ CANONICAL_EXAMPLES = {
     "connect_node":    q.connect_node("n1"),
     "forget_node":     q.forget("n1"),
 
-    # Batch + var_assign
     "batch":        q.batch(q.create_node("n1", kind="m"), q.delete_node("n2")),
     "var_assign":   q.batch(
         q.var("x", q.create_node("n1", kind="m")),
@@ -80,7 +63,6 @@ CANONICAL_EXAMPLES = {
         q.create_edge("$x", "$y", kind="next"),
     ),
 
-    # SYS (33)
     "sys_status":            q.sys.status(),
     "sys_stats":             q.sys.stats("NODES"),
     "sys_health":            q.sys.health(),
@@ -113,7 +95,6 @@ CANONICAL_EXAMPLES = {
     "sys_log":               q.sys.log(),
     "sys_evict":             q.sys.evict(),
 
-    # CRON (6)
     "sys_cron_add":     q.sys.cron.add("n", schedule="* * * * *", query="SYS STATUS"),
     "sys_cron_delete":  q.sys.cron.delete("n"),
     "sys_cron_enable":  q.sys.cron.enable("n"),
@@ -121,7 +102,6 @@ CANONICAL_EXAMPLES = {
     "sys_cron_list":    q.sys.cron.list(),
     "sys_cron_run":     q.sys.cron.run("n"),
 
-    # EVOLVE (8)
     "sys_evolve_rule":    q.sys.evolve.rule(
         "r1",
         when=[EvolveWhen.cond("r", "<=", 0.4)],
@@ -135,7 +115,6 @@ CANONICAL_EXAMPLES = {
     "sys_evolve_history": q.sys.evolve.history(),
     "sys_evolve_reset":   q.sys.evolve.reset(),
 
-    # VAULT (10)
     "vault_new":       q.vault.new("D"),
     "vault_read":      q.vault.read("D"),
     "vault_write":     q.vault.write("D", section="S", content="c"),
@@ -163,7 +142,6 @@ def test_every_canonical_example_parses():
 
 
 def test_expires_at_variant():
-    """Both EXPIRES IN N<unit> and EXPIRES AT "timestamp" must work."""
     q1 = q.create_node("n1", kind="m", expires_in="1h")
     q2 = q.create_node("n2", kind="m", expires_at="2024-03-15T00:00:00")
     parse(q1.dsl())
@@ -179,7 +157,6 @@ def test_expires_in_and_at_mutex():
 
 
 def test_every_where_op_reachable():
-    """Every WHERE sub-condition must be buildable via F."""
     parse(q.nodes(where=F.eq("k", "m")).dsl())
     parse(q.nodes(where=F.ne("k", "m")).dsl())
     parse(q.nodes(where=F.gt("x", 1)).dsl())
@@ -197,19 +174,14 @@ def test_every_where_op_reachable():
     parse(q.nodes(where=F.indegree(">", 10)).dsl())
     parse(q.nodes(where=F.outdegree(">=", 5, field="kind")).dsl())
     parse(q.nodes(where=F.raw('kind = "x" AND INDEGREE > 5')).dsl())
-    parse(q.nodes(where=F.eq("parent.kind", "m")).dsl())  # dot notation
+    parse(q.nodes(where=F.eq("parent.kind", "m")).dsl())
 
 
 def test_every_value_type_reachable():
-    """Every value type in the grammar."""
-    # STRING
     parse(q.nodes(where=F.eq("x", "str")).dsl())
-    # NUMBER (int + float)
     parse(q.nodes(where=F.eq("x", 42)).dsl())
     parse(q.nodes(where=F.eq("x", 0.5)).dsl())
-    # NULL
     parse(q.nodes(where=F.is_null("x")).dsl())
-    # time_expr
     parse(q.nodes(where=F.gte("x", Time.now())).dsl())
     parse(q.nodes(where=F.gte("x", Time.today())).dsl())
     parse(q.nodes(where=F.gte("x", Time.yesterday())).dsl())
@@ -227,7 +199,6 @@ def test_every_agg_func_reachable():
 
 def test_every_evolve_action_reachable():
     from supergraph.query.evolve_expr import EvolveThen as A
-    # All action variants
     q.sys.evolve.rule("r", when=[EvolveWhen.cond("x", ">", 0)],
                      then=[A.set("y", 0.5)]).dsl()
     q.sys.evolve.rule("r", when=[EvolveWhen.cond("x", ">", 0)],
@@ -245,15 +216,11 @@ def test_every_evolve_action_reachable():
 
 
 def test_every_match_step_reachable():
-    # bound_step
     p1 = P.node("a").to(P.var("b"))
     parse(q.match(p1).dsl())
-    # var_step without where
     p2 = P.var("a").to(P.var("b"))
     parse(q.match(p2).dsl())
-    # var_step with where
     p3 = P.var("a", where=F.eq("kind", "fn")).to(P.var("b"))
     parse(q.match(p3).dsl())
-    # arrow with edge filter
     p4 = P.node("a").to(P.var("b"), edge=F.eq("kind", "calls"))
     parse(q.match(p4).dsl())

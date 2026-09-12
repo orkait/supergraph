@@ -1,10 +1,8 @@
-"""Tests for ONNX HF embedder. Skipped if onnxruntime/tokenizers not installed."""
 import pytest
 import numpy as np
 
 
 class TestOnnxHFEmbedder:
-    """Only runs if onnxruntime and tokenizers are installed AND model is downloaded."""
 
     @pytest.fixture(scope="class")
     def embedder(self):

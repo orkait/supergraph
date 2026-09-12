@@ -1,4 +1,3 @@
-"""Tests for Embedder interface and Model2Vec embedder."""
 
 import numpy as np
 import pytest
@@ -58,5 +57,4 @@ class TestPostprocess:
         v = np.array([[1.0, 2.0, 3.0, 4.0]], dtype=np.float32)
         t = truncate_dims(v, 2)
         assert t.shape == (1, 2)
-        # Should be re-normalized
         assert abs(np.linalg.norm(t[0]) - 1.0) < 1e-6

@@ -1,9 +1,3 @@
-"""Unit tests for supergraph.ingest.whisper_ingestor.
-
-The model itself is mocked in unit tests. Integration tests that actually
-load faster-whisper are guarded by the ``needs_audio`` marker and exercise
-the real fixtures in ``tests/fixtures/audio/``.
-"""
 from __future__ import annotations
 
 import struct
@@ -41,8 +35,6 @@ def _fake_model(segments, language="en", language_probability=0.95, duration=2.0
 
     return FakeModel()
 
-
-# ----- Unit tests (no faster-whisper needed) -----
 
 def test_whisper_ingestor_transcript_assembly(tmp_path):
     from supergraph.ingest import whisper_ingestor as wi
@@ -84,9 +76,6 @@ def test_whisper_ingestor_low_language_prob_warning(tmp_path):
 
 
 def test_router_routes_audio_exts_when_audio_installed():
-    """Router populates wav/mp3/... -> whisper only when ``faster_whisper``
-    importable. Skip when the ``[audio]`` extra is not installed so CI
-    without the optional dep doesn't trip this assertion."""
     pytest.importorskip("faster_whisper")
     from supergraph.ingest.router import EXTENSION_MAP
     assert EXTENSION_MAP.get("wav") == "whisper"
@@ -96,15 +85,11 @@ def test_router_routes_audio_exts_when_audio_installed():
 
 
 def test_router_skips_audio_exts_when_audio_missing():
-    """Complementary guarantee: when faster_whisper is absent, audio extensions
-    must NOT be registered (supergraph core stays lean). Skip when the extra IS
-    installed locally. This test plus the one above together cover both states."""
     try:
         import faster_whisper  # noqa: F401
         pytest.skip("faster_whisper installed; this test checks absence behaviour")
     except ImportError:
         from supergraph.ingest.router import EXTENSION_MAP
-        # When missing, wav/mp3/... are not in EXTENSION_MAP at all
         assert EXTENSION_MAP.get("wav") is None
         assert EXTENSION_MAP.get("mp3") is None
 
@@ -136,9 +121,6 @@ def test_whisper_ingestor_surfaces_missing_extra(tmp_path, monkeypatch):
         ing.convert(str(wav))
 
 
-# ----- Real fixtures (load tiny whisper model, ~150 MB; runs only with
-# [audio] installed and the fixtures present on disk) -----
-
 @pytest.mark.needs_audio
 @pytest.mark.parametrize("fixture_name,expected_keywords", [
     ("jfk_inaugural_11s.wav", ["americans", "ask", "country"]),
@@ -165,7 +147,6 @@ def test_real_whisper_transcription(fixture_name, expected_keywords):
 
 @pytest.mark.needs_audio
 def test_real_router_dispatches_wav_to_whisper():
-    """End-to-end router dispatch through IngestResult (no DSL)."""
     clip = FIXTURES / "jfk_inaugural_11s.wav"
     if not clip.exists():
         pytest.skip(f"fixture missing: {clip}")

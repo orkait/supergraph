@@ -1,30 +1,11 @@
-"""LLM-based QA evaluation for LongMemEval.
-
-Follows the EXACT official LongMemEval evaluation protocol from:
-https://github.com/xiaowu0162/LongMemEval/blob/main/src/evaluation/evaluate_qa.py
-
-Uses litellm with the same provider/model config as autoresearch.
-"""
 
 from __future__ import annotations
 
 
 def llm_call(prompt: str, config: dict | None = None, temperature: float = 0.0, max_tokens: int = 512) -> str:
-    """Sync LLM call. Delegates to the shared LLMRunner.
-
-    Retained for back-compat with callers that imported from ``llm_judge``
-    directly. New code should use ``benchmarks.framework.llm_client.llm_call``
-    or the async ``LLMRunner.call_one`` / ``call_many``. The ``config``
-    parameter is ignored (runner reads autoresearch config itself).
-    """
     from supergraph.llm_runner import get_shared_runner
     return get_shared_runner().call_sync(prompt, max_tokens=max_tokens, temperature=temperature)
 
-
-# ---------------------------------------------------------------------------
-# Official LongMemEval judge prompts (verbatim from evaluate_qa.py)
-# https://github.com/xiaowu0162/LongMemEval/blob/main/src/evaluation/evaluate_qa.py
-# ---------------------------------------------------------------------------
 
 _JUDGE_PROMPTS = {
     "single-session-user": (
@@ -91,7 +72,6 @@ _DEFAULT_JUDGE_PROMPT = _JUDGE_PROMPTS["single-session-user"]
 
 
 def generate_answer(question: str, retrieved_texts: list[str]) -> str:
-    """Generate an answer from retrieved context using LLM."""
     context = "\n\n".join(f"[Memory {i+1}]: {t}" for i, t in enumerate(retrieved_texts))
 
     prompt = (
@@ -111,11 +91,6 @@ def judge_answer(
     hypothesis: str,
     category: str | None = None,
 ) -> bool:
-    """Judge if the generated answer is correct using official LongMemEval protocol.
-
-    Uses the exact per-category judge prompts from the official eval script.
-    Scoring: "yes" in response.lower() -> correct, else incorrect.
-    """
     answer_str = "; ".join(gold_answers)
     template = _JUDGE_PROMPTS.get(category or "", _DEFAULT_JUDGE_PROMPT)
     prompt = template.format(question=question, answer=answer_str, response=hypothesis)

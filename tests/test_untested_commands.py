@@ -1,11 +1,9 @@
-"""Tests for DSL commands that previously had zero coverage."""
 import tempfile
 import pytest
 from supergraph import SuperGraph
 
 
 class TestWeightedShortestPath:
-    """WEIGHTED SHORTEST PATH FROM "a" TO "b" - uses Dijkstra with edge weights."""
 
     def test_basic_weighted_path(self):
         gs = SuperGraph()
@@ -19,7 +17,6 @@ class TestWeightedShortestPath:
         result = gs.execute('WEIGHTED SHORTEST PATH FROM "a" TO "b"')
         assert result.kind == "path"
         assert result.data is not None
-        # Dijkstra should prefer a->c->b (cost 2) over a->b (cost 10)
         assert result.data == ["a", "c", "b"]
         gs.close()
 
@@ -62,7 +59,6 @@ class TestWeightedShortestPath:
 
 
 class TestWeightedDistance:
-    """WEIGHTED DISTANCE FROM "a" TO "b" - returns total edge weight cost."""
 
     def test_basic_weighted_distance(self):
         gs = SuperGraph()
@@ -74,7 +70,7 @@ class TestWeightedDistance:
 
         result = gs.execute('WEIGHTED DISTANCE FROM "a" TO "b"')
         assert result.kind == "distance"
-        assert result.data == 7.0  # 3 + 4
+        assert result.data == 7.0
         gs.close()
 
     def test_weighted_distance_no_path(self):
@@ -93,7 +89,6 @@ class TestWeightedDistance:
         gs.close()
 
     def test_weighted_distance_default_weight(self):
-        """Edges without explicit weight default to 1.0."""
         gs = SuperGraph()
         gs.execute('CREATE NODE "p" kind = "node"')
         gs.execute('CREATE NODE "q" kind = "node"')
@@ -102,12 +97,11 @@ class TestWeightedDistance:
         gs.execute('CREATE EDGE "q" -> "r" kind = "link"')
 
         result = gs.execute('WEIGHTED DISTANCE FROM "p" TO "r"')
-        assert result.data == 2.0  # 1.0 + 1.0
+        assert result.data == 2.0
         gs.close()
 
 
 class TestUpdateEdge:
-    """UPDATE EDGE "src" -> "tgt" SET field = value WHERE kind = "x"."""
 
     def test_update_edge_fields(self):
         gs = SuperGraph()
@@ -146,7 +140,6 @@ class TestUpdateEdge:
         gs.close()
 
     def test_update_edge_without_where(self):
-        """UPDATE EDGE without WHERE updates all edge types between src/tgt."""
         gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
@@ -159,7 +152,6 @@ class TestUpdateEdge:
 
 
 class TestForgetNode:
-    """FORGET NODE "id" - hard delete blob + vector + graph (irreversible)."""
 
     def test_forget_removes_node(self):
         gs = SuperGraph()
@@ -184,10 +176,8 @@ class TestForgetNode:
         gs.close()
 
     def test_forget_cascades_document(self):
-        """FORGET on a document node should cascade to its chunks."""
         with tempfile.TemporaryDirectory() as td:
             gs = SuperGraph(path=td)
-            # Create a mock document with chunks manually
             gs.execute('CREATE NODE "doc:test" kind = "document" source = "test.txt"')
             gs.execute('CREATE NODE "doc:test:chunk:0" kind = "chunk" summary = "chunk zero"')
             gs.execute('CREATE EDGE "doc:test" -> "doc:test:chunk:0" kind = "has_chunk"')
@@ -196,7 +186,6 @@ class TestForgetNode:
 
             result = gs.execute('NODE "doc:test"')
             assert result.data is None
-            # Chunk should also be gone (cascade)
             result = gs.execute('NODE "doc:test:chunk:0"')
             assert result.data is None
             gs.close()
@@ -208,7 +197,6 @@ class TestForgetNode:
         gs.close()
 
     def test_forget_with_vector(self):
-        """FORGET removes the vector as well."""
         from supergraph.embedding.base import Embedder
         import numpy as np
 
@@ -226,13 +214,11 @@ class TestForgetNode:
         gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
         gs.execute('CREATE NODE "vec_node" kind = "item" text = "hello world"')
 
-        # Node should have a vector now
         assert gs._vector_store is not None
         slot = gs._store.id_to_slot[gs._store.string_table.intern("vec_node")]
         assert gs._vector_store.has_vector(slot)
 
         gs.execute('FORGET NODE "vec_node"')
 
-        # Vector should be removed
         assert not gs._vector_store.has_vector(slot)
         gs.close()

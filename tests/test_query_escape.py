@@ -1,4 +1,3 @@
-"""Escape layer: the injection firewall. All user strings go through here."""
 from datetime import date, datetime
 
 import pytest
@@ -17,15 +16,12 @@ class TestDslLiteral:
         assert dsl_literal(r"a\b") == r'"a\\b"'
 
     def test_str_injection_attempt(self):
-        """Classic injection vector: user string tries to break out."""
         malicious = 'foo"; DROP ALL; --'
         out = dsl_literal(malicious)
         assert out.startswith('"')
         assert out.endswith('"')
-        # embedded quote is escaped
         assert r'\"' in out
-        # the dangerous close-quote + semicolon is now a literal inside a string
-        assert "DROP ALL" in out  # still there but as content, not syntax
+        assert "DROP ALL" in out
 
     def test_int(self):
         assert dsl_literal(42) == "42"
@@ -40,14 +36,12 @@ class TestDslLiteral:
         assert dsl_literal(0.5) == "0.5"
 
     def test_bool_true(self):
-        # Grammar has no true/false keyword; emit as 1/0 NUMBER literal
         assert dsl_literal(True) == "1"
 
     def test_bool_false(self):
         assert dsl_literal(False) == "0"
 
     def test_none(self):
-        # Grammar: "NULL" -> val_null (uppercase)
         assert dsl_literal(None) == "NULL"
 
     def test_list_of_strings(self):
@@ -57,7 +51,6 @@ class TestDslLiteral:
         assert dsl_literal([1, 2, 3]) == "(1, 2, 3)"
 
     def test_list_mixed(self):
-        # bool emits as NUMBER (1/0); grammar has no true/false keyword
         assert dsl_literal(["a", 1, True]) == '("a", 1, 1)'
 
     def test_empty_list_raises(self):
@@ -90,11 +83,9 @@ class TestDslLiteral:
             dsl_literal(float("-inf"))
 
     def test_large_int(self):
-        # Python arbitrary precision; grammar's NUMBER regex accepts any digits
         assert dsl_literal(10**20) == "100000000000000000000"
 
     def test_empty_string(self):
-        # Valid literal even though often indicates a bug at call site
         assert dsl_literal("") == '""'
 
     def test_unicode_string(self):
@@ -108,12 +99,6 @@ class TestDslLiteral:
         assert len(out) == 10_000 + 2
 
     def test_bool_before_int(self):
-        """bool must be checked before int since bool is a subclass of int.
-
-        We emit ``1``/``0`` not just because bool is int-compatible but
-        because grammar has no keyword for booleans. Having the bool check
-        first ensures dedicated handling regardless of int code path.
-        """
         assert dsl_literal(True) == "1"
         assert dsl_literal(False) == "0"
 
@@ -150,7 +135,6 @@ class TestDslNodeId:
         assert dsl_node_id("mem:1") == '"mem:1"'
 
     def test_with_special_chars_escaped(self):
-        # IDs can contain colons, dashes - but quotes must be escaped
         assert dsl_node_id("ent:paris-eiffel") == '"ent:paris-eiffel"'
 
     def test_injection_attempt(self):

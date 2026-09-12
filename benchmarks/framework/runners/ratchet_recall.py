@@ -1,16 +1,3 @@
-"""Direct LoCoMo evidence-recall harness.
-
-Uses LoCoMo's native evidence IDs instead of a keyword proxy.
-
-Metrics:
-    - strict_hit: any exact evidence message in top-k
-    - strict_coverage: fraction of evidence messages in top-k
-    - pragmatic_hit: any message from an evidence session in top-k
-    - pragmatic_coverage: fraction of evidence sessions represented in top-k
-
-Usage:
-    uv run python3 -m benchmarks.framework.runners.ratchet_recall
-"""
 
 from __future__ import annotations
 
@@ -28,7 +15,6 @@ from ..adapters.supergraph_ import SuperGraphAdapter
 
 
 def build_evidence_lookup(conv: dict) -> dict[str, str]:
-    """Map LoCoMo evidence ids like D1:3 to loaded message ids like s1:msg0."""
     lookup: dict[str, str] = {}
     observations = conv.get("observation", {})
     sess_idx = 1
@@ -49,7 +35,6 @@ def build_evidence_lookup(conv: dict) -> dict[str, str]:
 
 
 def build_evidence_lookups(raw_conversations: list[dict]) -> dict[str, dict[str, str]]:
-    """Build evidence lookup per LoCoMo sample_id."""
     return {
         conv.get("sample_id", f"conv-{idx}"): build_evidence_lookup(conv)
         for idx, conv in enumerate(raw_conversations)

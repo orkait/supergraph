@@ -1,4 +1,3 @@
-"""Tests for the typed config system."""
 
 import json
 import msgspec
@@ -34,12 +33,6 @@ class TestConfigDefaults:
             cfg.core = CoreConfig(ceiling_mb=512)
 
     def test_gpu_default_off(self):
-        """Contract: every *_gpu_layers default is 0 (CPU).
-
-        supergraph must never silently grab a GPU. GPU offload is opt-in
-        via supergraph.gpu.setup() / SuperGraph(profile="pro") plus
-        explicit kwarg or config overrides.
-        """
         cfg = SuperGraphConfig()
         assert cfg.vector.gpu_layers == 0
         assert cfg.dsl.reranker_gpu_layers == 0
@@ -104,11 +97,11 @@ class TestMergeKwargs:
     def test_retention_override(self):
         cfg = merge_kwargs(SuperGraphConfig(), retention={"blob_warm_days": 7})
         assert cfg.retention.blob_warm_days == 7
-        assert cfg.retention.blob_archive_days == 90  # default preserved
+        assert cfg.retention.blob_archive_days == 90
 
     def test_no_change_returns_same(self):
         base = SuperGraphConfig()
-        cfg = merge_kwargs(base, ceiling_mb=256)  # same as default
+        cfg = merge_kwargs(base, ceiling_mb=256)
         assert cfg is base
 
 

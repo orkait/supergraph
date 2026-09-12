@@ -1,10 +1,8 @@
-"""Test that node kinds > 255 survive checkpoint/reload."""
 import tempfile
 from supergraph import SuperGraph
 
 
 def test_kind_ids_above_255_survive_checkpoint():
-    """Register 260 distinct kinds, checkpoint, reload, verify all survive."""
     with tempfile.TemporaryDirectory() as td:
         gs = SuperGraph(path=td)
         for i in range(260):

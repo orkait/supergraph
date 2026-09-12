@@ -1,10 +1,7 @@
-"""Test that get_edges_to uses CSR transpose, not O(E) scan."""
 from supergraph.core.store import CoreStore
 
 
 def test_get_edges_to_uses_transpose():
-    """Build a graph where one node has many incoming edges.
-    Verify get_edges_to returns correct results (correctness test)."""
     store = CoreStore()
     store.put_node("hub", "node", {})
     for i in range(100):
@@ -18,7 +15,6 @@ def test_get_edges_to_uses_transpose():
 
 
 def test_get_edges_to_multiple_types():
-    """Verify get_edges_to with kind=None returns all edge types."""
     store = CoreStore()
     store.put_node("target", "node", {})
     store.put_node("a", "node", {})

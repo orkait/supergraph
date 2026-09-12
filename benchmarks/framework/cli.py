@@ -1,11 +1,3 @@
-"""Benchmark CLI entry point.
-
-Usage:
-    python -m benchmarks.framework.cli list
-    python -m benchmarks.framework.cli run --dataset longmemeval --data-path ./data --variant s
-    python -m benchmarks.framework.cli run --dataset locomo --data-path ./data
-    python -m benchmarks.framework.cli run --dataset beam --data-path /tmp/BEAM --chat-size 16k --end-index 10
-"""
 
 from __future__ import annotations
 
@@ -41,7 +33,6 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _run_beam(args: argparse.Namespace) -> int:
-    """Dispatch to BEAM benchmark runner (own protocol)."""
     from .runners.beam import main as beam_main
 
     beam_argv = [
@@ -62,7 +53,6 @@ def _run_beam(args: argparse.Namespace) -> int:
 
 
 def _run_framework(args: argparse.Namespace) -> int:
-    """Dispatch to framework runner (longmemeval, locomo)."""
     adapter_cls = get_adapter(args.system)
     adapter = adapter_cls(
         config={
@@ -140,7 +130,6 @@ def main() -> int:
     p_run.add_argument("--ceiling-mb", type=int, default=2048)
     p_run.add_argument("--queued", action="store_true")
     p_run.add_argument("--out-dir", default="benchmarks/framework/results")
-    # BEAM-specific
     p_run.add_argument("--start-index", type=int, default=1)
     p_run.add_argument("--end-index", type=int, default=10)
     p_run.add_argument("--embedder", default=None)

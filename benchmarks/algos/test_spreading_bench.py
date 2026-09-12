@@ -1,4 +1,3 @@
-"""Spreading activation micro-benchmarks."""
 
 import numpy as np
 

@@ -1,4 +1,3 @@
-"""Cross-process single-owner lock for persistent SuperGraph paths."""
 import pytest
 
 from supergraph import SuperGraph, StoreInUse
@@ -21,7 +20,6 @@ def test_reopen_after_close_works(tmp_path):
 
 
 def test_in_memory_stores_do_not_lock():
-    # Two in-memory stores can coexist - no shared state.
     a = SuperGraph()
     b = SuperGraph()
     a.close()

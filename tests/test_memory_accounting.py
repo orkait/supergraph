@@ -1,11 +1,9 @@
-"""Tests for accurate memory accounting and emergency eviction."""
 import tempfile
 from supergraph import SuperGraph
 from supergraph.core.memory import measure, estimate
 
 
 def test_measure_returns_breakdown():
-    """measure() returns detailed component breakdown."""
     gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "test" name = "Alice"')
     gs.execute('CREATE NODE "b" kind = "test" name = "Bob"')
@@ -25,20 +23,17 @@ def test_measure_returns_breakdown():
 
 
 def test_measure_more_accurate_than_estimate():
-    """measure() should diverge from estimate() as graph grows."""
     gs = SuperGraph()
     for i in range(100):
         gs.execute(f'CREATE NODE "n{i}" kind = "test" val = {i}')
     report = measure(gs._store)
     est = estimate(gs._store.node_count, gs._store.edge_count)
-    # Both should be positive
     assert report["total"] > 0
     assert est > 0
     gs.close()
 
 
 def test_sys_status_includes_measured_memory():
-    """SYS STATUS should include memory_measured field."""
     with tempfile.TemporaryDirectory() as td:
         gs = SuperGraph(path=td)
         gs.execute('CREATE NODE "x" kind = "test"')
@@ -48,7 +43,6 @@ def test_sys_status_includes_measured_memory():
 
 
 def test_sys_health_includes_utilization():
-    """SYS HEALTH should include memory utilization."""
     with tempfile.TemporaryDirectory() as td:
         gs = SuperGraph(path=td)
         gs.execute('CREATE NODE "x" kind = "test"')
@@ -59,7 +53,6 @@ def test_sys_health_includes_utilization():
 
 
 def test_evict_oldest_removes_nodes():
-    """evict_oldest removes oldest nodes to free memory."""
     from supergraph.core.store import CoreStore
     from supergraph.core.optimizer import evict_oldest
     import time
@@ -67,22 +60,18 @@ def test_evict_oldest_removes_nodes():
     store = CoreStore(ceiling_bytes=1_000_000)
     for i in range(50):
         store.put_node(f"n{i}", "test", {"val": i})
-        # Stagger timestamps
         store.columns.set_reserved(
             store.id_to_slot[store.string_table.intern(f"n{i}")],
             "__updated_at__",
-            int(time.time() * 1000) - (50 - i) * 86400000  # older nodes first
+            int(time.time() * 1000) - (50 - i) * 86400000
         )
 
-    result = evict_oldest(store, target_bytes=1)  # very low target forces eviction
+    result = evict_oldest(store, target_bytes=1)
     assert result["evicted"] > 0
-    # bytes_after can be slightly higher than bytes_before for small graphs
-    # because edge matrix rebuild + tombstone set overhead. At minimum, most nodes gone.
-    assert result["evicted"] >= 40  # nearly all 50 nodes evicted
+    assert result["evicted"] >= 40
 
 
 def test_sys_evict_command():
-    """SYS EVICT runs emergency eviction."""
     with tempfile.TemporaryDirectory() as td:
         gs = SuperGraph(path=td, ceiling_mb=256)
         for i in range(20):

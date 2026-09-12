@@ -1,4 +1,3 @@
-"""Integration tests for pipeline refactoring."""
 from supergraph import SuperGraph
 
 
@@ -8,13 +7,11 @@ class TestSentenceLevelIngest:
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "msg0" kind = "message" content = "Caroline moved from Sweden. She studied at KTH."')
 
-        # Check sentence child nodes exist
         sentences = g.execute('NODES WHERE kind = "sentence"')
         assert len(sentences.data) >= 2
         g.close()
 
     def test_message_has_vector_alongside_sentences(self):
-        """Message nodes get vectors AND sentence child nodes are created."""
         g = SuperGraph(ceiling_mb=256)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         g.execute('CREATE NODE "msg0" kind = "message" content = "Hello world. Goodbye world."')
@@ -47,7 +44,6 @@ class TestThreeSignalFusion:
 
 class TestRerankerIntegration:
     def test_reranker_not_configured(self):
-        """Without reranker, pipeline returns top-K from fusion."""
         g = SuperGraph(ceiling_mb=256, sentence_query_expansion=True)
         g.execute('SYS REGISTER NODE KIND "message" REQUIRED content:string EMBED content')
         for i in range(5):
@@ -73,6 +69,5 @@ class TestNucleusExpansion:
 
         result = g.execute('REMEMBER "Caroline" LIMIT 1')
         assert len(result.data) == 1
-        # Nucleus should be in meta, not in data
         assert "nucleus" in result.meta
         g.close()

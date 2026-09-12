@@ -1,4 +1,3 @@
-"""Locks the evolution-engine wiring fixes, snapshot survival, and WAL replay surfacing."""
 import sqlite3
 
 import pytest

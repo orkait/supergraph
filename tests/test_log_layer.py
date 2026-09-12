@@ -1,4 +1,3 @@
-"""Tests for the intelligent log layer: auto-tagging, trace binding, SYS LOG."""
 import logging
 from supergraph import SuperGraph
 from supergraph.dsl.tagger import infer_tag, infer_phase
@@ -88,7 +87,7 @@ class TestLogEnrichment:
         gs.close()
 
     def test_sys_log_empty_db(self):
-        gs = SuperGraph()  # no persistence - no query log
+        gs = SuperGraph()
         result = gs.execute('SYS LOG LIMIT 10')
         assert result.kind == "log_entries"
         assert result.data == []

@@ -1,4 +1,3 @@
-"""Sort primitives micro-benchmarks."""
 
 from __future__ import annotations
 

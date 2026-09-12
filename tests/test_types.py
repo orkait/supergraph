@@ -1,4 +1,3 @@
-"""Tests for supergraph.types and supergraph.errors."""
 
 import json
 import numpy as np
@@ -16,8 +15,6 @@ from supergraph.core.errors import (
     VersionMismatch,
 )
 
-
-# ── Result ───────────────────────────────────────────────────────────
 
 class TestResult:
     def test_to_dict(self):
@@ -44,7 +41,6 @@ class TestResult:
         assert len(parsed["data"]) == 2
 
     def test_to_json_uses_default_str(self):
-        """Non-serializable objects should fall back to str()."""
         r = Result(kind="error", data=ValueError("boom"), count=1)
         j = r.to_json()
         parsed = json.loads(j)
@@ -67,8 +63,6 @@ class TestResult:
         assert parsed["data"] == [[1, 2], [3, 4]]
 
 
-# ── Edge ─────────────────────────────────────────────────────────────
-
 class TestEdge:
     def test_basic(self):
         e = Edge(source="a", target="b", kind="KNOWS", data={"since": 2020})
@@ -82,15 +76,11 @@ class TestEdge:
         assert e.data == {}
 
 
-# ── NodeData alias ───────────────────────────────────────────────────
-
 class TestNodeData:
     def test_alias_accepts_dict(self):
         nd: NodeData = {"id": "n1", "label": "test"}
         assert isinstance(nd, dict)
 
-
-# ── Errors ───────────────────────────────────────────────────────────
 
 class TestErrors:
     def test_all_subclass_supergraph_error(self):

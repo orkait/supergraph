@@ -1,18 +1,10 @@
-"""Core verbs (PR 1 subset): DSL emission + parser roundtrip.
-
-For every verb, emit a canonical form and feed through the supergraph
-parser to prove the output is syntactically valid.
-"""
 import pytest
 
 from supergraph import q
 from supergraph.dsl.parser import parse
 
 
-# -- Helper ----------------------------------------------------------------
-
 def _roundtrip(query_obj):
-    """Emit + parse. Fails test if parser rejects."""
     dsl = query_obj.dsl()
     try:
         parse(dsl)
@@ -20,8 +12,6 @@ def _roundtrip(query_obj):
         pytest.fail(f"parser rejected {dsl!r}: {e}")
     return dsl
 
-
-# -- Reads -----------------------------------------------------------------
 
 class TestReadVerbs:
     def test_node(self):
@@ -109,8 +99,6 @@ class TestReadVerbs:
         assert 'COUNT NODES WHERE kind = "memory"' == dsl
 
 
-# -- Writes ----------------------------------------------------------------
-
 class TestWriteVerbs:
     def test_create_node_basic(self):
         dsl = _roundtrip(q.create_node("mem:1", kind="memory"))
@@ -127,7 +115,6 @@ class TestWriteVerbs:
         assert "importance = 0.9" in dsl
 
     def test_create_node_clause_order_expires_before_document(self):
-        """Grammar requires EXPIRES IN before DOCUMENT."""
         dsl = _roundtrip(q.create_node("mem:1", kind="memory", expires_in="1h", document="x"))
         idx_expires = dsl.index("EXPIRES IN")
         idx_document = dsl.index("DOCUMENT")
@@ -137,13 +124,9 @@ class TestWriteVerbs:
         dsl = _roundtrip(q.create_node("mem:1", kind="memory", document=None))
         assert "DOCUMENT" not in dsl
 
-    # Note: the reserved-kwarg check in create_node() is defensive against
-    # a scenario that Python call syntax already prevents (passing both
-    # kind= and kind via **fields raises TypeError at Python level). No
-    # test needed - the check is belt-and-suspenders for forward-compat.
 
     def test_create_node_missing_kind_raises(self):
-        with pytest.raises(TypeError):  # kind is keyword-only, missing -> TypeError
+        with pytest.raises(TypeError):
             q.create_node("mem:1")
 
     def test_create_edge(self):
@@ -159,25 +142,14 @@ class TestWriteVerbs:
         assert dsl == 'DELETE NODE "mem:1"'
 
 
-# -- Critical escape / injection tests -------------------------------------
-
 class TestCriticalEscape:
-    """From the behaviour audit: R3, R4, W3, W4. MUST pass before PR ships."""
 
     def test_R3_kind_injection(self):
-        """User-supplied kind value cannot break out of its DSL slot.
-
-        Verification: every ``"`` character in the user string is preceded
-        by a ``\\`` in the output. Parse must accept the final DSL.
-        """
         malicious = 'mem"; DROP ALL; --'
         out = q.nodes(kind=malicious).dsl()
-        # Every literal `"` from the user input is now `\"`
         assert r'\"' in out
-        # Output is still parseable (the string terminates at the real close-quote,
-        # and "DROP ALL" is inside the string literal, not executable)
         from supergraph.dsl.parser import parse
-        parse(out)  # no exception means escape succeeded
+        parse(out)
 
     def test_R4_remember_quote_escape(self):
         out = q.remember('my "quoted" query').dsl()

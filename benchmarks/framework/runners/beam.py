@@ -5,9 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-# openai is only needed by _load_reader / _answer_question (reader-LLM path).
-# Keep the module import-safe without the SDK so tests that just exercise
-# chunking helpers don't require an optional dep.
 
 from supergraph import SuperGraph
 from supergraph.registry.installer import load_installed_embedder, set_cache_dir
@@ -93,17 +90,7 @@ def build_answer_payload(probing_questions: dict, answers: dict[tuple[str, int],
 
 
 def _load_reader(base_url: str | None, model_name: str, api_key: str | None):
-    """Build a one-off LLMRunner targeting the user-supplied OpenAI-compat endpoint.
-
-    BEAM runs the reader against an endpoint the user specifies on the CLI
-    (not the autoresearch config), so we construct a runner from a single
-    ad-hoc provider dict. Same rate-limit / retry / fallback code path as
-    the other benches.
-    """
     from ..transport.llm_runner import LLMRunner
-    # litellm needs "openai/<model>" to route to an openai-compatible HTTP
-    # endpoint when we pass base_url. Without the prefix litellm may try
-    # a native provider.
     litellm_model = model_name if "/" in model_name else f"openai/{model_name}"
     provider = {
         "pid": "beam_reader",

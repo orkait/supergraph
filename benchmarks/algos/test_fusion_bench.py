@@ -1,4 +1,3 @@
-"""Fusion primitives micro-benchmarks."""
 
 
 from supergraph.algos.fusion import (

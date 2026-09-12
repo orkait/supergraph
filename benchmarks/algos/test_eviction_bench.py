@@ -1,4 +1,3 @@
-"""Eviction primitives micro-benchmarks."""
 
 from supergraph.algos.eviction import needs_optimization, rank_evictable_slots
 

@@ -1,4 +1,3 @@
-"""Tests for belief operations: ASSERT, RETRACT, UPDATE NODES WHERE, TTL, CONTRADICTIONS, MERGE."""
 import time
 import pytest
 from supergraph import SuperGraph
@@ -119,9 +118,9 @@ class TestMerge:
         result = g.execute('MERGE NODE "src" INTO "tgt"')
         assert result.data["fields_merged"] >= 1
         tgt = g.execute('NODE "tgt"')
-        assert tgt.data["name"] == "canonical"  # target wins
-        assert tgt.data["extra"] == "data"  # source field copied
-        assert g.execute('NODE "src"').data is None  # source deleted
+        assert tgt.data["name"] == "canonical"
+        assert tgt.data["extra"] == "data"
+        assert g.execute('NODE "src"').data is None
 
     def test_merge_rewires_edges(self):
         g = SuperGraph(ceiling_mb=256)

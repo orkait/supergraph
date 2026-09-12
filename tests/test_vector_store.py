@@ -1,4 +1,3 @@
-"""Tests for VectorStore HNSW index."""
 import numpy as np
 import pytest
 from supergraph.vector.store import VectorStore
@@ -60,7 +59,7 @@ class TestVectorStoreSearch:
         mask[1] = True
         mask[2] = True
         slots, _ = vs.search(np.array([1.0, 0.0, 0.0, 0.0]), k=2, mask=mask)
-        assert 0 not in slots  # masked out
+        assert 0 not in slots
         assert 1 in slots
 
     def test_search_empty_index(self):
@@ -85,7 +84,6 @@ class TestVectorStorePersistence:
 
         vs2 = VectorStore(dims=4, capacity=100)
         vs2.load(data)
-        # Search should work on loaded index
         slots, _ = vs2.search(np.array([1.0, 0.0, 0.0, 0.0]), k=2)
         assert 0 in slots
 
@@ -100,7 +98,6 @@ class TestVectorStoreGrow:
         vs = VectorStore(dims=4, capacity=2)
         vs.add(0, np.array([1.0, 0.0, 0.0, 0.0]))
         vs.add(1, np.array([0.0, 1.0, 0.0, 0.0]))
-        # Adding beyond capacity should auto-grow
         vs.add(5, np.array([0.0, 0.0, 1.0, 0.0]))
         assert vs.has_vector(5)
         assert vs.count() == 3

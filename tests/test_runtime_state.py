@@ -1,11 +1,3 @@
-"""Tests for the RuntimeState shared-container refactor.
-
-RuntimeState is a single mutable dataclass holding store/schema/
-vector_store/document_store/embedder/conn. All components that need
-those refs read them through their own copy of the same RuntimeState
-instance, so reset_memory() and lazy vector-store init propagate to
-every consumer via shared reference.
-"""
 
 from supergraph import SuperGraph
 
@@ -23,7 +15,6 @@ def test_reset_memory_propagates_to_all_components(tmp_path):
 
     assert gs._runtime.store is not pre_store
 
-    # Every consumer must see the new store through its shared runtime ref.
     assert gs._executor.store is gs._runtime.store
     assert gs._sys_executor.store is gs._runtime.store
     assert gs._wal._store is gs._runtime.store
@@ -31,7 +22,6 @@ def test_reset_memory_propagates_to_all_components(tmp_path):
 
     assert gs._store.node_count == 0
 
-    # Write after reset should land in the NEW store.
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED name')
     gs.execute('CREATE NODE "n3" name = "gamma" kind = "item"')
     assert gs._store.node_count == 1
@@ -64,8 +54,6 @@ def test_lazy_vector_store_propagates_to_all_components(tmp_path):
 def test_runtime_state_is_single_source_of_truth(tmp_path):
     gs = SuperGraph(path=str(tmp_path))
 
-    # Every component's _runtime attribute must be the SAME object,
-    # not a copy - that's the whole invariant.
     runtime = gs._runtime
     assert gs._executor._runtime is runtime
     assert gs._sys_executor._runtime is runtime
@@ -76,7 +64,6 @@ def test_runtime_state_is_single_source_of_truth(tmp_path):
 
 
 def test_rollback_vector_store_change_propagates(tmp_path):
-    """SYS ROLLBACK can swap the vector store; runtime should carry the swap."""
     gs = SuperGraph(path=str(tmp_path))
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED name')
     gs.execute(
@@ -93,8 +80,6 @@ def test_rollback_vector_store_change_propagates(tmp_path):
 
     gs.execute('SYS ROLLBACK TO "s1"')
 
-    # Every component should see whatever vector store the rollback
-    # installed - including the SystemExecutor that ran the rollback.
     vs_after_rollback = gs._runtime.vector_store
     assert gs._executor._vector_store is vs_after_rollback
     assert gs._sys_executor._vector_store is vs_after_rollback

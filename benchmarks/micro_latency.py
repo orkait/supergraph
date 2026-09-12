@@ -1,12 +1,3 @@
-"""Micro-benchmark for README latency claims. Measures point lookup,
-filtered scan, SIMILAR TO, RECALL, REMEMBER, ASSERT against both the
-in-memory and disk-backed stores at a range of sizes.
-
-Run: python benchmarks/micro_latency.py
-
-Numbers are median over 30 iters after 5 warmups. Results printed to
-stdout in a format that can be pasted straight into the README.
-"""
 from __future__ import annotations
 
 import statistics
@@ -58,7 +49,6 @@ def run(n: int, mode: str) -> None:
 
     ingest_s = _bulk_create(gs, n)
 
-    # A few next-edges so RECALL has something to walk
     for i in range(min(2000, n - 1)):
         gs.execute(f'CREATE EDGE "n{i}" -> "n{i+1}" kind = "next"')
 

@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""Environment manifest for autoresearch prompts.
-
-Queries the live Python environment for every package on the algos
-allowlist and reports exact installed versions. This is the context
-autoresearch feeds the LLM so rewrites don't hallucinate packages or
-pick wrong APIs.
-
-Contract:
-    - stdout = environment manifest in the chosen format (--markdown or --json)
-    - lists only packages that are actually importable AND pinned
-    - CORE packages are always required; missing → non-zero exit
-    - OPTIONAL packages report version if installed, 'not installed' otherwise
-
-Usage:
-    python -m benchmarks.algos.dump_env                # markdown (default)
-    python -m benchmarks.algos.dump_env --json         # json output
-    python -m benchmarks.algos.dump_env --compact      # one line per pkg
-    python -m benchmarks.algos.dump_env --allowlist    # print raw allowlist
-
-Autoresearch wiring:
-    - Run once per session to produce ENVIRONMENT.md
-    - Include the markdown as system/context prompt to the LLM
-    - LLM knows exact names + versions it can import
-"""
 
 from __future__ import annotations
 
@@ -175,7 +151,9 @@ def render_compact(manifest: dict) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(
+        description="Dump the benchmark environment as JSON."
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "--json",

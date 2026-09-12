@@ -1,26 +1,3 @@
-"""Bonsai-driven ingest + recall adapter for LoCoMo / LongMemEval.
-
-Replaces:
-  - Ingest path: the deterministic NER+CREATE NODE pipeline in supergraph_.py
-    (and the remote-LLM path in supergraph_skill.py). Instead, every user
-    turn goes through a local Ternary-Bonsai 4B TQ1_0 via BonsaiIngestor,
-    which emits @-verb lines that Python synthesizes into DSL.
-  - Query DSL emission: the hard-coded REMEMBER/RECALL dispatch in
-    supergraph_.py. Instead, every question goes through the same
-    BonsaiIngestor (dry_run=True) which emits @REMEMBER/@SIMILAR/@LEXICAL/
-    @ANSWER/@RECALL lines; the first retrieval-shaped statement is executed
-    against the SuperGraph.
-
-What's NOT replaced:
-  - Downstream answer-synthesis LLM (Phase 2 in locomo.py) still runs; F1
-    compares its output vs gold. This adapter only owns the NL->DSL path.
-  - Retrieval ranking (REMEMBER fusion, RECALL graph walk) still happens
-    inside supergraph; the adapter just picks which DSL form runs.
-
-Single ingestor instance is reused across conversations (loading the 4B
-GGUF is 8-20s). Between conversations we swap the `gs` reference and
-clear cross-message fact state so each conversation starts fresh.
-"""
 from __future__ import annotations
 
 import re
@@ -49,34 +26,28 @@ class _BonsaiStats:
     ingest_turns: int = 0
     ingest_skipped: int = 0
     query_turns: int = 0
-    query_fallbacks: int = 0  # Bonsai emitted no retrieval op -> fell back to vanilla REMEMBER
+    query_fallbacks: int = 0
     parse_errors: int = 0
     exec_errors: int = 0
 
 
 class SuperGraphBonsaiAdapter(SuperGraphAdapter):
-    """Bonsai-driven NL interpretation for ingestion and recall."""
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
         self.stats = _BonsaiStats()
-        self._bonsai: Any | None = None  # BonsaiIngestor - lazy-loaded
+        self._bonsai: Any | None = None
         self._model_path = Path(self.config.get("bonsai_model_path", _DEFAULT_MODEL))
         self._prompt_path_conf = self.config.get("bonsai_prompt_path")
         self._n_gpu_layers = int(self.config.get("bonsai_n_gpu_layers", 0))
-        self._n_ctx = self.config.get("bonsai_n_ctx")  # None -> auto
+        self._n_ctx = self.config.get("bonsai_n_ctx")
         self._max_output_tokens = int(self.config.get("bonsai_max_output_tokens", 160))
         self._kv_cache_path = self.config.get("bonsai_kv_cache_path")
         self.name = f"{self.name}-bonsai"
 
-    # ---------------------------------------------------------------
-    # Lifecycle
-    # ---------------------------------------------------------------
 
     def _ensure_bonsai(self) -> Any:
-        """Lazy-load BonsaiIngestor once per adapter lifetime."""
         if self._bonsai is not None:
-            # reuse: swap supergraph reference + clear fact state
             self._bonsai._gs = self._gs
             self._bonsai.reset_facts()
             return self._bonsai
@@ -103,13 +74,9 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
         return self._bonsai
 
     def reset(self) -> None:
-        """Fresh SuperGraph + reuse warm Bonsai (just rebind gs + clear facts)."""
         super().reset()
         self._ensure_bonsai()
 
-    # ---------------------------------------------------------------
-    # Ingest: one user turn per Bonsai call
-    # ---------------------------------------------------------------
 
     def ingest(self, session: Session) -> float:
         if self._gs is None:
@@ -117,14 +84,10 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
         if not session.messages:
             return 0.0
         ing = self._ensure_bonsai()
-        ing._gs = self._gs  # ensure live supergraph is the target
+        ing._gs = self._gs
 
         with TimedOperation() as t:
             for i, msg in enumerate(session.messages):
-                # LoCoMo stores role as the speaker name (e.g. "Caroline");
-                # LongMemEval uses "user"/"assistant". Accept any non-empty
-                # message as ingestable - every conversational turn carries
-                # memory-relevant content.
                 if not msg.content or not msg.content.strip():
                     continue
                 msg_id = f"m:{session.session_id}:{i}"
@@ -140,9 +103,6 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
                     self.stats.ingest_skipped += 1
         return t.elapsed_ms
 
-    # ---------------------------------------------------------------
-    # Query: Bonsai parses the NL question -> first retrieval DSL runs
-    # ---------------------------------------------------------------
 
     def query_with_context(self, ctx: QueryContext, k: int = 5) -> QueryResult:
         if self._gs is None:
@@ -161,7 +121,6 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
         )
 
     def _emit_retrieval_stmt(self, ing: Any, question: str, k: int) -> str:
-        """Ask Bonsai to parse the question; find the first retrieval statement."""
         try:
             r = ing.ingest(
                 question,
@@ -177,16 +136,13 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
         for stmt in r.statements:
             up = stmt.upper()
             if any(up.startswith(p) for p in _RETRIEVAL_PREFIXES):
-                # Bonsai default LIMIT 10; respect the runner's k when smaller
                 return self._apply_limit(stmt, k)
 
-        # No retrieval op emitted -> fall back
         self.stats.query_fallbacks += 1
         return self._vanilla_remember(question, k)
 
     @staticmethod
     def _apply_limit(stmt: str, k: int) -> str:
-        """Rewrite trailing LIMIT N to the requested k if N > k."""
         m = re.search(r"\bLIMIT\s+(\d+)\b", stmt, re.IGNORECASE)
         if m:
             existing = int(m.group(1))
@@ -206,16 +162,12 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
             return data if isinstance(data, list) else []
         except Exception:
             self.stats.exec_errors += 1
-            # Last-ditch fallback
             try:
                 result = self._gs.execute(self._vanilla_remember(question, k))
                 return result.data if isinstance(result.data, list) else []
             except Exception:
                 return []
 
-    # ---------------------------------------------------------------
-    # Observability
-    # ---------------------------------------------------------------
 
     def ingest_done(self, record_metadata: dict[str, Any] | None = None) -> None:
         super().ingest_done(record_metadata=record_metadata)
@@ -231,5 +183,4 @@ class SuperGraphBonsaiAdapter(SuperGraphAdapter):
 
     def close(self) -> None:
         super().close()
-        # Let Python GC the BonsaiIngestor -> Llama instance.
         self._bonsai = None

@@ -1,10 +1,3 @@
-"""SuperGraph(profile="pro") integration tests.
-
-Profile="pro" is an opt-in path that runs spec validation against a live
-host snapshot before the rest of the constructor wires anything. These
-tests stub HostSnapshot.capture and the calibration cache so they run
-fully offline without needing real GPU / Bonsai weights / NER models.
-"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -19,13 +12,7 @@ from supergraph.pro import (
 )
 
 
-# ---------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------
-
-
 def _host_with_all_extras() -> HostSnapshot:
-    """A roomy CPU host with every required pip dist 'installed'."""
     return HostSnapshot(
         ram_total_mb=32768, ram_available_mb=24000, disk_free_mb=80000,
         cpu_cores_physical=8, cpu_cores_logical=16,
@@ -59,7 +46,6 @@ def _entry(cid: str, **overrides) -> CalibrationEntry:
 
 
 def _seed_cache(cache_dir: Path, host: HostSnapshot, spec: ProSpec) -> None:
-    """Write a calibration.json that satisfies every spec component."""
     cache = CalibrationCache.empty(host.host_signature())
     for cid in spec.component_ids():
         cache.components[cid] = _entry(cid)
@@ -68,18 +54,12 @@ def _seed_cache(cache_dir: Path, host: HostSnapshot, spec: ProSpec) -> None:
 
 @pytest.fixture
 def stub_host(monkeypatch):
-    """Replace HostSnapshot.capture so tests do not depend on real RAM/GPU."""
     host = _host_with_all_extras()
     monkeypatch.setattr(
         HostSnapshot, "capture",
         classmethod(lambda cls, cache_dir=None, probe_gpu=True: host),
     )
     return host
-
-
-# ---------------------------------------------------------------------
-# profile kwarg validation
-# ---------------------------------------------------------------------
 
 
 class TestProfileKwarg:
@@ -100,15 +80,10 @@ class TestProfileKwarg:
             SuperGraph(
                 path=str(tmp_path / "db"),
                 profile="pro",
-                pro_spec="default",  # str, not ProSpec
+                pro_spec="default",
                 pro_cache_dir=str(tmp_path / "cache"),
                 pro_strict=False,
             )
-
-
-# ---------------------------------------------------------------------
-# Calibration validation
-# ---------------------------------------------------------------------
 
 
 class TestProCalibration:
@@ -162,18 +137,11 @@ class TestProCalibration:
             assert gs.pro_spec is spec
             assert gs.pro_resolved is not None
             assert gs.pro_resolved.fits is True
-            # Maximal knob picked from cached extras (8192 fits ram_mb_max=800
-            # with ~24 GB available).
             assert gs.pro_resolved.n_ctx == 8192
             assert gs.pro_resolved.bonsai_n_batch == 512
-            assert gs.pro_resolved.bonsai_n_gpu_layers == 0  # CPU host
+            assert gs.pro_resolved.bonsai_n_gpu_layers == 0
         finally:
             gs.close()
-
-
-# ---------------------------------------------------------------------
-# Extras validation
-# ---------------------------------------------------------------------
 
 
 class TestProExtras:
@@ -183,7 +151,7 @@ class TestProExtras:
             cpu_cores_physical=8, cpu_cores_logical=16,
             gpu_ready=False, gpu_name=None,
             gpu_vram_total_mb=0, gpu_vram_free_mb=0,
-            extras_installed=frozenset({"onnxruntime"}),  # missing llama-cpp-python
+            extras_installed=frozenset({"onnxruntime"}),
         )
         monkeypatch.setattr(
             HostSnapshot, "capture",
@@ -197,11 +165,6 @@ class TestProExtras:
                 pro_strict=True,
                 embedder=None,
             )
-
-
-# ---------------------------------------------------------------------
-# create_bonsai factory
-# ---------------------------------------------------------------------
 
 
 class TestCreateBonsaiFactory:
@@ -234,7 +197,6 @@ class TestCreateBonsaiFactory:
     def test_refuses_when_spec_does_not_fit(self, tmp_path, stub_host):
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
-        # Empty cache → fits=False.
         gs = SuperGraph(
             path=str(tmp_path / "db"),
             profile="pro",
@@ -249,13 +211,11 @@ class TestCreateBonsaiFactory:
             gs.close()
 
     def test_locates_gguf_via_hf_cache(self, tmp_path, stub_host, monkeypatch):
-        """Stub scan_cache_dir so no real HF download is needed."""
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         spec = ProSpec()
         _seed_cache(cache_dir, stub_host, spec)
 
-        # Build a fake GGUF file the locator will find.
         fake_gguf = tmp_path / "Ternary-Bonsai-4B-TQ1_0.gguf"
         fake_gguf.write_bytes(b"\x00")
 
@@ -278,9 +238,6 @@ class TestCreateBonsaiFactory:
             "huggingface_hub.scan_cache_dir", lambda: _FakeCache(),
         )
 
-        # Stub BonsaiIngestor so we never touch llama.cpp here. Just want
-        # to verify create_bonsai assembled the right kwargs and reached
-        # the constructor.
         captured = {}
         from supergraph import bonsai_ingestor as _bi
         original = _bi.BonsaiIngestor
@@ -305,7 +262,6 @@ class TestCreateBonsaiFactory:
             assert captured["n_batch"] == 512
             assert captured["n_gpu_layers"] == 0
             assert captured["gs"] is gs
-            # NER tinybert default: model_dir set from cfg.dsl.entity_model_dir.
             assert captured["ner_model_dir"]
         finally:
             gs.close()

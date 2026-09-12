@@ -1,4 +1,3 @@
-"""Tests for ingestion protocol and chunker."""
 import pytest
 from supergraph.ingest.base import IngestResult, Ingestor, ExtractedImage
 from supergraph.ingest.chunker import chunk_by_heading, chunk_by_paragraph, chunk_fixed, _make_summary
@@ -10,7 +9,7 @@ class TestMakeSummary:
 
     def test_long_text_truncated(self):
         s = _make_summary("word " * 100, max_len=50)
-        assert len(s) <= 55  # some tolerance for word boundary
+        assert len(s) <= 55
         assert s.endswith("...")
 
     def test_empty_text(self):
@@ -34,12 +33,12 @@ class TestChunkByHeading:
         text = "# Overview\nThis is a detailed section about something important."
         chunks = chunk_by_heading(text)
         assert chunks[0].summary
-        assert len(chunks[0].summary) <= 203  # 200 + "..."
+        assert len(chunks[0].summary) <= 203
 
     def test_preamble_before_first_heading(self):
         text = "Some preamble text\n\n# Heading\nContent"
         chunks = chunk_by_heading(text)
-        assert chunks[0].heading is None  # preamble has no heading
+        assert chunks[0].heading is None
         assert "preamble" in chunks[0].text
 
     def test_respects_max_size(self):
@@ -149,15 +148,12 @@ class TestRouter:
         assert "pymupdf4llm" in names
         assert "docling" in names
         assert "vision" in names
-        # Audio tier was removed with voice subsystem (PR #104)
         assert "audio" not in names
-        # All entries must declare their extra
         for ing in ingestors:
             assert "extra" in ing, f"{ing['name']} missing 'extra' field"
 
 
 class TestRouterDoclingExtensions:
-    """When docling is installed, all formats it supports should be routable."""
 
     @pytest.fixture(autouse=True)
     def require_docling(self):
@@ -214,7 +210,6 @@ class TestRouterDoclingExtensions:
         assert "mp4" in exts
 
     def test_existing_formats_unchanged(self):
-        """Docling presence should NOT change routing for already-handled formats."""
         from supergraph.ingest.router import select_ingestor
         assert select_ingestor("report.pdf") == "pymupdf4llm"
         assert select_ingestor("doc.docx") == "markitdown"
@@ -230,23 +225,17 @@ class TestRouterDoclingExtensions:
 
 class TestVisionHandler:
     def test_init_with_explicit_base_url(self):
-        """VisionHandler with an explicit base_url skips sidecar resolution."""
         from supergraph.ingest.vision import VisionHandler
         vh = VisionHandler(base_url="http://example.invalid:9/v1")
         assert vh.model == "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf"
         assert vh._base_url == "http://example.invalid:9/v1"
 
     def test_init_resolves_via_env(self, monkeypatch):
-        """SUPERGRAPH_VISION_URL env should short-circuit sidecar probing."""
         from supergraph.ingest.vision import VisionHandler
         monkeypatch.setenv("SUPERGRAPH_VISION_URL", "http://remote.invalid:1234/v1")
         vh = VisionHandler()
         assert vh._base_url == "http://remote.invalid:1234/v1"
 
-
-# ====================================================================
-# INGEST DSL integration tests
-# ====================================================================
 
 from supergraph import SuperGraph
 
@@ -322,26 +311,23 @@ class TestIngestDSL:
         f.write_text("# Hello\nThis is the full document content.")
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:stored"')
-        # Verify the parent node's document is in the doc store
         node = g.execute('NODE "doc:stored" WITH DOCUMENT')
         assert node.data["_document_type"] == "text/markdown"
         assert "Hello" in node.data["_document"]
         g.close()
 
     def test_ingest_auto_id(self, tmp_path):
-        """INGEST without AS should generate a doc:hash ID."""
         f = tmp_path / "auto.txt"
         f.write_text("# Auto ID\nContent")
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}"')
         assert result.data["doc_id"].startswith("doc:")
-        assert len(result.data["doc_id"]) > 4  # doc: + hash
+        assert len(result.data["doc_id"]) > 4
         g.close()
 
 
 class TestIngestSecurity:
     def test_path_traversal_blocked_by_ingest_root(self, tmp_path):
-        """INGEST with ingest_root should block paths outside the allowed directory."""
         import pytest
         allowed_dir = tmp_path / "allowed"
         allowed_dir.mkdir()
@@ -352,22 +338,18 @@ class TestIngestSecurity:
 
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None, ingest_root=str(allowed_dir))
 
-        # Safe path works
         result = g.execute(f'INGEST "{allowed_dir / "safe.txt"}" AS "doc:safe"')
         assert result.data["chunks"] >= 1
 
-        # Path traversal blocked
         with pytest.raises(Exception, match="Path traversal not allowed"):
             g.execute(f'INGEST "{outside_file}" AS "doc:secret"')
 
-        # Absolute path outside root blocked
         with pytest.raises(Exception, match="Path traversal not allowed"):
             g.execute('INGEST "/etc/passwd" AS "doc:passwd"')
 
         g.close()
 
     def test_no_ingest_root_allows_any_path(self, tmp_path):
-        """Without ingest_root, INGEST works on any valid path (library mode)."""
         f = tmp_path / "anywhere.txt"
         f.write_text("content")
         g = SuperGraph(path=str(tmp_path / "db"), embedder=None)

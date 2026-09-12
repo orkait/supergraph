@@ -1,4 +1,3 @@
-"""PR 4: SYS verbs + cron + evolve + vault. Parser roundtrip for every verb."""
 import pytest
 
 from supergraph import q, F

@@ -1,4 +1,3 @@
-"""Tests for AGGREGATE NODES queries."""
 import pytest
 from supergraph import SuperGraph
 from supergraph.core.errors import AggregationError

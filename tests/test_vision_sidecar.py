@@ -1,9 +1,3 @@
-"""Unit tests for supergraph.ingest.vision_sidecar.
-
-These avoid spawning a real llama.cpp server by patching the probe helper and
-subprocess.Popen. The download path is exercised only via a stubbed
-huggingface_hub import.
-"""
 from __future__ import annotations
 
 import json

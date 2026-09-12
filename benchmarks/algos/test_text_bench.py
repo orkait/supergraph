@@ -1,4 +1,3 @@
-"""Text primitives micro-benchmarks."""
 
 from supergraph.algos.text import fts5_sanitize, tokenize_unicode
 

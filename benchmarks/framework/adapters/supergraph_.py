@@ -1,15 +1,3 @@
-"""SuperGraph adapter, skill-compliant.
-
-Implements every rule from tools/skills/supergraph-builder/SKILL.md:
-    - Schema first (SYS REGISTER NODE KIND) with EMBED on message only
-    - deferred_embeddings() per session
-    - put_summary() per message so REMEMBER's BM25 leg actually works (G2)
-    - No EMBED on entity nodes (G5)
-    - No __updated_at__ override (G3)
-    - Entity graph via regex extraction, linked via "mentions" edges
-    - Per-category query dispatch that combines REMEMBER + RECALL (G1)
-    - WHERE kind = "message" on REMEMBER so entities/sessions don't pollute
-"""
 
 from __future__ import annotations
 
@@ -31,11 +19,8 @@ from ..entity_extraction import build_entity_extractor
 _SLUG_RE = re.compile(r"[^a-zA-Z0-9_]+")
 
 _BENCHMARK_DEFAULTS: dict[str, Any] = {
-    # No overrides - trust config.py defaults as single source of truth.
 }
 
-# Adapter-only tuning knobs used to size per-strategy fan-out. Not passed
-# to SuperGraph - they only scale k in adapter-side dispatch helpers.
 _ADAPTER_DEFAULTS: dict[str, Any] = {
     "retrieval_depth": 9,
     "recall_depth": 2,
@@ -56,11 +41,6 @@ def _escape(text: str) -> str:
 def _slug(text: str) -> str:
     return _SLUG_RE.sub("_", text.lower()).strip("_")[:40]
 def _extract_temporal_anchor(question: str, question_date: str | None = None) -> int | None:
-    """Extract a temporal anchor from the query text.
-
-    Uses the question date as the reference point for relative expressions.
-    Returns epoch ms or None.
-    """
     from supergraph.core.temporal import extract_dates, parse_date
 
     reference = None
@@ -200,19 +180,17 @@ class SuperGraphAdapter:
     def reset(self) -> None:
         self.close()
         self._tmpdir = Path(tempfile.mkdtemp(prefix="gs_bench_"))
-        # Build constructor kwargs from any CLI overrides (only explicitly set values)
         gs_kwargs: dict[str, Any] = {
             "path": str(self._tmpdir),
             "ceiling_mb": self.config.get("ceiling_mb", 4096),
             "queued": False,
             "embedder": self._embedder,
-            "entity_model_dir": None, # Force engine NER OFF
-            "enable_sentence_nodes": False, # Force sentence splitting OFF
-            "enable_rollback": False, # Force rollback snapshots OFF
-            "auto_optimize": False, # Force optimizer checks OFF
-            "enable_wal": False, # Force WAL OFF
+            "entity_model_dir": None,
+            "enable_sentence_nodes": False,
+            "enable_rollback": False,
+            "auto_optimize": False,
+            "enable_wal": False,
         }
-        # SuperGraph constructor kwargs (must match __init__ signature)
         for key in ("remember_weights", "search_oversample", "recall_decay",
                      "similarity_threshold", "duplicate_threshold",
                      "recency_half_life_days", "similar_to_oversample",
@@ -241,7 +219,6 @@ class SuperGraphAdapter:
             )
 
     def warmup(self) -> None:
-        """Pre-load AI models into GPU to avoid first-run latency."""
         if self._entity_extraction:
             self._entity_extractor.extract("warmup")
         if self._embedder and hasattr(self._embedder, "embed"):
@@ -261,7 +238,6 @@ class SuperGraphAdapter:
         sid = _escape(session.session_id)
 
         with TimedOperation() as t:
-            # 1. Batch extract entities for all messages in the session
             msg_contents = [msg.content for msg in session.messages]
             all_entities = []
             st = time.time()
@@ -269,7 +245,6 @@ class SuperGraphAdapter:
                 all_entities = self._entity_extractor.extract_batch(msg_contents)
             t_ner = time.time() - st
 
-            # 2. Build a single transaction block for the entire session
             st = time.time()
             dsl = ["BEGIN"]
             
@@ -281,7 +256,6 @@ class SuperGraphAdapter:
                 f'msg_count = {n}'
             )
 
-            # Parse session date for EVENT_AT clause
             sess_date_str = session.metadata.get("date", "")
             sess_event_ms = None
             if sess_date_str:
@@ -298,9 +272,6 @@ class SuperGraphAdapter:
                 content = _escape(msg.content)
                 role = _escape(msg.role)
 
-                # DOCUMENT clause auto-populates doc_fts for plaintext bodies
-                # (PR #102), so the adapter no longer needs a separate
-                # index_text_batch call after the batch.
                 doc_clause = f' DOCUMENT "{content}"' if self._populate_fts else ""
                 dsl.append(
                     f'CREATE NODE "{msg_id}" kind = "message" '
@@ -312,11 +283,6 @@ class SuperGraphAdapter:
                 dsl.append(f'CREATE EDGE "{sess_node_id}" -> "{msg_id}" kind = "has_message"')
 
                 if self._entity_extraction:
-                    # Dedupe per message. NER can emit the same entity
-                    # string multiple times (multi-span hits on repeated
-                    # mentions within a single message), which would
-                    # otherwise produce a duplicate mentions edge and
-                    # rollback the whole batch (Kaggle v29 failure mode).
                     msg_ent_seen: set[str] = set()
                     for ent_name in entities:
                         ent_slug = _slug(ent_name)
@@ -342,14 +308,11 @@ class SuperGraphAdapter:
             dsl.append("COMMIT")
             t_dsl_gen = time.time() - st
 
-            # 3. Execute the single batch transaction
             st = time.time()
             with self._gs.deferred_embeddings(batch_size=self._embed_batch_size):
                 self._gs.execute("\n".join(dsl))
             t_exec = time.time() - st
                 
-            # 4. FTS is populated inline via DOCUMENT clause above; no
-            #    separate pass needed.
             t_fts = 0.0
 
         if t.elapsed_ms > 100:
@@ -378,46 +341,39 @@ class SuperGraphAdapter:
         return self.query_with_context(QueryContext(question=question), k=k)
 
     def ingest_done(self, record_metadata: dict[str, Any] | None = None) -> None:
-        """Optional post-ingest hook for expensive offline memory maintenance."""
         if self._gs is None:
             return
         if self.config.get("enable_consolidation"):
             self._gs.execute("SYS CONSOLIDATE")
 
     def _cfg(self, attr: str):
-        """Read a config value from own config, falling back to adapter defaults."""
         return self.config.get(attr, _ADAPTER_DEFAULTS.get(attr))
 
     def _resolve_strategy(self, category: str) -> str:
-        """Pick a retrieval strategy for the current benchmark question."""
         explicit = self.config.get("retrieval_strategy")
         if explicit is not None:
             return explicit
         return "full"
 
     def _remember_cmd(self, question: str, limit: int, anchor_ms: int | None = None) -> str:
-        """Build a REMEMBER DSL command with optional AT temporal anchor."""
         q = _escape(question)
         at = f" AT {anchor_ms}" if anchor_ms else ""
         return f'REMEMBER "{q}"{at} LIMIT {limit} WHERE kind = "message"'
 
     def _dispatch(self, question: str, category: str, k: int,
                   anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Dispatch to the configured retrieval strategy."""
         strategy = self._resolve_strategy(category)
         handler = self._STRATEGIES.get(strategy, self._strategy_full)
         return handler(self, question, k, anchor_ms)
 
     def _strategy_remember(self, question: str, k: int,
                            anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid only. Fast, no graph overhead."""
         depth = self._cfg("retrieval_depth")
         r = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         return self._texts(r.data)[:k], r.data
 
     def _strategy_remember_graph(self, question: str, k: int,
                                 anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid + entity graph traversal. Good for cross-session."""
         depth = self._cfg("retrieval_depth")
         primary = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         merged = self._texts(primary.data)
@@ -441,7 +397,6 @@ class SuperGraphAdapter:
 
     def _strategy_remember_recency(self, question: str, k: int,
                                   anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid + recency boost. Good for knowledge updates."""
         depth = self._cfg("retrieval_depth")
         primary = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         merged = self._texts(primary.data)
@@ -462,7 +417,6 @@ class SuperGraphAdapter:
 
     def _strategy_full(self, question: str, k: int,
                        anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid + graph + recency. All signals, no category routing."""
         depth = self._cfg("retrieval_depth")
         primary = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         merged = self._texts(primary.data)
@@ -498,7 +452,6 @@ class SuperGraphAdapter:
 
     def _strategy_lexical_boost(self, question: str, k: int,
                                anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid + extra lexical search. Good for keyword-heavy queries."""
         depth = self._cfg("retrieval_depth")
         primary = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         merged = self._texts(primary.data)
@@ -516,7 +469,6 @@ class SuperGraphAdapter:
         return merged[:k], primary.data
 
     def _rerank(self, question: str, texts: list[str], k: int) -> list[str]:
-        """Rerank texts by cross-encoder relevance. Falls back to truncation if no reranker."""
         if not self._reranker or len(texts) <= k:
             return texts[:k]
         scores = self._reranker.score(question, texts)
@@ -525,7 +477,6 @@ class SuperGraphAdapter:
 
     def _strategy_remember_rerank(self, question: str, k: int,
                                  anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Hybrid retrieval + cross-encoder rerank. Research-backed best pattern."""
         depth = self._cfg("retrieval_depth")
         primary = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         candidates = self._texts(primary.data)
@@ -534,25 +485,16 @@ class SuperGraphAdapter:
 
     def _strategy_full_rerank(self, question: str, k: int,
                              anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """All signals + cross-encoder rerank. Maximum accuracy."""
         texts, raw = self._strategy_full(question, k * 2, anchor_ms)
         reranked = self._rerank(question, texts, k)
         return reranked, raw
 
     def _strategy_consolidated(self, question: str, k: int,
                               anchor_ms: int | None = None) -> tuple[list[str], Any]:
-        """Two-stage retrieval: observations first, episodes fill gaps.
-
-        TSM-inspired priority cascade:
-            1. Search observations (consolidated facts) - high precision
-            2. Fill remaining slots from episodes (raw messages) - high recall
-            3. Merge, dedup
-        """
         q = _escape(question)
         at = f" AT {anchor_ms}" if anchor_ms else ""
         depth = self._cfg("retrieval_depth")
 
-        # Stage 1: Search observations (consolidated memories)
         try:
             obs_result = self._gs.execute(
                 f'REMEMBER "{q}"{at} LIMIT {k * 2} WHERE kind = "observation"'
@@ -561,11 +503,9 @@ class SuperGraphAdapter:
         except Exception:
             obs_texts = []
 
-        # Stage 2: Search episodes (raw messages) to fill gaps
         episode_result = self._gs.execute(self._remember_cmd(question, k * depth, anchor_ms))
         episode_texts = self._texts(episode_result.data)
 
-        # Merge: observations first (higher priority), then episodes
         merged = list(obs_texts)
         seen = set(merged)
         for text in episode_texts:
@@ -573,7 +513,6 @@ class SuperGraphAdapter:
                 merged.append(text)
                 seen.add(text)
 
-        # Entity graph enrichment (same as full strategy)
         if self._entity_extraction:
             max_ents = self._cfg("max_query_entities")
             recall_d = self._cfg("recall_depth")

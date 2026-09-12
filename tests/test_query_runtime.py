@@ -1,4 +1,3 @@
-"""Query object: modifiers, pipe, batch compose, immutability."""
 import pytest
 
 from supergraph import q, F
@@ -125,7 +124,6 @@ class TestBatchCompose:
         assert 'CREATE EDGE "n1"' in dsl
 
     def test_or_non_query_returns_notimplemented(self):
-        # Python handles the NotImplemented dance; `q | "x"` should TypeError eventually
         with pytest.raises(TypeError):
             q.nodes() | "not a query"
 

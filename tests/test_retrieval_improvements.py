@@ -1,9 +1,3 @@
-"""Tests for retrieval improvements: RRF fusion, type-weighted scoring,
-nucleus expansion, and multiplicative temporal decay.
-
-Uses FixedEmbedder + SYS REGISTER to get vectors into the store, matching
-the pattern in test_remember_signals.py and test_integration_fixtures.py.
-"""
 
 
 import numpy as np
@@ -14,7 +8,6 @@ from supergraph.embedding.base import Embedder
 
 
 class FixedEmbedder(Embedder):
-    """Deterministic embedder - same text always produces same vector."""
     @property
     def name(self): return "fixed"
     @property
@@ -37,7 +30,6 @@ class FixedEmbedder(Embedder):
 
 
 class KeywordEmbedder(Embedder):
-    """Low-dimensional embedder that clusters by topic keyword."""
 
     @property
     def name(self): return "keyword"
@@ -61,7 +53,6 @@ class KeywordEmbedder(Embedder):
 
 
 def _make_gs(**kwargs):
-    """Create a SuperGraph with FixedEmbedder + fact schema."""
     gs = SuperGraph(embedder=FixedEmbedder(), **kwargs)
     gs.execute('SYS REGISTER NODE KIND "fact" REQUIRED claim:string EMBED claim')
     gs.execute('SYS REGISTER NODE KIND "decision" REQUIRED claim:string EMBED claim')
@@ -78,9 +69,6 @@ def _event_at_for(gs: SuperGraph, node_id: str) -> int | None:
         return None
     data, present, _ = col
     return int(data[slot]) if present[slot] else None
-
-
-# ── RRF fusion unit tests ──────────────────────────────────────────────
 
 
 class TestRRFFusion:
@@ -119,8 +107,6 @@ class TestRRFFusion:
         assert fused[1] > fused[2] > fused[3] > fused[4]
 
     def test_rrf_consensus_beats_single_signal(self):
-        """Candidate ranked moderately across all signals should beat one
-        ranked high on one signal but absent from others."""
         n = 20
         candidates = np.array([1, 2])
         sig1 = np.zeros(n); sig1[1] = 1.0; sig1[2] = 0.5
@@ -146,14 +132,11 @@ class TestRRFFusion:
         assert fused_low_k[0] > fused_high_k[0]
 
 
-# ── Config wiring ──────────────────────────────────────────────────────
-
-
 class TestConfigWiring:
     def test_tuned_defaults_promoted(self):
         gs = SuperGraph(embedder=FixedEmbedder())
         assert gs._executor._fusion_method == "weighted"
-        assert gs._executor._nucleus_expansion is False  # changed in pipeline refactor
+        assert gs._executor._nucleus_expansion is False
         assert gs._executor._search_oversample == 16
         gs.close()
 

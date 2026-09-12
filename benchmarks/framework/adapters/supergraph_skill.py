@@ -1,21 +1,3 @@
-"""LLM-driven skill-guided ingest adapter.
-
-Pattern B from the architecture discussion: instead of deterministic parse +
-NER + CREATE NODE (the baseline `supergraph_.py` adapter does that), this
-adapter hands each session to an LLM along with the `supergraph-dsl` skill
-and asks the LLM to emit DSL statements. Each emitted line is parsed
-through Lark; valid statements execute, invalid ones get counted and
-dropped.
-
-Why this shape:
-- supergraph's DSL is small (~7 constructs for ingest) -> LLM can learn it
-- skill text is tight (~19 KB) -> fits cleanly in context
-- parser roundtrip guarantees no silent corruption
-- Python-side escape helpers never run; LLM must escape its own strings
-  per the skill's rules
-
-Bench: same query side as `supergraph_.py`; only `ingest()` differs.
-"""
 from __future__ import annotations
 
 import re
@@ -32,10 +14,6 @@ from .supergraph_ import SuperGraphAdapter
 
 _SKILL_PATH = Path(__file__).resolve().parent.parent.parent.parent / "tools" / "skills" / "supergraph-dsl" / "SKILL.md"
 
-# Regexes to scrape ASSERT + RETRACT statements from emitted DSL so we can
-# track running belief state across sessions within one conversation. These
-# match the canonical shape the skill tells the LLM to emit; anything odd
-# just misses the scrape and stays uninjected - harmless.
 _ASSERT_RE = re.compile(
     r'^ASSERT\s+"([^"\\]+(?:\\.[^"\\]*)*)"\s+(.*)$',
     re.IGNORECASE,
@@ -53,7 +31,6 @@ _KV_EVENT_AT_RE = re.compile(r'EVENT_AT\s+"([^"\\]*(?:\\.[^"\\]*)*)"')
 
 @dataclass
 class _FactState:
-    """One live belief tracked across sessions."""
     fact_id: str
     kind: str = ""
     value: str = ""
@@ -94,12 +71,6 @@ class _IngestStats:
 
 
 def _render_known_facts_block(facts: dict[str, _FactState], max_facts: int = 120) -> str:
-    """Format live (non-retracted) facts so the LLM can see prior belief state.
-
-    Retracted facts are skipped so the LLM cannot re-assert something that was
-    already superseded. If the set grows beyond max_facts, keep the most
-    recent by insertion order (dict preserves it in Python 3.7+).
-    """
     alive = [f for f in facts.values() if not f.retracted]
     if not alive:
         return ""
@@ -126,10 +97,6 @@ def _scrape_belief_updates(
     executed_lines: list[str],
     facts: dict[str, _FactState],
 ) -> None:
-    """Walk successfully-executed statements and update running fact state.
-
-    Only ASSERT / RETRACT matter. Other writes ignored.
-    """
     for line in executed_lines:
         m = _ASSERT_RE.match(line)
         if m:
@@ -173,7 +140,6 @@ def _render_session_prompt(
     skill: str,
     known_facts: dict[str, _FactState] | None = None,
 ) -> str:
-    """Build the LLM prompt: skill + known-facts block + session + instructions."""
     date = session.metadata.get("date", "unknown-date")
     turns = []
     for i, msg in enumerate(session.messages):
@@ -249,7 +215,6 @@ _PROSE_PREFIX_RE = re.compile(r"^(?:#|//|--|\*|\d+[\.)]\s|- |\* )")
 
 
 def _iter_dsl_lines(raw: str) -> list[str]:
-    """Strip code fences + prose, return candidate DSL lines."""
     cleaned = _FENCE_RE.sub("", raw)
     out: list[str] = []
     for line in cleaned.split("\n"):
@@ -263,7 +228,6 @@ def _iter_dsl_lines(raw: str) -> list[str]:
 
 
 class SuperGraphSkillAdapter(SuperGraphAdapter):
-    """LLM-driven ingest. Query path inherited from SuperGraphAdapter."""
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
@@ -283,7 +247,6 @@ class SuperGraphSkillAdapter(SuperGraphAdapter):
 
     @property
     def last_raw_output(self) -> str | None:
-        """Raw LLM output from the most recent ingest call. None before first call."""
         return self._last_raw
 
     def _load_skill(self) -> str:
@@ -340,15 +303,12 @@ class SuperGraphSkillAdapter(SuperGraphAdapter):
 
             if self._carry_facts:
                 _scrape_belief_updates(executed_lines, self._known_facts)
-                # cap memory: drop oldest retracted, then oldest live, beyond limit
                 if len(self._known_facts) > self._max_known_facts * 2:
-                    # Evict retracted first
                     for fid in list(self._known_facts.keys()):
                         if len(self._known_facts) <= self._max_known_facts * 2:
                             break
                         if self._known_facts[fid].retracted:
                             del self._known_facts[fid]
-                    # Then oldest live
                     while len(self._known_facts) > self._max_known_facts * 2:
                         self._known_facts.pop(next(iter(self._known_facts)))
 
@@ -356,7 +316,6 @@ class SuperGraphSkillAdapter(SuperGraphAdapter):
         return t.elapsed_ms
 
     def ingest_done(self, record_metadata: dict[str, Any] | None = None) -> None:
-        """Emit ingest stats at end of record for the benchmark runner to log."""
         if record_metadata is not None:
             record_metadata.setdefault("ingest_stats", {}).update(self.stats.as_dict())
 
@@ -364,15 +323,7 @@ class SuperGraphSkillAdapter(SuperGraphAdapter):
         super().reset()
         self.stats = _IngestStats()
         self._known_facts = {}
-        # Match the baseline schema exactly: `content:string` REQUIRED +
-        # `EMBED content`. This is load-bearing for A/B parity - parent's
-        # query strategies read `n.get("content")`, which is empty if the
-        # LLM uses `DOCUMENT "..."` (blob-only path). The prompt instructs
-        # the LLM to emit `content = "..."` as a typed field so retrieval
-        # finds real text.
-        # Parent skipped `entity` kind when entity_extraction=False. Add it
-        # here - the LLM is expected to emit UPSERT NODE for entities.
         try:
             self._gs.execute('SYS REGISTER NODE KIND "entity" REQUIRED name:string')
         except Exception:
-            pass  # already registered
+            pass

@@ -1,4 +1,3 @@
-"""Unit tests for supergraph.columns.ColumnStore."""
 
 import numpy as np
 
@@ -342,8 +341,6 @@ class TestMemoryBytes:
         cs.set(0, {"score": 42})
         assert cs.memory_bytes > 0
 
-
-# -- CoreStore integration tests --
 
 from supergraph.core.store import CoreStore
 

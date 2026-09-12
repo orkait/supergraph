@@ -1,12 +1,3 @@
-"""Benchmark runner: per-record isolated evaluation for LongMemEval-style benches.
-
-Protocol (per record):
-    adapter.reset()                       fresh state
-    for session in record.sessions:       ingest the haystack
-        adapter.ingest(session)
-    result = adapter.query(record.question, k)
-    score(result, record.question.gold_answers)
-"""
 
 from __future__ import annotations
 
@@ -39,11 +30,6 @@ def run_benchmark(
     on_interrupt: Callable[[RunResult], None] | None = None,
     qa_eval: bool = False,
 ) -> RunResult:
-    """Run a full per-record pass.
-
-    Each record is evaluated in isolation: reset -> ingest haystack -> query -> score.
-    If interrupted (SIGTERM/SIGINT), saves partial results via on_interrupt callback.
-    """
     result = RunResult(
         system_name=adapter.name,
         system_version=adapter.version,

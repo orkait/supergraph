@@ -1,45 +1,27 @@
-"""Kaggle: SuperGraph benchmark on LongMemEval-S
-
-To swap models/datasets: edit the CONFIG section below.
-"""
 import subprocess, sys, os, time, shutil
 
-# ============================================================
-# CONFIG - edit here to swap models, datasets, hardware
-# ============================================================
 
-# Run identity
 RUN_TAG         = "supergraph-jina-v5-small"
 
-# Embedder
 EMBEDDER_REPO   = "jinaai/jina-embeddings-v5-text-small-retrieval"
 EMBEDDER_POOLING    = "last_token"
 EMBEDDER_MAX_LEN    = "2048"
 EMBEDDER_DIMS       = "1024"
 
-# Entity extractor
 NER_REPO        = "onnx-community/TinyBERT-finetuned-NER-ONNX"
 
-# Dataset
 DATASET_REPO    = "xiaowu0162/longmemeval-cleaned"
 DATASET_VARIANT = "s"
 
-# SuperGraph source
 REPO_URL        = "https://github.com/orkait/supergraph.git"
 REPO_BRANCH     = "main"
 
-# Hardware
 GPU_MEM_GB      = "12"
 EMBED_BATCH     = "256"
 
-# Kaggle cached datasets (set to None to always download from HF)
-# Attach these in kernel-metadata.json under dataset_sources to skip downloads
-EMBEDDER_KAGGLE_SLUG = "superkaiii/jina-v5-small-onnx"   # None to download fresh
-NER_KAGGLE_SLUG      = "superkaiii/tinybert-ner-onnx"    # None to download fresh
+EMBEDDER_KAGGLE_SLUG = "superkaiii/jina-v5-small-onnx"
+NER_KAGGLE_SLUG      = "superkaiii/tinybert-ner-onnx"
 
-# ============================================================
-# PATHS - derived from CONFIG, no need to edit
-# ============================================================
 WORKING         = "/kaggle/working"
 SUPERGRAPH_DIR  = f"{WORKING}/supergraph"
 EMBEDDER_DIR    = f"{WORKING}/embedder-model"
@@ -51,9 +33,6 @@ HF_TOKEN_FILE   = "/kaggle/input/hf-token-private/hf_token.txt"
 KAGGLE_INPUT    = "/kaggle/input"
 
 
-# ============================================================
-# UTILITIES
-# ============================================================
 def log(msg):
     print(f"[{RUN_TAG}] {msg}")
 
@@ -74,7 +53,6 @@ def run_cmd(cmd, label, env=None):
 
 
 def download_with_retry(repo_id, local_dir, token, label, repo_type="model", max_retries=3):
-    """Download HF repo with exponential backoff (5s, 10s, 15s delays)."""
     from huggingface_hub import snapshot_download
     for attempt in range(1, max_retries + 1):
         try:
@@ -94,11 +72,7 @@ def download_with_retry(repo_id, local_dir, token, label, repo_type="model", max
     return False
 
 
-# ============================================================
-# PHASES
-# ============================================================
 def cleanup():
-    """Remove leftover dirs from previous failed runs."""
     for d in [SUPERGRAPH_DIR, RESULTS_DIR]:
         if os.path.exists(d):
             try:
@@ -109,7 +83,6 @@ def cleanup():
 
 
 def auth_hf_token():
-    """Get HF token - private dataset first, Kaggle Secrets fallback."""
     token = ""
 
     if os.path.exists(HF_TOKEN_FILE):
@@ -144,7 +117,6 @@ def auth_hf_token():
 
 
 def install_deps():
-    """Install required Python packages."""
     core = [
         "numpy>=1.24", "scipy>=1.10", "lark>=1.1", "usearch>=2.0",
         "model2vec>=0.4", "msgspec>=0.18", "croniter>=6.0", "orjson>=3.11.8",
@@ -161,7 +133,6 @@ def install_deps():
 
 
 def hf_login(token):
-    """Login to Hugging Face Hub."""
     if not token:
         log("SKIP HF login (no token)")
         return
@@ -174,7 +145,6 @@ def hf_login(token):
 
 
 def clone_repo():
-    """Clone supergraph at target branch (skip LFS)."""
     env = os.environ.copy()
     env["GIT_LFS_SKIP_SMUDGE"] = "1"
     return run_cmd(
@@ -184,7 +154,6 @@ def clone_repo():
 
 
 def use_kaggle_dataset(slug, target_dir, label):
-    """Symlink a Kaggle input dataset to target_dir. Returns True if available."""
     if not slug:
         return False
     slug_name = slug.split("/")[-1]
@@ -199,7 +168,6 @@ def use_kaggle_dataset(slug, target_dir, label):
 
 
 def download_assets(token):
-    """Use Kaggle cached datasets if attached, otherwise download from HF."""
     ok = True
 
     if not use_kaggle_dataset(EMBEDDER_KAGGLE_SLUG, EMBEDDER_DIR, "embedder"):
@@ -217,14 +185,11 @@ def download_assets(token):
 
 
 def setup_env():
-    """Set env vars, sys.path, and sys.argv for benchmark run."""
     if not os.path.exists(CONFIG_PATH):
         log(f"FAIL config not found: {CONFIG_PATH}")
         return False
 
     os.environ["SUPERGRAPH_CONFIG"] = CONFIG_PATH
-    # `supergraph` package lives under src/ (PEP 517 layout); `benchmarks`
-    # sits at the repo root. Both need to be importable.
     sys.path.insert(0, f"{SUPERGRAPH_DIR}/src")
     sys.path.insert(0, SUPERGRAPH_DIR)
 
@@ -251,7 +216,6 @@ def setup_env():
 
 
 def run_benchmark():
-    """Import and run the benchmark."""
     try:
         from benchmarks.framework.docker_runner import main
         log("RUN benchmark starting...")
@@ -266,9 +230,6 @@ def run_benchmark():
         return 1
 
 
-# ============================================================
-# MAIN
-# ============================================================
 def main():
     print(f"\n{'='*60}")
     log(f"run={RUN_TAG}  branch={REPO_BRANCH}  embedder={EMBEDDER_REPO.split('/')[-1]}")

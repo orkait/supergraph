@@ -1,9 +1,3 @@
-"""ANSWER verb: retrieval + reader LLM synthesis.
-
-supergraph ships no LLM dependency for ANSWER. Readers are plain
-callables the user wires at SuperGraph construction. Tests use a
-recording fake reader to verify the verb's glue without an LLM.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -38,7 +32,6 @@ class FixedEmbedder(Embedder):
 
 
 class _Recorder:
-    """Reader that captures every prompt and returns a scripted response."""
     def __init__(self, script: dict[str, str] | None = None, default: str = "[scripted]"):
         self.prompts: list[str] = []
         self.script = script or {}
@@ -52,10 +45,7 @@ class _Recorder:
         return self.default
 
 
-# ---------- 1. Basic invocation ---------------------------------------------
-
 def test_answer_end_to_end():
-    """ANSWER retrieves via REMEMBER + calls the reader + returns answer shape."""
     rec = _Recorder({"capital of France": "Paris"})
     gs = SuperGraph(embedder=FixedEmbedder(), reader=rec)
     gs.execute('SYS REGISTER NODE KIND "m" REQUIRED content:string EMBED content')
@@ -73,19 +63,15 @@ def test_answer_end_to_end():
     assert r.data["answer"] == "Paris"
     assert r.data["cited_slots"]
     assert len(r.data["candidates"]) >= 1
-    # Reader got called exactly once with a context-shaped prompt
     assert len(rec.prompts) == 1
     prompt = rec.prompts[0]
     assert "Context:" in prompt and "capital of France" in prompt
 
-    # Meta carries the REMEMBER signals block
     sig = r.meta["signals"]
     assert sig["fusion"]["method"]
     assert sig["stages"]["final"] >= 1
     gs.close()
 
-
-# ---------- 2. No reader configured -----------------------------------------
 
 def test_answer_without_reader_raises():
     gs = SuperGraph(embedder=FixedEmbedder())
@@ -95,8 +81,6 @@ def test_answer_without_reader_raises():
         gs.execute('ANSWER "anything" LIMIT 1')
     gs.close()
 
-
-# ---------- 3. Named reader via USING ---------------------------------------
 
 def test_answer_picks_named_reader_via_using():
     fast = _Recorder(default="fast-answer")
@@ -125,8 +109,6 @@ def test_answer_unknown_named_reader_raises():
     gs.close()
 
 
-# ---------- 4. Reader exception handled without raise ------------------------
-
 def test_answer_reader_exception_surfaced_in_result():
     def bad_reader(prompt, max_tokens=1000):
         raise RuntimeError("simulated api failure")
@@ -138,12 +120,9 @@ def test_answer_reader_exception_surfaced_in_result():
     assert r.data["answer"] == ""
     assert "error" in r.data
     assert "simulated api failure" in r.data["error"]
-    # Retrieval still succeeded; candidates present
     assert len(r.data["candidates"]) >= 1
     gs.close()
 
-
-# ---------- 5. Builder ------------------------------------------------------
 
 def test_answer_builder_roundtrip_matches_string_dsl():
     rec = _Recorder({"Paris": "Paris"})
@@ -173,18 +152,14 @@ def test_answer_builder_compiles_full_surface():
     assert 'USING "fast"' in built.dsl()
 
 
-# ---------- 6. Empty retrieval still answers (with no-context reply) ---------
-
 def test_answer_on_empty_store_still_calls_reader():
     rec = _Recorder(default="no information available")
     gs = SuperGraph(embedder=FixedEmbedder(), reader=rec)
     gs.execute('SYS REGISTER NODE KIND "m" REQUIRED content:string EMBED content')
-    # No nodes.
     r = gs.execute('ANSWER "anything" LIMIT 5')
     assert r.kind == "answer"
     assert r.data["answer"] == "no information available"
     assert r.data["candidates"] == []
     assert r.data["cited_slots"] == []
-    # Prompt still contains a "(no retrieved context)" fallback
     assert "no retrieved context" in rec.prompts[0]
     gs.close()

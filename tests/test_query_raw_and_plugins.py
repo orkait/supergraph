@@ -1,4 +1,3 @@
-"""q.raw() escape hatch + plugin registry."""
 import pytest
 
 from supergraph import q, register_verb, Query
@@ -19,7 +18,7 @@ class TestRaw:
 
     def test_missing_param_raises(self):
         with pytest.raises(ValueError, match="missing params"):
-            q.raw("CREATE NODE :id", )  # no kwargs
+            q.raw("CREATE NODE :id", )
 
     def test_extra_param_raises(self):
         with pytest.raises(ValueError, match="unused params"):

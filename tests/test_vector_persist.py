@@ -1,4 +1,3 @@
-"""Tests for SYS DUPLICATES, SYS EMBEDDERS, and vector persistence."""
 import pytest
 from supergraph import SuperGraph
 
@@ -31,7 +30,6 @@ class TestSysDuplicates:
         g.execute('CREATE NODE "b" kind = "memory" VECTOR [0.99, 0.01, 0.0, 0.0]')
         g.execute('CREATE NODE "c" kind = "fact" VECTOR [1.0, 0.0, 0.0, 0.0]')
         result = g.execute('SYS DUPLICATES WHERE kind = "memory" THRESHOLD 0.9')
-        # Only memory nodes should be compared
         for pair in result.data:
             assert pair["node_a"] != "c" and pair["node_b"] != "c"
 
@@ -41,17 +39,14 @@ class TestSysDuplicates:
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.99, 0.01, 0.0, 0.0]')
         result = g.execute('SYS DUPLICATES')
-        # Default threshold is 0.95, these should be duplicates (cosine sim ~0.9999)
         assert result.count >= 1
 
     def test_deduplicates_pairs(self):
-        """Should not report both A->B and B->A."""
         g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.99, 0.01, 0.0, 0.0]')
         result = g.execute('SYS DUPLICATES THRESHOLD 0.9')
-        # Should be exactly 1 pair, not 2
         pairs = [(p["node_a"], p["node_b"]) for p in result.data]
         reverse_pairs = [(b, a) for a, b in pairs]
         for rp in reverse_pairs:
@@ -95,6 +90,5 @@ class TestVectorPersistence:
         g.execute('CREATE NODE "m2" kind = "test" VECTOR [0.0, 1.0, 0.0, 0.0]')
         g.execute('SYS ROLLBACK TO "before"')
         result = g.execute('SIMILAR TO [0.0, 1.0, 0.0, 0.0] LIMIT 5')
-        # m2 should not exist after rollback
         ids = [n["id"] for n in result.data]
         assert "m2" not in ids

@@ -1,10 +1,3 @@
-"""Tests for supergraph.gpu auto-setup module.
-
-Real CUDA bind cannot be tested here (CI runners are CPU-only and host
-configs vary). These tests cover the deterministic logic: lib discovery,
-preload best-effort behaviour, status caching, and graceful failure when
-nvidia wheels are absent.
-"""
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -16,22 +9,11 @@ from supergraph import gpu
 
 @pytest.fixture(autouse=True)
 def _reset_gpu_status(monkeypatch):
-    """Each test starts from a fresh probe-not-yet-run state.
-
-    setup() sets ``SUPERGRAPH_GPU=1`` in the process env when the probe
-    succeeds (so compute_profile picks it up). monkeypatch keeps a
-    snapshot of os.environ at entry; on teardown it restores the entry
-    state. That prevents this test from polluting later tests in the
-    same xdist worker.
-    """
     snapshot = dict(__import__("os").environ)
     gpu.reset_for_tests()
     yield
     gpu.reset_for_tests()
     import os
-    # Restore env to pre-test snapshot exactly. monkeypatch alone does not
-    # cover indirect mutations from production code (gpu.setup uses
-    # os.environ.setdefault).
     for key in list(os.environ.keys()):
         if key not in snapshot:
             del os.environ[key]
@@ -45,7 +27,6 @@ class TestStatusCaching:
         assert gpu.status() is None
 
     def test_n_gpu_layers_default_zero_before_setup(self):
-        # Critical contract: never auto-flip to -1 without explicit setup.
         assert gpu.n_gpu_layers_default() == 0
 
     def test_setup_caches_result(self):
@@ -56,7 +37,7 @@ class TestStatusCaching:
                           return_value=(False, None, "test: not installed")):
             s1 = gpu.setup()
             s2 = gpu.setup()
-        assert s1 is s2  # cached, exact same object
+        assert s1 is s2
 
 
 class TestProbeFailure:
@@ -74,7 +55,6 @@ class TestProbeFailure:
         assert gpu.n_gpu_layers_default() == 0
 
     def test_either_probe_passing_marks_ready(self):
-        # ORT succeeds, llama-cpp fails - still ready.
         with patch.object(gpu, "_find_nvidia_libs", return_value=[]), \
              patch.object(gpu, "_probe_onnxruntime",
                           return_value=(True, "CUDAExecutionProvider", None)), \
@@ -91,7 +71,6 @@ class TestProbeFailure:
 
 class TestLibDiscovery:
     def test_find_returns_empty_when_no_nvidia_dir(self, tmp_path, monkeypatch):
-        # Point sys.path at an empty fake site-packages.
         site = tmp_path / "site-packages"
         site.mkdir()
         monkeypatch.setattr("sys.path", [str(site)])
@@ -100,8 +79,6 @@ class TestLibDiscovery:
     def test_find_returns_libs_in_load_order(self, tmp_path, monkeypatch):
         site = tmp_path / "site-packages"
         site.mkdir()
-        # Build fake nvidia/<comp>/lib/*.so layout. cudnn last in _LOAD_ORDER
-        # so it must come after cuda_runtime in the returned list.
         for comp, soname in [("cudnn", "libcudnn.so.9"),
                              ("cuda_runtime", "libcudart.so.12")]:
             d = site / "nvidia" / comp / "lib"
@@ -110,7 +87,6 @@ class TestLibDiscovery:
         monkeypatch.setattr("sys.path", [str(site)])
         libs = gpu._find_nvidia_libs()
         names = [p.name for p in libs]
-        # cuda_runtime entries must precede cudnn entries.
         assert names.index("libcudart.so.12") < names.index("libcudnn.so.9")
 
 
@@ -124,8 +100,6 @@ class TestSetupSurfacesEnvFlag:
                           return_value=(True, "llama_cpp_cuda", None)), \
              patch.object(gpu, "_read_device_name", return_value=None):
             gpu.setup()
-        # Honors compute_profile gate: env var lit means downstream
-        # _detect_gpu() classifies host as gpu-tier.
         import os
         assert os.environ.get("SUPERGRAPH_GPU") == "1"
 
@@ -143,8 +117,6 @@ class TestSetupSurfacesEnvFlag:
 
 class TestPreloadBestEffort:
     def test_preload_skips_unloadable(self, tmp_path):
-        # Bogus .so file that ctypes will refuse - preload should swallow,
-        # return loaded list excluding it, never raise.
         bogus = tmp_path / "libnope.so.999"
         bogus.write_bytes(b"\x00\x00not a real elf")
         loaded = gpu._preload([bogus])

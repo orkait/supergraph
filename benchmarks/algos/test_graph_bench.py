@@ -1,4 +1,3 @@
-"""Graph algorithm micro-benchmarks."""
 
 
 from supergraph.algos.graph import (

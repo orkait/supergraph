@@ -6,7 +6,6 @@ def bench_query_planning_logic():
     N = 1000000
     E = 5000000
     
-    # 1. Setup Mock Data
     src = np.random.randint(0, N, size=E, dtype=np.int32)
     tgt = np.random.randint(0, N, size=E, dtype=np.int32)
     data = np.ones(E, dtype=np.float32)

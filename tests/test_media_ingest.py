@@ -1,5 +1,3 @@
-"""supergraph owns multimodal understanding: media bytes -> text -> stored.
-Covers all required modalities: image / audio / video / pdf."""
 import base64
 
 import pytest
@@ -15,7 +13,7 @@ def test_image_builds_image_part_with_vision_models():
 
 
 def test_audio_builds_input_audio_part_with_mapped_format():
-    msgs, models = media._build(b"ID3", "audio/mpeg", None)  # mpeg -> mp3
+    msgs, models = media._build(b"ID3", "audio/mpeg", None)
     parts = msgs[0]["content"]
     assert any(p["type"] == "input_audio" and p["input_audio"]["format"] == "mp3" for p in parts)
     assert models == media.DEFAULT_AUDIO_MODELS
@@ -34,7 +32,6 @@ def test_unsupported_mime_raises():
 
 
 def test_pdf_with_text_returns_extracted_text_no_llm(monkeypatch):
-    # text PDF: understanding is local extraction, no model call
     monkeypatch.setattr(media, "_pdf_text", lambda data: "Quarterly revenue grew 12 percent in Q3.")
     monkeypatch.setattr(media, "_run", lambda *a, **k: pytest.fail("must not call the LLM for a text PDF"))
     out = media.understand_media(b"%PDF-fake", "application/pdf")
@@ -42,7 +39,7 @@ def test_pdf_with_text_returns_extracted_text_no_llm(monkeypatch):
 
 
 def test_scanned_pdf_falls_back_to_vision(monkeypatch):
-    monkeypatch.setattr(media, "_pdf_text", lambda data: "")          # no extractable text
+    monkeypatch.setattr(media, "_pdf_text", lambda data: "")
     monkeypatch.setattr(media, "_pdf_page_pngs", lambda data, n: [b"\x89PNG-page1"])
     monkeypatch.setattr(media, "_run", lambda msgs, dm, m, mt: "a scanned invoice for $400")
     out = media.understand_media(b"%PDF-scan", "application/pdf")

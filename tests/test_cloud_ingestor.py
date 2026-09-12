@@ -71,18 +71,15 @@ def test_stream_messages_yields_deltas(monkeypatch):
 
 def test_synthesis_shim_reexports_bonsai_pipeline():
     from supergraph.ingest.llm import synthesis as S
-    # @-verb parse -> ParsedTurn (v6 verbs are full words: UPSERT / FACT / ...)
     turn = S.parse_verb_output('@UPSERT alice Alice\n@FACT fav_color blue')
     assert ("alice", "Alice") in turn.entities
     assert ("fact:fav_color", "blue") in turn.beliefs
-    # whole-turn synthesis (gs=None => dry, mints entities) yields DSL lines
     dsl = S.synthesize_dsl(
         turn, msg_id="msg:1", session_id="s", role="user",
         text="alice likes blue", gs=None,
     )
     assert any(line.startswith('CREATE NODE "msg:1"') for line in dsl)
     assert any(line.startswith("ASSERT ") for line in dsl)
-    # types + errors are re-exported
     assert S.IngestError is S.BonsaiError
     assert issubclass(S.IngestEmpty, S.IngestError)
     r = S.IngestResult(statements=["x"], executed=1, rejected=[],
@@ -91,7 +88,6 @@ def test_synthesis_shim_reexports_bonsai_pipeline():
 
 
 class _FakeRunner:
-    """Stand-in for LLMRunner: returns canned @-verb output."""
     def __init__(self, output="", deltas=None):
         self._output = output
         self._deltas = deltas or []
@@ -107,7 +103,6 @@ class _FakeRunner:
 
 def _make_cloud(monkeypatch, gs, output="", deltas=None):
     from supergraph.ingest.llm import cloud as cloud_mod
-    # avoid needing real provider keys / network in CloudIngestor.__init__
     monkeypatch.setattr(
         cloud_mod, "build_provider_chain",
         lambda *a, **k: [{"pid": "fake", "litellm_model": "fake/m",
@@ -122,7 +117,7 @@ def _make_cloud(monkeypatch, gs, output="", deltas=None):
 
 def test_cloud_batch_ingest_writes_graph(monkeypatch):
     from supergraph import SuperGraph
-    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)  # in-memory, no embedder download
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     ci = _make_cloud(monkeypatch, gs, output="@UPSERT alice Alice\n@FACT fav blue")
     res = ci.ingest("alice likes blue", msg_id="msg:1")
     assert res.executed > 0
@@ -197,7 +192,7 @@ def _cloud_gs(monkeypatch, output="", deltas=None):
 
 def test_sg_ingest_nl_requires_backend():
     from supergraph import SuperGraph
-    gs = SuperGraph(embedder="none")  # default nl_backend=None
+    gs = SuperGraph(embedder="none")
     with pytest.raises(ValueError, match="nl_backend"):
         gs.ingest_nl("hello", msg_id="m1")
 
@@ -211,31 +206,30 @@ def test_sg_ingest_nl_cloud(monkeypatch):
 
 def test_sg_ingest_nl_auto_msg_id(monkeypatch):
     gs = _cloud_gs(monkeypatch, output="@FACT mood good")
-    res = gs.ingest_nl("i feel good")  # no msg_id -> auto
+    res = gs.ingest_nl("i feel good")
     assert res.executed > 0
 
 
 def test_sg_ingest_nl_stream_requires_cloud():
     from supergraph import SuperGraph
-    gs = SuperGraph(embedder="none")  # nl_backend=None
+    gs = SuperGraph(embedder="none")
     with pytest.raises(ValueError, match="cloud"):
         list(gs.ingest_nl_stream("hi"))
 
 
 def test_gs_cloud_auto_wires_answer_reader(monkeypatch):
-    # @ANSWER needs executor._reader; cloud backend should wire it from the chain
     gs = _cloud_gs(monkeypatch, output="@UPSERT a A")
-    assert gs._executor._reader is None          # unset before ingestor built
+    assert gs._executor._reader is None
     gs.ingest_nl("seed", msg_id="m")
-    assert callable(gs._executor._reader)         # wired lazily by _get_nl_ingestor
-    assert gs._executor._reader("any prompt") == "@UPSERT a A"  # backed by the cloud runner
+    assert callable(gs._executor._reader)
+    assert gs._executor._reader("any prompt") == "@UPSERT a A"
 
 
 def test_cloud_eager_wires_reader_at_construction(monkeypatch):
     from supergraph import SuperGraph
     _patch_cloud(monkeypatch, output="x")
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False, nl_backend="cloud")
-    assert callable(gs._executor._reader)   # wired eagerly, no ingest needed
+    assert callable(gs._executor._reader)
 
 
 def test_cloud_eager_no_key_is_graceful(monkeypatch):
@@ -243,7 +237,6 @@ def test_cloud_eager_no_key_is_graceful(monkeypatch):
               "GOOGLE_AISTUDIO_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     from supergraph import SuperGraph
-    # no provider key -> construction must NOT raise; reader stays unset
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False, nl_backend="cloud")
     assert gs._executor._reader is None
 
@@ -257,4 +250,4 @@ def test_gs_cloud_respects_user_supplied_reader(monkeypatch):
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False, reader=sentinel)
     gs._config = SuperGraphConfig(ingest=IngestConfig(nl_backend="cloud"))
     gs.ingest_nl("seed", msg_id="m")
-    assert gs._executor._reader is sentinel       # do not clobber a user reader
+    assert gs._executor._reader is sentinel
