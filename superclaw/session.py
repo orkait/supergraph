@@ -121,6 +121,10 @@ class SessionStore:
                 timeline.append((seq, Message(
                     role="tool", content=p.get("output", ""), tool_call_id=p["tool_call_id"], is_error=not p.get("ok", True),
                 )))
+            elif ev["type"] == "prune":
+                for s, m in timeline:
+                    if s == int(p.get("seq", 0)):
+                        m.content = p.get("output", "")
             elif ev["type"] == "compaction":
                 through = int(p.get("through_seq", 0))
                 kept = [(s, m) for s, m in timeline if s > through]
