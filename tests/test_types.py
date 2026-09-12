@@ -1,14 +1,14 @@
-"""Tests for graphstore.types and graphstore.errors."""
+"""Tests for supergraph.types and supergraph.errors."""
 
 import json
 import numpy as np
 
-from graphstore.core.types import Edge, NodeData, Result
-from graphstore.core.errors import (
+from supergraph.core.types import Edge, NodeData, Result
+from supergraph.core.errors import (
     BatchRollback,
     CeilingExceeded,
     CostThresholdExceeded,
-    GraphStoreError,
+    SuperGraphError,
     NodeExists,
     NodeNotFound,
     QueryError,
@@ -93,7 +93,7 @@ class TestNodeData:
 # ── Errors ───────────────────────────────────────────────────────────
 
 class TestErrors:
-    def test_all_subclass_graphstore_error(self):
+    def test_all_subclass_supergraph_error(self):
         errors = [
             QueryError("bad syntax"),
             NodeNotFound("n1"),
@@ -105,7 +105,7 @@ class TestErrors:
             BatchRollback("CREATE n1 {}", "duplicate"),
         ]
         for err in errors:
-            assert isinstance(err, GraphStoreError)
+            assert isinstance(err, SuperGraphError)
             assert isinstance(err, Exception)
 
     def test_query_error_full(self):

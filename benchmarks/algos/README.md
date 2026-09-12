@@ -1,19 +1,19 @@
 # Algo benchmark harness
 
-Metricable micro-benchmarks for every function in `graphstore/algos/`.
+Metricable micro-benchmarks for every function in `supergraph/algos/`.
 Built on `pytest-benchmark`. Reproducible (fixed seeds), parametrized by
 input size, grouped by function, saved to `.benchmarks/` for comparison.
 
 ## Why this exists
 
-`graphstore/algos/` holds pure primitives (BFS, dijkstra, compaction remap,
+`supergraph/algos/` holds pure primitives (BFS, dijkstra, compaction remap,
 BM25 normalize, 5-signal fusion, spreading activation, FTS5 sanitize).
 They are the tunable hot paths. This harness gives us:
 
 - Objective numbers - mean, p50, p95, stddev, ops/sec, rounds
 - Comparison - `run.sh compare` shows relative change vs saved baseline
 - Regression gate - `run.sh gate` fails CI if any algo is ≥5% slower
-- No GraphStore fixture needed - benchmarks call algos directly with
+- No SuperGraph fixture needed - benchmarks call algos directly with
   synthetic numpy inputs
 
 ## Scope
@@ -49,7 +49,7 @@ Pass pytest filters as extra args:
 # 1. Capture reference before changing anything
 ./benchmarks/algos/run.sh baseline
 
-# 2. Edit graphstore/algos/<file>.py - tune the algorithm
+# 2. Edit supergraph/algos/<file>.py - tune the algorithm
 
 # 3. See what your change did
 ./benchmarks/algos/run.sh compare
@@ -138,7 +138,7 @@ python -m benchmarks.algos.bench_one graph --fast --quiet
 
 Output format (stdout, last N lines):
 ```
-METRIC_FILE graphstore/algos/graph.py
+METRIC_FILE supergraph/algos/graph.py
 METRIC TestBfsTraverse::test_1k_depth2 51.4514
 METRIC TestBfsTraverse::test_10k_depth2 279.4876
 METRIC TestDijkstra::test_100k 39486.5829
@@ -154,7 +154,7 @@ python -m benchmarks.algos.bench_one graph --fast --json
 ```json
 {
   "algo": "graph",
-  "file_under_improvement": "graphstore/algos/graph.py",
+  "file_under_improvement": "supergraph/algos/graph.py",
   "unit": "microseconds",
   "lower_is_better": true,
   "metrics": {
@@ -170,7 +170,7 @@ python -m benchmarks.algos.bench_one graph --fast --json
 
 ```json
 {
-  "file_under_improvement": "graphstore/algos/graph.py",
+  "file_under_improvement": "supergraph/algos/graph.py",
   "metric_command": "python -m benchmarks.algos.bench_one graph --fast --json",
   "metric_format": "json",
   "metric_direction": "lower_is_better",
@@ -234,12 +234,12 @@ enforces the allowlist - if the LLM imports something not listed,
 
 | Algo          | File to improve                 | Command                                                       |
 |---------------|--------------------------------|---------------------------------------------------------------|
-| graph         | `graphstore/algos/graph.py`    | `python -m benchmarks.algos.bench_one graph --fast --json`    |
-| compact       | `graphstore/algos/compact.py`  | `python -m benchmarks.algos.bench_one compact --fast --json`  |
-| fusion        | `graphstore/algos/fusion.py`   | `python -m benchmarks.algos.bench_one fusion --fast --json`   |
-| spreading     | `graphstore/algos/spreading.py`| `python -m benchmarks.algos.bench_one spreading --fast --json`|
-| eviction      | `graphstore/algos/eviction.py` | `python -m benchmarks.algos.bench_one eviction --fast --json` |
-| text          | `graphstore/algos/text.py`     | `python -m benchmarks.algos.bench_one text --fast --json`     |
+| graph         | `supergraph/algos/graph.py`    | `python -m benchmarks.algos.bench_one graph --fast --json`    |
+| compact       | `supergraph/algos/compact.py`  | `python -m benchmarks.algos.bench_one compact --fast --json`  |
+| fusion        | `supergraph/algos/fusion.py`   | `python -m benchmarks.algos.bench_one fusion --fast --json`   |
+| spreading     | `supergraph/algos/spreading.py`| `python -m benchmarks.algos.bench_one spreading --fast --json`|
+| eviction      | `supergraph/algos/eviction.py` | `python -m benchmarks.algos.bench_one eviction --fast --json` |
+| text          | `supergraph/algos/text.py`     | `python -m benchmarks.algos.bench_one text --fast --json`     |
 
 Each command:
 - Runs only that algo's benchmark file
@@ -253,7 +253,7 @@ Autoresearch may propose edits that break the algo's contract. Layered
 guards catch this:
 
 1. **Purity gate** - `tests/test_algos_purity.py` fails if the rewrite
-   introduces a forbidden import (anything from `graphstore.*`).
+   introduces a forbidden import (anything from `supergraph.*`).
 2. **Behavioural regression** - `tests/test_dsl_user_reads.py` exercises
    traversal / paths / recall / similar through the real stack. Any
    semantic regression shows up here.
@@ -274,7 +274,7 @@ Recommended autoresearch loop:
 
 ## Adding a new benchmark
 
-1. Add the algo to `graphstore/algos/<file>.py`
+1. Add the algo to `supergraph/algos/<file>.py`
 2. Add fixtures (if needed) to `benchmarks/algos/conftest.py`
 3. Add a `TestXxx::test_...` to `benchmarks/algos/test_<file>_bench.py`
 4. Run `./benchmarks/algos/run.sh baseline` to capture initial number

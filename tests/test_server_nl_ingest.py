@@ -29,7 +29,7 @@ class _FakeConfig:
 
 
 class _FakeStore:
-    """Stands in for GraphStore - only the ingest surface is exercised."""
+    """Stands in for SuperGraph - only the ingest surface is exercised."""
 
     def __init__(self, backend):
         self._config = _FakeConfig(backend)
@@ -44,7 +44,7 @@ def _client(monkeypatch, backend):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    import graphstore.server as server
+    import supergraph.server as server
 
     store = _FakeStore(backend)
     monkeypatch.setattr(server, "_get_store", lambda: store)
@@ -105,12 +105,12 @@ def test_local_backend_still_uses_bonsai(monkeypatch):
 
 def test_missing_bonsai_surfaces_as_error_payload(monkeypatch):
     """The exact production failure: no GGUF on a [cloud-cpu] image."""
-    from graphstore.core.errors import GraphStoreError
+    from supergraph.core.errors import SuperGraphError
 
     client, server, _ = _client(monkeypatch, None)
 
     def _boom():
-        raise GraphStoreError("Bonsai not configured: set GRAPHSTORE_BONSAI_GGUF to the GGUF path")
+        raise SuperGraphError("Bonsai not configured: set SUPERGRAPH_BONSAI_GGUF to the GGUF path")
 
     monkeypatch.setattr(server, "_get_bonsai", _boom)
     with client:

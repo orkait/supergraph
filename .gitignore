@@ -32,8 +32,8 @@ benchmarks/mempalace-results/
 tools/autoresearch/config.json
 tools/autoresearch/__pycache__/
 # Baseline/best captures inside algos (autoresearch artefacts)
-src/graphstore/algos/*.baseline
-src/graphstore/algos/*.best
+src/supergraph/algos/*.baseline
+src/supergraph/algos/*.best
 
 # Benchmark run artifacts
 benchmarks/results/

@@ -1,7 +1,7 @@
 """F algebra laws + dict shorthand + DSL compilation."""
 import pytest
 
-from graphstore.query.filters import F, compile_where
+from supergraph.query.filters import F, compile_where
 
 
 class TestLeafBuilders:

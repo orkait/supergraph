@@ -100,13 +100,13 @@ def build_manifest() -> dict:
 
 def render_markdown(manifest: dict) -> str:
     lines = []
-    lines.append("# graphstore/algos - environment manifest")
+    lines.append("# supergraph/algos - environment manifest")
     lines.append("")
     lines.append(f"- python: **{manifest['python']}**")
     lines.append(f"- platform: {manifest['platform']}")
     lines.append("")
     lines.append("> This file lists the **exact packages and versions**")
-    lines.append("> available when rewriting a file in `graphstore/algos/`.")
+    lines.append("> available when rewriting a file in `supergraph/algos/`.")
     lines.append("> Do not import anything not listed here - the purity")
     lines.append("> gate will reject the patch.")
     lines.append("")

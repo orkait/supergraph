@@ -1,8 +1,8 @@
 """Comprehensive tests for the DSL parser."""
 
 import pytest
-from graphstore.dsl.parser import parse, parse_uncached, clear_cache, _plan_cache
-from graphstore.dsl.ast_nodes import (
+from supergraph.dsl.parser import parse, parse_uncached, clear_cache, _plan_cache
+from supergraph.dsl.ast_nodes import (
     NodeQuery, NodesQuery, EdgesQuery, TraverseQuery, SubgraphQuery,
     PathQuery, PathsQuery, ShortestPathQuery, DistanceQuery,
     AncestorsQuery, DescendantsQuery, CommonNeighborsQuery,
@@ -14,7 +14,7 @@ from graphstore.dsl.ast_nodes import (
     SysExplain, SysRegisterNodeKind, SysRegisterEdgeKind,
     SysUnregister, SysCheckpoint, SysRebuild, SysClear, SysWal,
 )
-from graphstore.core.errors import QueryError
+from supergraph.core.errors import QueryError
 
 
 # =============================================
@@ -647,7 +647,7 @@ class TestPlanCache:
         assert isinstance(r2, NodeQuery)
 
     def test_cache_eviction(self):
-        from graphstore.dsl.parser import PlanCache
+        from supergraph.dsl.parser import PlanCache
         cache = PlanCache(maxsize=2)
         cache.get_or_parse('NODE "a"')
         cache.get_or_parse('NODE "b"')

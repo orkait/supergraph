@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from graphstore.bonsai_ingestor import (
+from supergraph.bonsai_ingestor import (
     BonsaiIngestor,
     ParsedTurn,
     FactState,
@@ -147,7 +147,7 @@ def test_non_dry_run_without_store_raises(tmp_path: Path):
     model.write_bytes(b"")
 
     ing = BonsaiIngestor(model_path=model, skill_path=skill)
-    with pytest.raises(ValueError, match="requires a GraphStore"):
+    with pytest.raises(ValueError, match="requires a SuperGraph"):
         ing.ingest("hello")
 
 
@@ -797,7 +797,7 @@ def test_ingest_requires_msg_id(tmp_path: Path):
 
 def test_default_prompt_path_ships_in_package(tmp_path: Path):
     """Default prompt file lives inside the package and contains at least one @-verb."""
-    from graphstore.bonsai_ingestor import _DEFAULT_PROMPT_PATH
+    from supergraph.bonsai_ingestor import _DEFAULT_PROMPT_PATH
     assert _DEFAULT_PROMPT_PATH.exists()
     body = _DEFAULT_PROMPT_PATH.read_text()
     assert "@UPSERT" in body and "@REMEMBER" in body
@@ -941,7 +941,7 @@ def test_ner_hints_disabled_when_max_hints_zero(tmp_path: Path):
 
 
 def test_ner_hints_formats_unique_entities_in_order(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text, label="PER", score=0.9):
@@ -961,7 +961,7 @@ def test_ner_hints_formats_unique_entities_in_order(tmp_path: Path, monkeypatch)
 
 
 def test_ner_hints_caps_at_max_hints(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text):
@@ -982,7 +982,7 @@ def test_ner_hints_caps_at_max_hints(tmp_path: Path, monkeypatch):
 
 
 def test_ner_hints_empty_results_yield_no_line(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     monkeypatch.setattr(
         entity_extract, "extract_entities",
@@ -994,7 +994,7 @@ def test_ner_hints_empty_results_yield_no_line(tmp_path: Path, monkeypatch):
 
 
 def test_ner_hints_disable_after_extractor_error(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     calls = {"n": 0}
 
@@ -1013,7 +1013,7 @@ def test_ner_hints_disable_after_extractor_error(tmp_path: Path, monkeypatch):
 
 
 def test_ner_hints_skip_blank_text_entries(tmp_path: Path, monkeypatch):
-    from graphstore.ingest import entity_extract
+    from supergraph.ingest import entity_extract
 
     class FakeEnt:
         def __init__(self, text):

@@ -9,8 +9,8 @@ import itertools
 
 import pytest
 
-from graphstore.query.filters import F, compile_where
-from graphstore.query.escape import dsl_literal
+from supergraph.query.filters import F, compile_where
+from supergraph.query.escape import dsl_literal
 
 
 # -- Algebra laws ----------------------------------------------------------
@@ -28,14 +28,14 @@ def test_and_commutative_semantic():
     for a, b in itertools.combinations(_atoms, 2):
         # DSL may differ textually but both must parse to the same semantic
         # (we approximate by checking both emissions parse, which they must)
-        from graphstore.dsl.parser import parse
+        from supergraph.dsl.parser import parse
         parse(f"NODES WHERE {(a & b).to_dsl()}")
         parse(f"NODES WHERE {(b & a).to_dsl()}")
 
 
 def test_or_commutative_semantic():
     for a, b in itertools.combinations(_atoms, 2):
-        from graphstore.dsl.parser import parse
+        from supergraph.dsl.parser import parse
         parse(f"NODES WHERE {(a | b).to_dsl()}")
         parse(f"NODES WHERE {(b | a).to_dsl()}")
 
@@ -102,7 +102,7 @@ def test_every_adversarial_string_emits_balanced_quotes():
     """Quoted string literal must start + end with unescaped ``"``,
     every embedded ``"`` must be ``\\"``, and the full thing must
     round-trip through the parser inside a NODES WHERE."""
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     for s in ADVERSARIAL_STRINGS:
         out = dsl_literal(s)
         assert out.startswith('"')
@@ -111,7 +111,7 @@ def test_every_adversarial_string_emits_balanced_quotes():
 
 
 def test_every_adversarial_string_in_F_eq():
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     for s in ADVERSARIAL_STRINGS:
         f = F.eq("kind", s)
         parse(f"NODES WHERE {f.to_dsl()}")
@@ -119,8 +119,8 @@ def test_every_adversarial_string_in_F_eq():
 
 def test_every_adversarial_string_in_document_clause():
     """DOCUMENT clause is the biggest injection surface for user-generated text."""
-    from graphstore import q
-    from graphstore.dsl.parser import parse
+    from supergraph import q
+    from supergraph.dsl.parser import parse
     for s in ADVERSARIAL_STRINGS:
         dsl = q.create_node("m1", kind="memory", document=s).dsl()
         parse(dsl)
@@ -130,7 +130,7 @@ def test_every_adversarial_string_in_document_clause():
 
 def test_every_value_type_round_trips_in_where():
     from datetime import date, datetime
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     values = [
         "str",
         42,
@@ -152,7 +152,7 @@ def test_every_value_type_round_trips_in_where():
 # -- Compose depth ---------------------------------------------------------
 
 def test_deeply_nested_and():
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     f = F.eq("a", 0)
     for i in range(1, 20):
         f = f & F.eq(f"a{i}", i)
@@ -161,7 +161,7 @@ def test_deeply_nested_and():
 
 
 def test_deeply_nested_or():
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     f = F.eq("a", 0)
     for i in range(1, 20):
         f = f | F.eq(f"a{i}", i)
@@ -170,6 +170,6 @@ def test_deeply_nested_or():
 
 
 def test_mixed_nesting():
-    from graphstore.dsl.parser import parse
+    from supergraph.dsl.parser import parse
     f = (F.eq("a", 1) & F.gt("b", 0)) | (F.eq("c", "x") & ~F.eq("d", True))
     parse(f"NODES WHERE {f.to_dsl()}")

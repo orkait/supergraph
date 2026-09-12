@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import pytest
 
-from graphstore import q, F, P, agg, Time, EvolveWhen, EvolveThen, Query
-from graphstore.query.filters import F as _F, _Leaf, _Degree
-from graphstore.query.runtime import _COMPILERS
-from graphstore.query.escape import dsl_field_ref, dsl_variable, dsl_node_ref
-from graphstore.query.time_expr import TimeExpr, Time as _Time
+from supergraph import q, F, P, agg, Time, EvolveWhen, EvolveThen, Query
+from supergraph.query.filters import F as _F, _Leaf, _Degree
+from supergraph.query.runtime import _COMPILERS
+from supergraph.query.escape import dsl_field_ref, dsl_variable, dsl_node_ref
+from supergraph.query.time_expr import TimeExpr, Time as _Time
 
 
 # -- F algebra defensive paths ---------------------------------------------
@@ -456,7 +456,7 @@ class TestEvolveValidation:
 
 class TestRegisterVerbValidation:
     def test_register_verb_bad_name(self):
-        from graphstore.query import register_verb
+        from supergraph.query import register_verb
         with pytest.raises(ValueError):
             register_verb("not a valid identifier")(lambda: None)
 

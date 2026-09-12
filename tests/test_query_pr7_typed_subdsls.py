@@ -1,8 +1,8 @@
 """PR 7: typed builders for MATCH pattern / AGGREGATE agg_func / EVOLVE rule expr."""
 import pytest
 
-from graphstore import q, F, P, agg, EvolveWhen, EvolveThen
-from graphstore.dsl.parser import parse
+from supergraph import q, F, P, agg, EvolveWhen, EvolveThen
+from supergraph.dsl.parser import parse
 
 
 def _roundtrip(query_obj):

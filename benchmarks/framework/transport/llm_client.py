@@ -1,6 +1,6 @@
 """LoCoMo bench scoring helpers.
 
-All LLM transport goes through `graphstore.llm_runner` (shared across
+All LLM transport goes through `supergraph.llm_runner` (shared across
 benches + autoresearch). This module holds LoCoMo-specific scoring:
 token F1 (official snap-research/locomo protocol) and a semantic LLM
 judge prompt.
@@ -22,7 +22,7 @@ def llm_call(prompt: str, max_tokens: int = 1000, temperature: float = 0.0, _ret
     The ``_retries`` kwarg is ignored (runner retries internally). Kept
     in the signature only because older in-tree callers pass it.
     """
-    from graphstore.llm_runner import get_shared_runner
+    from supergraph.llm_runner import get_shared_runner
     return get_shared_runner().call_sync(prompt, max_tokens=max_tokens, temperature=temperature)
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for graphstore.ingest.whisper_ingestor.
+"""Unit tests for supergraph.ingest.whisper_ingestor.
 
 The model itself is mocked in unit tests. Integration tests that actually
 load faster-whisper are guarded by the ``needs_audio`` marker and exercise
@@ -45,7 +45,7 @@ def _fake_model(segments, language="en", language_probability=0.95, duration=2.0
 # ----- Unit tests (no faster-whisper needed) -----
 
 def test_whisper_ingestor_transcript_assembly(tmp_path):
-    from graphstore.ingest import whisper_ingestor as wi
+    from supergraph.ingest import whisper_ingestor as wi
     wav = _silent_wav(tmp_path / "x.wav")
     fake = _fake_model([(0.0, 1.2, "hello"), (1.2, 2.0, "world")])
     with patch.object(wi, "_get_model", return_value=fake):
@@ -61,7 +61,7 @@ def test_whisper_ingestor_transcript_assembly(tmp_path):
 
 
 def test_whisper_ingestor_empty_audio_sets_low_confidence(tmp_path):
-    from graphstore.ingest import whisper_ingestor as wi
+    from supergraph.ingest import whisper_ingestor as wi
     wav = _silent_wav(tmp_path / "empty.wav")
     fake = _fake_model([], language_probability=0.2)
     with patch.object(wi, "_get_model", return_value=fake):
@@ -73,7 +73,7 @@ def test_whisper_ingestor_empty_audio_sets_low_confidence(tmp_path):
 
 
 def test_whisper_ingestor_low_language_prob_warning(tmp_path):
-    from graphstore.ingest import whisper_ingestor as wi
+    from supergraph.ingest import whisper_ingestor as wi
     wav = _silent_wav(tmp_path / "lang.wav")
     fake = _fake_model([(0.0, 1.0, "garbled text")], language_probability=0.3)
     with patch.object(wi, "_get_model", return_value=fake):
@@ -88,7 +88,7 @@ def test_router_routes_audio_exts_when_audio_installed():
     importable. Skip when the ``[audio]`` extra is not installed so CI
     without the optional dep doesn't trip this assertion."""
     pytest.importorskip("faster_whisper")
-    from graphstore.ingest.router import EXTENSION_MAP
+    from supergraph.ingest.router import EXTENSION_MAP
     assert EXTENSION_MAP.get("wav") == "whisper"
     assert EXTENSION_MAP.get("mp3") == "whisper"
     assert EXTENSION_MAP.get("m4a") == "whisper"
@@ -97,20 +97,20 @@ def test_router_routes_audio_exts_when_audio_installed():
 
 def test_router_skips_audio_exts_when_audio_missing():
     """Complementary guarantee: when faster_whisper is absent, audio extensions
-    must NOT be registered (graphstore core stays lean). Skip when the extra IS
+    must NOT be registered (supergraph core stays lean). Skip when the extra IS
     installed locally. This test plus the one above together cover both states."""
     try:
         import faster_whisper  # noqa: F401
         pytest.skip("faster_whisper installed; this test checks absence behaviour")
     except ImportError:
-        from graphstore.ingest.router import EXTENSION_MAP
+        from supergraph.ingest.router import EXTENSION_MAP
         # When missing, wav/mp3/... are not in EXTENSION_MAP at all
         assert EXTENSION_MAP.get("wav") is None
         assert EXTENSION_MAP.get("mp3") is None
 
 
 def test_list_ingestors_includes_whisper_with_audio_extra():
-    from graphstore.ingest.router import list_ingestors
+    from supergraph.ingest.router import list_ingestors
     entry = next((i for i in list_ingestors() if i["name"] == "whisper"), None)
     assert entry is not None
     assert entry["extra"] == "audio"
@@ -119,7 +119,7 @@ def test_list_ingestors_includes_whisper_with_audio_extra():
 
 
 def test_whisper_ingestor_surfaces_missing_extra(tmp_path, monkeypatch):
-    from graphstore.ingest import whisper_ingestor as wi
+    from supergraph.ingest import whisper_ingestor as wi
     wav = _silent_wav(tmp_path / "x.wav")
     wi._model_cache.clear()
     import builtins
@@ -132,7 +132,7 @@ def test_whisper_ingestor_surfaces_missing_extra(tmp_path, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     ing = wi.WhisperIngestor()
-    with pytest.raises(ImportError, match=r"graphstore\[audio\]"):
+    with pytest.raises(ImportError, match=r"supergraph\[audio\]"):
         ing.convert(str(wav))
 
 
@@ -152,8 +152,8 @@ def test_real_whisper_transcription(fixture_name, expected_keywords):
     try:
         import faster_whisper  # noqa
     except ImportError:
-        pytest.skip("graphstore[audio] not installed")
-    from graphstore.ingest.whisper_ingestor import WhisperIngestor
+        pytest.skip("supergraph[audio] not installed")
+    from supergraph.ingest.whisper_ingestor import WhisperIngestor
     ing = WhisperIngestor()
     r = ing.convert(str(clip), model="tiny")
     assert r.parser_used == "whisper"
@@ -172,8 +172,8 @@ def test_real_router_dispatches_wav_to_whisper():
     try:
         import faster_whisper  # noqa
     except ImportError:
-        pytest.skip("graphstore[audio] not installed")
-    from graphstore.ingest.router import ingest_file
+        pytest.skip("supergraph[audio] not installed")
+    from supergraph.ingest.router import ingest_file
     r = ingest_file(str(clip))
     assert r.parser_used == "whisper"
     assert "country" in r.markdown.lower() or "american" in r.markdown.lower()

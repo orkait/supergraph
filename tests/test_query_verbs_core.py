@@ -1,12 +1,12 @@
 """Core verbs (PR 1 subset): DSL emission + parser roundtrip.
 
-For every verb, emit a canonical form and feed through the graphstore
+For every verb, emit a canonical form and feed through the supergraph
 parser to prove the output is syntactically valid.
 """
 import pytest
 
-from graphstore import q, F
-from graphstore.dsl.parser import parse
+from supergraph import q, F
+from supergraph.dsl.parser import parse
 
 
 # -- Helper ----------------------------------------------------------------
@@ -176,7 +176,7 @@ class TestCriticalEscape:
         assert r'\"' in out
         # Output is still parseable (the string terminates at the real close-quote,
         # and "DROP ALL" is inside the string literal, not executable)
-        from graphstore.dsl.parser import parse
+        from supergraph.dsl.parser import parse
         parse(out)  # no exception means escape succeeded
 
     def test_R4_remember_quote_escape(self):

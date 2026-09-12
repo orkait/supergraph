@@ -1,4 +1,4 @@
-# graphstore - cloud-cpu image for no-GPU serverless (Railway / Fly / Render).
+# supergraph - cloud-cpu image for no-GPU serverless (Railway / Fly / Render).
 #
 # Built FROM LOCAL SOURCE - the published PyPI wheel is stale (no /api/ingest-media,
 # no [cloud-cpu] extra). Generation ("understanding": NL->DSL, ANSWER, and
@@ -15,20 +15,20 @@
 # deliberately excludes.
 #
 # Env notes:
-#   GRAPHSTORE_MODEL_CACHE            build-time: where install-embedder writes.
-#   GRAPHSTORE_VECTOR_MODEL_CACHE_DIR runtime: config.vector.model_cache_dir.
-#     Must match the above. GraphStore calls installer.set_cache_dir() with this
-#     value at construction and set_cache_dir wins over GRAPHSTORE_MODEL_CACHE,
+#   SUPERGRAPH_MODEL_CACHE            build-time: where install-embedder writes.
+#   SUPERGRAPH_VECTOR_MODEL_CACHE_DIR runtime: config.vector.model_cache_dir.
+#     Must match the above. SuperGraph calls installer.set_cache_dir() with this
+#     value at construction and set_cache_dir wins over SUPERGRAPH_MODEL_CACHE,
 #     so at its "./models" default the loader looks in /app/models and misses
 #     the baked weights.
-#   GRAPHSTORE_VECTOR_EMBEDDER_MAX_LENGTH  VectorConfig defaults to 512 and
+#   SUPERGRAPH_VECTOR_EMBEDDER_MAX_LENGTH  VectorConfig defaults to 512 and
 #     load_installed_embedder prefers the config value over the manifest's 8192,
 #     so leaving it unset silently truncates chunks (chunk_max_size 2000 chars is
 #     ~500 tokens before the heading prefix). 1024 clears a full chunk without
 #     paying for 8k attention.
 #
-# The platform injects PORT; the entrypoint binds it (GRAPHSTORE_PORT overrides).
-# Set OPENROUTER_API_KEY + GRAPHSTORE_AUTH_TOKEN in the platform env. Never bake
+# The platform injects PORT; the entrypoint binds it (SUPERGRAPH_PORT overrides).
+# Set OPENROUTER_API_KEY + SUPERGRAPH_AUTH_TOKEN in the platform env. Never bake
 # credentials into this image.
 FROM python:3.12-slim-bookworm
 
@@ -38,17 +38,17 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    GRAPHSTORE_DB_PATH=/data \
-    GRAPHSTORE_HOST=0.0.0.0 \
-    GRAPHSTORE_GPU=0 \
-    GRAPHSTORE_MODEL_CACHE=/opt/graphstore-models \
-    GRAPHSTORE_VECTOR_MODEL_CACHE_DIR=/opt/graphstore-models \
-    GRAPHSTORE_VECTOR_EMBEDDER=installed:jina-v5-nano-retrieval \
-    GRAPHSTORE_VECTOR_EMBEDDER_MAX_LENGTH=1024 \
-    GRAPHSTORE_DSL_RERANKER=onnx \
-    GRAPHSTORE_DSL_RERANKER_MODEL_DIR=/opt/graphstore-models/jina-reranker-v1-turbo-en \
-    GRAPHSTORE_INGEST_NL_BACKEND=cloud \
-    GRAPHSTORE_INGEST_NL_MODELS=openrouter/deepseek/deepseek-v4-flash
+    SUPERGRAPH_DB_PATH=/data \
+    SUPERGRAPH_HOST=0.0.0.0 \
+    SUPERGRAPH_GPU=0 \
+    SUPERGRAPH_MODEL_CACHE=/opt/supergraph-models \
+    SUPERGRAPH_VECTOR_MODEL_CACHE_DIR=/opt/supergraph-models \
+    SUPERGRAPH_VECTOR_EMBEDDER=installed:jina-v5-nano-retrieval \
+    SUPERGRAPH_VECTOR_EMBEDDER_MAX_LENGTH=1024 \
+    SUPERGRAPH_DSL_RERANKER=onnx \
+    SUPERGRAPH_DSL_RERANKER_MODEL_DIR=/opt/supergraph-models/jina-reranker-v1-turbo-en \
+    SUPERGRAPH_INGEST_NL_BACKEND=cloud \
+    SUPERGRAPH_INGEST_NL_MODELS=openrouter/deepseek/deepseek-v4-flash
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
@@ -61,11 +61,11 @@ RUN pip install ".[cloud-cpu]"
 
 # Bake the weights so cold starts do not pay a HuggingFace round trip. Both
 # repos are public - no HF token, and none should ever be added here.
-RUN graphstore install-embedder jina-v5-nano-retrieval --variant q4
-RUN python -c "import os; from huggingface_hub import hf_hub_download; d = os.path.join(os.environ['GRAPHSTORE_MODEL_CACHE'], 'jina-reranker-v1-turbo-en'); [hf_hub_download('jinaai/jina-reranker-v1-turbo-en', f, local_dir=d) for f in ('onnx/model_int8.onnx', 'tokenizer.json')]"
+RUN supergraph install-embedder jina-v5-nano-retrieval --variant q4
+RUN python -c "import os; from huggingface_hub import hf_hub_download; d = os.path.join(os.environ['SUPERGRAPH_MODEL_CACHE'], 'jina-reranker-v1-turbo-en'); [hf_hub_download('jinaai/jina-reranker-v1-turbo-en', f, local_dir=d) for f in ('onnx/model_int8.onnx', 'tokenizer.json')]"
 
-COPY docker/entrypoint.sh /usr/local/bin/graphstore-entrypoint
-RUN chmod +x /usr/local/bin/graphstore-entrypoint && mkdir -p /data
+COPY docker/entrypoint.sh /usr/local/bin/supergraph-entrypoint
+RUN chmod +x /usr/local/bin/supergraph-entrypoint && mkdir -p /data
 
 EXPOSE 7200
-ENTRYPOINT ["/usr/local/bin/graphstore-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/supergraph-entrypoint"]

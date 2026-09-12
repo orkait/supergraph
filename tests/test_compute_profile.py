@@ -1,4 +1,4 @@
-"""Behaviour tests for graphstore.core.compute_profile.
+"""Behaviour tests for supergraph.core.compute_profile.
 
 Parametrized matrices cover: tier sizing, battery/load scaling, override
 precedence (config > env > base), floor clamping, cache invalidation,
@@ -10,16 +10,16 @@ from unittest.mock import patch
 
 import pytest
 
-from graphstore.core import compute_profile as cp
+from supergraph.core import compute_profile as cp
 
 
 _ENV_KEYS = (
-    "GRAPHSTORE_PROFILE",
-    "GRAPHSTORE_NER_THREADS",
-    "GRAPHSTORE_EMBED_THREADS",
-    "GRAPHSTORE_RERANK_THREADS",
-    "GRAPHSTORE_EMBED_BATCH",
-    "GRAPHSTORE_GPU",
+    "SUPERGRAPH_PROFILE",
+    "SUPERGRAPH_NER_THREADS",
+    "SUPERGRAPH_EMBED_THREADS",
+    "SUPERGRAPH_RERANK_THREADS",
+    "SUPERGRAPH_EMBED_BATCH",
+    "SUPERGRAPH_GPU",
 )
 
 
@@ -147,7 +147,7 @@ def test_ner_never_scaled(desktop_host):
 ])
 def test_embed_threads_precedence(desktop_host, monkeypatch, config_val, env_val, expected):
     if env_val is not None:
-        monkeypatch.setenv("GRAPHSTORE_EMBED_THREADS", env_val)
+        monkeypatch.setenv("SUPERGRAPH_EMBED_THREADS", env_val)
     cp.configure(embed_threads=config_val)
     assert cp.get_profile().embed_threads == expected
 
@@ -160,7 +160,7 @@ def test_embed_threads_precedence(desktop_host, monkeypatch, config_val, env_val
 ])
 def test_profile_tier_precedence(desktop_host, monkeypatch, config_profile, env_profile, expected_name):
     if env_profile:
-        monkeypatch.setenv("GRAPHSTORE_PROFILE", env_profile)
+        monkeypatch.setenv("SUPERGRAPH_PROFILE", env_profile)
     cp.configure(profile=config_profile)
     assert cp.get_profile().name == expected_name
 
@@ -192,9 +192,9 @@ def test_reconfigure_invalidates_cache(desktop_host):
 ])
 def test_gpu_detection_requires_opt_in(desktop_host, monkeypatch, gpu_env, detect_return, expected_has_gpu, expected_name):
     if gpu_env:
-        monkeypatch.setenv("GRAPHSTORE_GPU", gpu_env)
+        monkeypatch.setenv("SUPERGRAPH_GPU", gpu_env)
     # Rebind the real _detect_gpu since desktop_host already patched it as (False, None).
-    # _detect_gpu itself checks GRAPHSTORE_GPU env before probing, so we can let it run
+    # _detect_gpu itself checks SUPERGRAPH_GPU env before probing, so we can let it run
     # directly when env is unset and patch only when env is set.
     if gpu_env:
         with patch.object(cp, "_detect_gpu", return_value=detect_return):
@@ -208,14 +208,14 @@ def test_gpu_detection_requires_opt_in(desktop_host, monkeypatch, gpu_env, detec
 
 
 def test_env_fingerprint_invalidates_cache(monkeypatch):
-    from graphstore.core import compute_profile as cp
+    from supergraph.core import compute_profile as cp
 
     cp.configure()
-    monkeypatch.delenv("GRAPHSTORE_EMBED_THREADS", raising=False)
+    monkeypatch.delenv("SUPERGRAPH_EMBED_THREADS", raising=False)
     p1 = cp.get_profile()
     base_threads = p1.embed_threads
 
-    monkeypatch.setenv("GRAPHSTORE_EMBED_THREADS", "99")
+    monkeypatch.setenv("SUPERGRAPH_EMBED_THREADS", "99")
     p2 = cp.get_profile()
 
     assert p2.embed_threads == 99

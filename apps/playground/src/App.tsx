@@ -9,29 +9,29 @@ import { GraphPanel } from '@/components/GraphPanel'
 import { Toolbar } from '@/components/Toolbar'
 import { StatsBar } from '@/components/StatsBar'
 import { Toaster } from '@/components/ui/sonner'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 import { useEffect } from 'react'
 import { Card } from '@/components/ui/card'
 import { api } from '@/api/client'
 
 export default function App() {
-  const refreshGraph = useGraphStore((s) => s.refreshGraph)
-  const executeAll = useGraphStore((s) => s.executeAll)
-  const isDark = useGraphStore((s) => s.config.isDark)
+  const refreshGraph = useSuperGraph((s) => s.refreshGraph)
+  const executeAll = useSuperGraph((s) => s.executeAll)
+  const isDark = useSuperGraph((s) => s.config.isDark)
 
   useEffect(() => {
     // 1. Sync the persisted Zustand config (Memory Ceiling, etc) to the backend server
-    const { ceilingMb, costThreshold } = useGraphStore.getState().config
+    const { ceilingMb, costThreshold } = useSuperGraph.getState().config
     api.updateConfig({ ceiling_mb: ceilingMb, cost_threshold: costThreshold }).catch(console.error)
 
     // 2. Check if server has a custom script (set via Python API)
     // If so, load it into the editor instead of the default example
     Promise.all([refreshGraph(), api.getScript().catch(() => ({ script: null }))]).then(
       ([, scriptRes]) => {
-        const g = useGraphStore.getState().graph
+        const g = useSuperGraph.getState().graph
         if (scriptRes.script) {
           // Server has a custom script - use it as editor content
-          useGraphStore.getState().setEditorContent(scriptRes.script)
+          useSuperGraph.getState().setEditorContent(scriptRes.script)
         } else if (g.nodes.length === 0) {
           // No custom script and empty graph - run the default example
           executeAll()

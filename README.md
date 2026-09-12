@@ -1,11 +1,11 @@
 <div align="center">
 
-# graphstore
+# supergraph
 
 **A memory database for AI agents**
 
-[![CI](https://github.com/orkait/graphstore/actions/workflows/ci.yml/badge.svg)](https://github.com/orkait/graphstore/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/graphstore?color=f59e0b&logo=pypi&logoColor=white)](https://pypi.org/project/graphstore/)
+[![CI](https://github.com/orkait/supergraph/actions/workflows/ci.yml/badge.svg)](https://github.com/orkait/supergraph/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/supergraph?color=f59e0b&logo=pypi&logoColor=white)](https://pypi.org/project/supergraph/)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-ea580c?logo=gnu&logoColor=white)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-website%2Fdocs-f59e0b?logo=readthedocs&logoColor=white)](website/docs/intro.md)
@@ -21,19 +21,19 @@ Status: v0.6.0, alpha.
 ## 📦 Install
 
 ```bash
-pip install graphstore
+pip install supergraph
 ```
 
-Core ships with [model2vec](https://github.com/MinishLab/model2vec) as the default embedder. Swap for Jina v5, bge-*, EmbeddingGemma, or any ONNX / GGUF model via `graphstore install-embedder`. PDFs, images, audio, GPU, and the web UI are opt-in extras.
+Core ships with [model2vec](https://github.com/MinishLab/model2vec) as the default embedder. Swap for Jina v5, bge-*, EmbeddingGemma, or any ONNX / GGUF model via `supergraph install-embedder`. PDFs, images, audio, GPU, and the web UI are opt-in extras.
 
 ```bash
-pip install 'graphstore[ingest]'       # PDF / DOCX / HTML
-pip install 'graphstore[vision]'       # local VLM for images + scanned PDFs
-pip install 'graphstore[audio]'        # faster-whisper speech-to-text
-pip install 'graphstore[playground]'   # FastAPI web UI
-pip install 'graphstore[gpu]'          # onnxruntime-gpu, Linux x86_64, CUDA 12
-pip install 'graphstore[mcp]'          # Model Context Protocol server (graphstore-mcp)
-pip install 'graphstore[pro]'          # one-shot agentic memory bundle (see Pro mode below)
+pip install 'supergraph[ingest]'       # PDF / DOCX / HTML
+pip install 'supergraph[vision]'       # local VLM for images + scanned PDFs
+pip install 'supergraph[audio]'        # faster-whisper speech-to-text
+pip install 'supergraph[playground]'   # FastAPI web UI
+pip install 'supergraph[gpu]'          # onnxruntime-gpu, Linux x86_64, CUDA 12
+pip install 'supergraph[mcp]'          # Model Context Protocol server (supergraph-mcp)
+pip install 'supergraph[pro]'          # one-shot agentic memory bundle (see Pro mode below)
 ```
 
 Full extras matrix: [Installation](website/docs/installation.md).
@@ -41,9 +41,9 @@ Full extras matrix: [Installation](website/docs/installation.md).
 ## 🚀 Quickstart
 
 ```python
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
-g = GraphStore(path="./brain")
+g = SuperGraph(path="./brain")
 
 g.execute('CREATE NODE "mem:paris" kind = "memory" '
           'DOCUMENT "Paris is the capital of France, famous for the Eiffel Tower."')
@@ -61,13 +61,13 @@ g.execute('SIMILAR TO "capital city" LIMIT 5')            # vector only
 
 ## 🌳 Natural-language ingest (Bonsai)
 
-For agent-conversation memory, writing DSL by hand is the wrong abstraction. graphstore ships `BonsaiIngestor`, an LLM-driven NL→DSL converter built on a 4B Ternary-Bonsai GGUF (1.1 GB, runs on CPU at ~20 tok/s, ~150 tok/s on a CUDA 12 GPU). It reads natural-language turns and emits the DSL statements that mirror them.
+For agent-conversation memory, writing DSL by hand is the wrong abstraction. supergraph ships `BonsaiIngestor`, an LLM-driven NL→DSL converter built on a 4B Ternary-Bonsai GGUF (1.1 GB, runs on CPU at ~20 tok/s, ~150 tok/s on a CUDA 12 GPU). It reads natural-language turns and emits the DSL statements that mirror them.
 
 ```python
-from graphstore import GraphStore
-from graphstore.bonsai_ingestor import BonsaiIngestor, _DEFAULT_LITE_PROMPT_PATH
+from supergraph import SuperGraph
+from supergraph.bonsai_ingestor import BonsaiIngestor, _DEFAULT_LITE_PROMPT_PATH
 
-g = GraphStore(path="./brain")
+g = SuperGraph(path="./brain")
 ing = BonsaiIngestor(
     model_path="./models/Ternary-Bonsai-4B-TQ1_0.gguf",
     gs=g,
@@ -86,7 +86,7 @@ res = ing.ingest("Where does Maria work?", msg_id="q1")          # executes @ANS
 preview = ing.ingest("Where does Maria work?", msg_id="q1", dry_run=True)  # returns DSL only
 ```
 
-`dry_run=True` returns the synthesized DSL without touching the store - useful for previewing or building training data, but it does NOT produce an answer. To get the answer, leave `dry_run=False` (the default) and configure a reader on the `GraphStore` (see [ANSWER](#-answer-retrieval--reader-llm) below).
+`dry_run=True` returns the synthesized DSL without touching the store - useful for previewing or building training data, but it does NOT produce an answer. To get the answer, leave `dry_run=False` (the default) and configure a reader on the `SuperGraph` (see [ANSWER](#-answer-retrieval--reader-llm) below).
 
 Prompt variants:
 - `bonsai_dsl_prompt_lite.txt` (~600 system tokens, 16 verbs, ingest+retrieval): production sweet spot.
@@ -97,7 +97,7 @@ Persistent KV cache (`kv_cache_path=...`) cuts cold start from ~10 s to ~1 s acr
 ## 🏗️  Architecture
 
 <p align="center">
-  <img src="website/static/img/architecture.svg" alt="graphstore architecture: DSL + three storage engines + ingest pipeline + retrieval" width="760">
+  <img src="website/static/img/architecture.svg" alt="supergraph architecture: DSL + three storage engines + ingest pipeline + retrieval" width="760">
 </p>
 
 Three engines behind one DSL.
@@ -125,7 +125,7 @@ Deep dive: [Architecture](website/docs/concepts/architecture.md) · [Edge matrix
 | `recency` | 0.15 | `exp(-age / half_life)` from `__event_at__` |
 | `graph_signal` | 0.08 | sum of entity degrees |
 
-Weights are configurable via `graphstore.json`, `GRAPHSTORE_DSL_*` env vars, or constructor kwargs.
+Weights are configurable via `supergraph.json`, `SUPERGRAPH_DSL_*` env vars, or constructor kwargs.
 
 Every result returns per-signal scores on every node and a `meta["signals"]` block with the full pipeline state (fusion weights, per-stage candidate counts, reranker status):
 
@@ -155,7 +155,7 @@ For a full retrieve + synthesize loop, wire a reader callable and use `ANSWER`:
 def my_reader(prompt: str, max_tokens: int = 1000) -> str:
     ...  # call any LLM (openai, litellm, local, ...)
 
-g = GraphStore(path="./brain", reader=my_reader)
+g = SuperGraph(path="./brain", reader=my_reader)
 
 r = g.execute('ANSWER "What is the capital of France?" LIMIT 3')
 r.data["answer"]         # "Paris"
@@ -163,12 +163,12 @@ r.data["cited_slots"]    # ["mem:paris", ...]
 r.meta["signals"]        # same telemetry as REMEMBER
 ```
 
-graphstore ships no LLM dependency. The reader is a plain callable; bring your own. Named readers (`GraphStore(readers={"fast": a, "careful": b})`) enable A/B via `ANSWER "q" USING "careful"`.
+supergraph ships no LLM dependency. The reader is a plain callable; bring your own. Named readers (`SuperGraph(readers={"fast": a, "careful": b})`) enable A/B via `ANSWER "q" USING "careful"`.
 
 A wall-clock `reader_timeout_seconds` (default 60s) bounds every reader invocation. On timeout the result still comes back, with `data["answer"] == ""`, `data["error"]` describing the timeout, and a `meta["warnings"]` entry — the executor never blocks indefinitely on a hung LLM.
 
 ```python
-GraphStore(reader=slow_local_llm, reader_timeout_seconds=120.0)
+SuperGraph(reader=slow_local_llm, reader_timeout_seconds=120.0)
 ```
 
 ## 🪶 Python sugar: `g.ask(...)` and `g.write(...)`
@@ -176,10 +176,10 @@ GraphStore(reader=slow_local_llm, reader_timeout_seconds=120.0)
 Two thin wrappers for agent apps that don't want to hand-write DSL:
 
 ```python
-from graphstore import GraphStore
-from graphstore.bonsai_ingestor import BonsaiIngestor
+from supergraph import SuperGraph
+from supergraph.bonsai_ingestor import BonsaiIngestor
 
-g = GraphStore(
+g = SuperGraph(
     path="./store",
     reader=my_reader,
     ingestor=lambda gs: BonsaiIngestor(gs=gs),     # auto-fetches Bonsai GGUF on first use
@@ -193,7 +193,7 @@ print(answer.data["answer"], answer.data["cited_slots"])
 ```
 
 - **`g.ask(question, *, limit=None, using=None) -> Result`** — equivalent to `execute('ANSWER "..." [LIMIT n] [USING "name"]')` with quote/backslash escaping handled. Requires a `reader=` callable.
-- **`g.write(text, *, msg_id, session_id="default", role="user", dry_run=False)`** — NL turn through the configured `ingestor=` factory. The factory is called lazily on first invocation so the ingestor receives a fully-initialised `GraphStore`. Without the factory, `write()` raises with a copy-pasteable example.
+- **`g.write(text, *, msg_id, session_id="default", role="user", dry_run=False)`** — NL turn through the configured `ingestor=` factory. The factory is called lazily on first invocation so the ingestor receives a fully-initialised `SuperGraph`. Without the factory, `write()` raises with a copy-pasteable example.
 
 For graph-aware retrieval (`@REMEMBER`/`@SIMILAR`/`@LEXICAL`/`@RECALL`/`@PATH`), drive the ingestor directly via `g.write(question, msg_id=..., dry_run=True)` and inspect the synthesized DSL — the question-shape routing lives in the Bonsai prompt.
 
@@ -202,7 +202,7 @@ For graph-aware retrieval (`@REMEMBER`/`@SIMILAR`/`@LEXICAL`/`@RECALL`/`@PATH`),
 Every DSL verb has a typed function. Same grammar, IDE autocomplete, injection-safe.
 
 ```python
-from graphstore import q, F, Time
+from supergraph import q, F, Time
 
 q.create_node("mem:paris", kind="memory",
               document="Paris is the capital of France.").execute(g)
@@ -221,7 +221,7 @@ Full reference: [Query builder](website/docs/query-builder.md).
 
 ## 📊 Benchmarks
 
-**LongMemEval-S**, 500 records, Jina v5 Small 1024d, Kaggle T4 GPU, 2026-04-19. Public kernel: [kaggle.com/code/superkaiii/graphstore-jina-v5-small](https://www.kaggle.com/code/superkaiii/graphstore-jina-v5-small).
+**LongMemEval-S**, 500 records, Jina v5 Small 1024d, Kaggle T4 GPU, 2026-04-19. Public kernel: [kaggle.com/code/superkaiii/supergraph-jina-v5-small](https://www.kaggle.com/code/superkaiii/supergraph-jina-v5-small).
 
 | Overall | knowledge-update | single-session-assistant | single-session-user | multi-session | temporal | preference |
 |---|---|---|---|---|---|---|
@@ -235,37 +235,37 @@ Full methodology: [Benchmarks](website/docs/benchmarks/overview.md).
 
 ## ⚡ GPU offload (opt-in, off by default)
 
-graphstore never grabs a GPU implicitly. Every `*_gpu_layers` default is 0 (CPU). To opt in, install `[gpu]` (and a CUDA-built `llama-cpp-python` wheel for Bonsai/embedder/reranker) and call `gpu.setup()`:
+supergraph never grabs a GPU implicitly. Every `*_gpu_layers` default is 0 (CPU). To opt in, install `[gpu]` (and a CUDA-built `llama-cpp-python` wheel for Bonsai/embedder/reranker) and call `gpu.setup()`:
 
 ```python
-from graphstore import gpu
+from supergraph import gpu
 status = gpu.setup()
 print(status.ready, status.provider, status.device_name, status.error)
 ```
 
-`gpu.setup()` is idempotent and does the dirty work: discovers any `nvidia-*-cu12` pip wheels under `site-packages`, ctypes-preloads their `.so` files in dependency order so `LD_LIBRARY_PATH` doesn't have to be set externally, then probes onnxruntime + llama-cpp-python CUDA support. On success it surfaces `GRAPHSTORE_GPU=1` so the existing compute_profile gate flips automatically. Failure is structured (`status.error`) and falls back to CPU silently.
+`gpu.setup()` is idempotent and does the dirty work: discovers any `nvidia-*-cu12` pip wheels under `site-packages`, ctypes-preloads their `.so` files in dependency order so `LD_LIBRARY_PATH` doesn't have to be set externally, then probes onnxruntime + llama-cpp-python CUDA support. On success it surfaces `SUPERGRAPH_GPU=1` so the existing compute_profile gate flips automatically. Failure is structured (`status.error`) and falls back to CPU silently.
 
 For per-component control, pass the explicit kwargs (CPU stays the default):
 
 ```python
-GraphStore(path="./brain", gpu_layers=-1, reranker_gpu_layers=-1)
+SuperGraph(path="./brain", gpu_layers=-1, reranker_gpu_layers=-1)
 BonsaiIngestor(model_path=..., n_gpu_layers=-1)
 ```
 
 ## ✨ Pro mode
 
-`pip install 'graphstore[pro]'` bundles ingest + vision + audio + embedders-extra + gpu plus huggingface-hub / tokenizers / onnxruntime. Pair it with a one-time calibration to get spec-driven validation and a calibrated Bonsai ingestor without writing the device-detection / sizing / fallback glue yourself.
+`pip install 'supergraph[pro]'` bundles ingest + vision + audio + embedders-extra + gpu plus huggingface-hub / tokenizers / onnxruntime. Pair it with a one-time calibration to get spec-driven validation and a calibrated Bonsai ingestor without writing the device-detection / sizing / fallback glue yourself.
 
 ```bash
-pip install 'graphstore[pro]'
-graphstore pro setup        # download every component, probe each on this host
-graphstore pro status       # inspect host + spec + resolved knobs
+pip install 'supergraph[pro]'
+supergraph pro setup        # download every component, probe each on this host
+supergraph pro status       # inspect host + spec + resolved knobs
 ```
 
 ```python
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
-gs = GraphStore(path="./brain", profile="pro")
+gs = SuperGraph(path="./brain", profile="pro")
 
 # Resolver caught every shortfall up-front (extras missing, calibration
 # stale, RAM/VRAM short). If we got here, the spec runs.
@@ -289,15 +289,15 @@ docker compose up -d                              # builds + starts on :7200
 
 # Pro GPU image (~5.2 GB slim, includes pre-pulled Bonsai/jina/tinybert weights)
 docker compose --profile pro up -d                # requires nvidia-container-toolkit
-docker compose --profile pro run --rm graphstore-pro graphstore pro setup   # one-time calibration
+docker compose --profile pro run --rm supergraph-pro supergraph pro setup   # one-time calibration
 ```
 
 The Pro image is a single-stage `python:3.12-slim` + pip-delivered nvidia CUDA wheels (cu12 runtime + cuDNN 9 + cuBLAS) + GPU-built `llama-cpp-python`. All install + symbol-strip + execution-provider prune happens in one RUN to avoid the layer-overhead bug where a later `strip` adds duplicate copies on top of originals. Set `--build-arg SKIP_MODEL_PREFETCH=1` for a ~3.5 GB image that downloads models on first use instead.
 
-The entrypoint auto-generates an auth token on first boot and writes it to `/data/.auth_token` (printed to logs). Use it as `Authorization: Bearer <token>` on every `/api/*` call. To pin a fixed token set `GRAPHSTORE_AUTH_TOKEN` in the environment; to disable auth on a private network set `GRAPHSTORE_ALLOW_UNAUTH_BIND=1`.
+The entrypoint auto-generates an auth token on first boot and writes it to `/data/.auth_token` (printed to logs). Use it as `Authorization: Bearer <token>` on every `/api/*` call. To pin a fixed token set `SUPERGRAPH_AUTH_TOKEN` in the environment; to disable auth on a private network set `SUPERGRAPH_ALLOW_UNAUTH_BIND=1`.
 
 ```bash
-TOKEN=$(docker exec graphstore cat /data/.auth_token)
+TOKEN=$(docker exec supergraph cat /data/.auth_token)
 curl -s -X POST http://127.0.0.1:7200/api/execute \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
@@ -309,29 +309,29 @@ Resource limits in `docker-compose.yml` cap each container at 8 CPUs / 16 GB RAM
 
 ## 🔌 MCP server (agentic memory)
 
-graphstore ships a Model Context Protocol server that exposes the store as agent-callable tools (Claude Desktop, Cursor, any MCP-aware client). No playground HTTP server required - the server holds an in-process `GraphStore()` and translates typed tool calls into DSL.
+supergraph ships a Model Context Protocol server that exposes the store as agent-callable tools (Claude Desktop, Cursor, any MCP-aware client). No playground HTTP server required - the server holds an in-process `SuperGraph()` and translates typed tool calls into DSL.
 
 ```bash
-pip install 'graphstore[mcp]'   # adds the mcp Python SDK
-graphstore-mcp                  # stdio server, ready for Claude Desktop
+pip install 'supergraph[mcp]'   # adds the mcp Python SDK
+supergraph-mcp                  # stdio server, ready for Claude Desktop
 ```
 
-Tools exposed: `gs_remember(text)`, `gs_remember_batch(texts)`, `gs_search(query)` (3-signal fusion), `gs_recall(node_id)`, `gs_lexical(query)`, `gs_similar(text)`, `gs_traverse(from_id)`, `gs_answer(query)` (RAG via Bonsai in Pro mode), `gs_count_nodes()`, plus `gs_execute(dsl)` as a raw-DSL escape hatch. Errors return structured `{"error": "..."}` instead of crashing the transport.
+Tools exposed: `gs_remember(text)`, `gs_remember_batch(texts)`, `sg_search(query)` (3-signal fusion), `gs_recall(node_id)`, `gs_lexical(query)`, `gs_similar(text)`, `gs_traverse(from_id)`, `sg_answer(query)` (RAG via Bonsai in Pro mode), `gs_count_nodes()`, plus `sg_execute(dsl)` as a raw-DSL escape hatch. Errors return structured `{"error": "..."}` instead of crashing the transport.
 
 Claude Desktop config snippet (see `tools/mcp/claude_desktop_config.example.json`):
 
 ```json
 {
   "mcpServers": {
-    "graphstore": {
-      "command": "graphstore-mcp",
-      "env": { "GRAPHSTORE_DB_PATH": "/path/to/graphstore-agent.db" }
+    "supergraph": {
+      "command": "supergraph-mcp",
+      "env": { "SUPERGRAPH_DB_PATH": "/path/to/supergraph-agent.db" }
     }
   }
 }
 ```
 
-For Pro mode (Bonsai LLM + Jina + NER), add `"GRAPHSTORE_PROFILE": "pro"`. Set `GRAPHSTORE_URL=http://host:7200` to forward calls to a shared remote playground instead of running in-process.
+For Pro mode (Bonsai LLM + Jina + NER), add `"SUPERGRAPH_PROFILE": "pro"`. Set `SUPERGRAPH_URL=http://host:7200` to forward calls to a shared remote playground instead of running in-process.
 
 ## 🎯 Scope
 
@@ -344,8 +344,8 @@ For Pro mode (Bonsai LLM + Jina + NER), add `"GRAPHSTORE_PROFILE": "pro"`. Set `
 ## 🛠️  Development
 
 ```bash
-git clone https://github.com/orkait/graphstore.git
-cd graphstore
+git clone https://github.com/orkait/supergraph.git
+cd supergraph
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,ingest,vision,embedders-extra,playground]"
 pytest

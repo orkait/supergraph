@@ -1,4 +1,4 @@
-"""End-to-end: build Query via builder, run on real GraphStore, verify result.
+"""End-to-end: build Query via builder, run on real SuperGraph, verify result.
 
 Catches bugs the parser-only roundtrip misses: executor dispatch,
 handler-level argument coercion, result shape, semantic correctness.
@@ -9,20 +9,20 @@ import tempfile
 
 import pytest
 
-from graphstore import GraphStore, q, F, P, agg, Time, EvolveWhen, EvolveThen
+from supergraph import SuperGraph, q, F, P, agg, Time, EvolveWhen, EvolveThen
 
 
 @pytest.fixture
 def gs():
     with tempfile.TemporaryDirectory() as td:
-        g = GraphStore(path=f"{td}/db")
+        g = SuperGraph(path=f"{td}/db")
         yield g
         g.close()
 
 
 @pytest.fixture
 def gs_mem():
-    g = GraphStore(path=None)
+    g = SuperGraph(path=None)
     yield g
     g.close()
 

@@ -1,4 +1,4 @@
-"""Tests for graphstore.pro_probe: probe registry, orchestrator,
+"""Tests for supergraph.pro_probe: probe registry, orchestrator,
 helpers. Real model probes are slow + need network; those are smoke
 covered by tests/test_pro_probe_live.py (skipped by default).
 """
@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from graphstore import pro_probe
-from graphstore.pro import (
+from supergraph import pro_probe
+from supergraph.pro import (
     CalibrationCache, CalibrationEntry, HostSnapshot, ProSpec,
 )
 
@@ -288,32 +288,32 @@ def test_probe_lazy_import_symbols_exist():
     there only surfaces at live `pro setup`, not in unit tests. Assert the
     symbols the jina embedder + reranker probes depend on exist - regression
     guard for the stale-import bugs (get_install_dir / LlamaCppReranker / rerank)."""
-    from graphstore.registry.installer import (  # noqa: F401
+    from supergraph.registry.installer import (  # noqa: F401
         install_embedder,
         load_installed_embedder,
     )
-    from graphstore.embedding.reranker import GGUFReranker
+    from supergraph.embedding.reranker import GGUFReranker
 
     # JinaV3RerankerProbe.measure() calls reranker.score(query, documents)
     assert hasattr(GGUFReranker, "score")
 
 
 def test_all_probe_lazy_symbols_resolve():
-    """Static guard for the probe lazy-import bug class: every graphstore symbol
+    """Static guard for the probe lazy-import bug class: every supergraph symbol
     a probe imports inside download()/measure(), or calls as <module>.<attr>, must
     exist. In-method imports hide renames from normal tests until live `pro setup`.
     Caught: jina get_install_dir / LlamaCppReranker / .rerank() and vision pull_model.
     Skips modules whose import fails on an ABSENT OPTIONAL DEP (not a stale symbol)."""
     import ast
     import importlib
-    import graphstore.pro_probe as pp
+    import supergraph.pro_probe as pp
 
     tree = ast.parse(open(pp.__file__).read())
     problems = []
     alias_to_mod = {}
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("graphstore"):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("supergraph"):
             try:
                 mod = importlib.import_module(node.module)
             except ImportError:

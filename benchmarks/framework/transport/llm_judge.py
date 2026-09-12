@@ -17,7 +17,7 @@ def llm_call(prompt: str, config: dict | None = None, temperature: float = 0.0, 
     or the async ``LLMRunner.call_one`` / ``call_many``. The ``config``
     parameter is ignored (runner reads autoresearch config itself).
     """
-    from graphstore.llm_runner import get_shared_runner
+    from supergraph.llm_runner import get_shared_runner
     return get_shared_runner().call_sync(prompt, max_tokens=max_tokens, temperature=temperature)
 
 

@@ -1,4 +1,4 @@
-import { useGraphStore, type ResultEntry } from '@/hooks/useGraphStore'
+import { useSuperGraph, type ResultEntry } from '@/hooks/useSuperGraph'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -40,9 +40,9 @@ const HIGHLIGHTABLE_KINDS = new Set(['node', 'nodes', 'edges', 'path', 'paths', 
 
 function ResultCard({ entry }: { entry: ResultEntry }) {
   const [expanded, setExpanded] = useState(false)
-  const activeResultId = useGraphStore((s) => s.activeResultId)
-  const selectResult = useGraphStore((s) => s.selectResult)
-  const showElapsed = useGraphStore((s) => s.config.showElapsed)
+  const activeResultId = useSuperGraph((s) => s.activeResultId)
+  const selectResult = useSuperGraph((s) => s.selectResult)
+  const showElapsed = useSuperGraph((s) => s.config.showElapsed)
   const isError = entry.error != null
   const isActive = activeResultId === entry.id
   const result = entry.result
@@ -274,7 +274,7 @@ function ResultCard({ entry }: { entry: ResultEntry }) {
 }
 
 export function ResultsPanel() {
-  const results = useGraphStore((s) => s.results)
+  const results = useSuperGraph((s) => s.results)
   return (
     <div className="h-full flex flex-col bg-transparent">
       <div className="px-3 py-2 border-b flex-shrink-0 flex items-center bg-transparent">

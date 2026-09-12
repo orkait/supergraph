@@ -12,7 +12,7 @@ Usage:
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 
-from graphstore.registry.installer import install_embedder, set_cache_dir, is_installed
+from supergraph.registry.installer import install_embedder, set_cache_dir, is_installed
 
 MODELS_DIR = Path(__file__).parent.parent.parent / "models"
 MODELS_DIR.mkdir(exist_ok=True)

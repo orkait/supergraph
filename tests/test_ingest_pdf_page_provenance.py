@@ -19,7 +19,7 @@ def _make_pdf(path, pages_text: list[str]) -> None:
 
 
 def test_pdf_chunks_carry_page_number(tmp_path):
-    from graphstore import GraphStore
+    from supergraph import SuperGraph
     pdf = tmp_path / "three.pdf"
     _make_pdf(pdf, [
         "Alpha content on page one.",
@@ -27,7 +27,7 @@ def test_pdf_chunks_carry_page_number(tmp_path):
         "Gamma content on page three.",
     ])
 
-    gs = GraphStore(path=str(tmp_path / "gs"), embedder=None, ingest_root=str(tmp_path))
+    gs = SuperGraph(path=str(tmp_path / "gs"), embedder=None, ingest_root=str(tmp_path))
     try:
         r = gs.execute(f'INGEST "{pdf}" AS "doc:t"')
         assert r.data["parser"] == "pymupdf4llm"
@@ -47,12 +47,12 @@ def test_pdf_chunks_carry_page_number(tmp_path):
 
 def test_scanned_pdf_surfaces_warning(tmp_path):
     """PDFs with <50 chars per page should surface a warning in meta."""
-    from graphstore import GraphStore
+    from supergraph import SuperGraph
     pdf = tmp_path / "scanned.pdf"
     # Tiny text per page simulates a scanned PDF where OCR would be needed.
     _make_pdf(pdf, ["x", "x", "x", "x"])
 
-    gs = GraphStore(path=str(tmp_path / "gs2"), embedder=None, ingest_root=str(tmp_path))
+    gs = SuperGraph(path=str(tmp_path / "gs2"), embedder=None, ingest_root=str(tmp_path))
     try:
         r = gs.execute(f'INGEST "{pdf}" AS "doc:scan"')
         warnings = (r.meta or {}).get("warnings") or []

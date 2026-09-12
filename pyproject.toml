@@ -3,8 +3,8 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "graphstore"
-version = "0.6.0"
+name = "supergraph"
+version = "0.7.0"
 description = "Agentic brain DB - the cognitive layer for AI agents"
 readme = "README.md"
 license = "AGPL-3.0"
@@ -33,26 +33,26 @@ dependencies = [
     "msgspec>=0.18",
     "psutil>=5.9",
     "threadpoolctl>=3.1",
-    # Tiny, high-leverage. Bundling so that `pip install graphstore` delivers
+    # Tiny, high-leverage. Bundling so that `pip install supergraph` delivers
     # the agentic DB contract out of the box:
     #   - model2vec: default embedder (REMEMBER / RECALL / LEXICAL SEARCH),
     #     ~40 MB wheel + ~30 MB model downloaded on first use.
     #   - croniter: enables `SYS CRON` DSL (~100 KB).
     #   - pyyaml: enables `VAULT SYNC` + YAML frontmatter (~200 KB).
-    # Pass `embedder='none'` to GraphStore() if you want to skip embedder init.
+    # Pass `embedder='none'` to SuperGraph() if you want to skip embedder init.
     "model2vec>=0.4",
     "croniter>=6.0",
     "pyyaml>=6.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/orkait/graphstore"
-Repository = "https://github.com/orkait/graphstore"
-Issues = "https://github.com/orkait/graphstore/issues"
+Homepage = "https://github.com/orkait/supergraph"
+Repository = "https://github.com/orkait/supergraph"
+Issues = "https://github.com/orkait/supergraph/issues"
 
 [project.scripts]
-graphstore = "graphstore.cli:main"
-graphstore-mcp = "graphstore.mcp.server:main"
+supergraph = "supergraph.cli:main"
+supergraph-mcp = "supergraph.mcp.server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -88,7 +88,7 @@ ingest = [
 ]
 # Heavier ingest backend. docling adds ~1 GB (pulls torch). Install with
 # CPU-only torch when you do not need GPU:
-#     pip install 'graphstore[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu
+#     pip install 'supergraph[ingest-pro]' --extra-index-url https://download.pytorch.org/whl/cpu
 # VisionHandler uses stdlib urllib against any OpenAI-compatible endpoint -
 # no openai Python SDK dep needed.
 ingest-pro = [
@@ -99,15 +99,15 @@ playground = [
     "uvicorn>=0.20",
     "pydantic>=2.0",
 ]
-# MCP server: expose graphstore as agent-callable tools over the Model
-# Context Protocol. Required for tools/mcp/graphstore_mcp.py (used by
+# MCP server: expose supergraph as agent-callable tools over the Model
+# Context Protocol. Required for tools/mcp/supergraph_mcp.py (used by
 # Claude Desktop, Cursor, and other MCP-aware clients). The server runs
 # in-process by default - no playground HTTP server needed.
 mcp = [
     "mcp>=1.0",
 ]
 # Cloud NL->DSL ingestion: multi-provider LLM transport via litellm. Powers
-# CloudIngestor (graphstore.ingest.llm) and gs.ingest_nl / ingest_nl_stream.
+# CloudIngestor (supergraph.ingest.llm) and gs.ingest_nl / ingest_nl_stream.
 # Until the in-house compressed model is wired, cloud providers carry NL
 # ingestion (the local BonsaiIngestor manages only ~2 TPS on CPU).
 cloud = [
@@ -121,7 +121,7 @@ gpu = [
 ]
 # Vision: llama.cpp sidecar server for image understanding. Ships a local
 # OpenAI-compatible HTTP endpoint (SmolVLM-500M by default, ~400 MB GGUF
-# downloaded on first use). See `graphstore vision serve` CLI.
+# downloaded on first use). See `supergraph vision serve` CLI.
 vision = [
     "llama-cpp-python[server]>=0.3",
     "huggingface-hub>=0.24",
@@ -129,16 +129,16 @@ vision = [
 # Pro: aggregate of every extra needed to drive the slotted ProSpec
 # (jina-v5-small embedder + jina-v3 reranker + Bonsai NL->DSL ingest +
 # vision/audio sidecars + GPU). Adds NO new pip deps; this is a wrapper
-# so users can `pip install 'graphstore[pro]'` instead of stringing
-# extras together. See `graphstore pro check / setup / probe / status`
-# and src/graphstore/pro.py.
+# so users can `pip install 'supergraph[pro]'` instead of stringing
+# extras together. See `supergraph pro check / setup / probe / status`
+# and src/supergraph/pro.py.
 pro = [
-    "graphstore[ingest]",
-    "graphstore[vision]",
-    "graphstore[audio]",
-    "graphstore[embedders-extra]",
-    "graphstore[gpu]",
-    "graphstore[mcp]",
+    "supergraph[ingest]",
+    "supergraph[vision]",
+    "supergraph[audio]",
+    "supergraph[embedders-extra]",
+    "supergraph[gpu]",
+    "supergraph[mcp]",
     "tokenizers>=0.15",
     "onnxruntime>=1.17",
     "huggingface-hub>=0.24",
@@ -154,10 +154,10 @@ pro = [
 #   (cloud media replaces them), embedders-extra (llama-cpp / GGUF, CPU-slow),
 #   ingest-pro (docling pulls torch ~1 GB).
 cloud-cpu = [
-    "graphstore[cloud]",
-    "graphstore[ingest]",
-    "graphstore[playground]",
-    "graphstore[mcp]",
+    "supergraph[cloud]",
+    "supergraph[ingest]",
+    "supergraph[playground]",
+    "supergraph[mcp]",
     "onnxruntime>=1.17",
     "tokenizers>=0.15",
     "huggingface-hub>=0.24",
@@ -167,22 +167,22 @@ cloud-cpu = [
 # onnxruntime-gpu (dead without CUDA) + docling (torch ~1 GB) + local VLM/whisper
 # /4B-GGUF (CPU-slow). On Railway use [cloud-cpu] instead.
 all = [
-    "graphstore[pro]",
-    "graphstore[cloud]",
-    "graphstore[ingest-pro]",
-    "graphstore[playground]",
+    "supergraph[pro]",
+    "supergraph[cloud]",
+    "supergraph[ingest-pro]",
+    "supergraph[playground]",
 ]
 [tool.setuptools.package-dir]
 "" = "src"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["graphstore*"]
+include = ["supergraph*"]
 
 [tool.setuptools.package-data]
-"graphstore"       = ["py.typed", "*.txt"]
-"graphstore.query" = ["py.typed"]
-"graphstore.dsl"   = ["*.lark"]
+"supergraph"       = ["py.typed", "*.txt"]
+"supergraph.query" = ["py.typed"]
+"supergraph.dsl"   = ["*.lark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -192,25 +192,25 @@ testpaths = ["tests"]
 #
 # --dist loadgroup: respect @pytest.mark.xdist_group so modules that share
 # a module-scoped fixture (e.g. tests/test_e2e_real_embedder.py with a
-# persistent GraphStore across classes) stay on one worker. Default
+# persistent SuperGraph across classes) stay on one worker. Default
 # LoadScheduling ignored the marker and fragmented module state across
 # workers, breaking tests that depended on ingest state established in
 # an earlier test class in the same module.
 addopts = "-n 4 --timeout=60 --dist loadgroup"
 markers = [
     "needs_embedder: embedder test (model2vec is now core, kept for compat)",
-    "needs_fastembed: requires graphstore[embedders-extra] (fastembed)",
-    "needs_ingest: requires graphstore[ingest]",
+    "needs_fastembed: requires supergraph[embedders-extra] (fastembed)",
+    "needs_ingest: requires supergraph[ingest]",
     "needs_vault: vault test (pyyaml is now core, kept for compat)",
     "needs_scheduler: scheduler test (croniter is now core, kept for compat)",
-    "needs_playground: requires graphstore[playground]",
-    "needs_gpu: requires graphstore[gpu]",
-    "needs_vision: requires graphstore[vision]",
-    "needs_audio: requires graphstore[audio]",
+    "needs_playground: requires supergraph[playground]",
+    "needs_gpu: requires supergraph[gpu]",
+    "needs_vision: requires supergraph[vision]",
+    "needs_audio: requires supergraph[audio]",
 ]
 
 [tool.bumpversion]
-current_version = "0.1.0"
+current_version = "0.7.0"
 commit = true
 tag = true
 
@@ -220,7 +220,7 @@ search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
 
 [[tool.bumpversion.files]]
-filename = "src/graphstore/__init__.py"
+filename = "src/supergraph/__init__.py"
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'
 

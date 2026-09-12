@@ -1,8 +1,8 @@
-"""Tests for graphstore.strings.StringTable."""
+"""Tests for supergraph.strings.StringTable."""
 
 import pytest
 
-from graphstore.core.strings import StringTable
+from supergraph.core.strings import StringTable
 
 
 class TestIntern:

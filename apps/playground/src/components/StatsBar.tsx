@@ -1,9 +1,9 @@
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 
 export function StatsBar() {
-  const graph = useGraphStore((s) => s.graph)
-  const results = useGraphStore((s) => s.results)
-  const showElapsed = useGraphStore((s) => s.config.showElapsed)
+  const graph = useSuperGraph((s) => s.graph)
+  const results = useSuperGraph((s) => s.results)
+  const showElapsed = useSuperGraph((s) => s.config.showElapsed)
   const lastResult = results[0]
   const elapsed = lastResult?.result?.elapsed_us
   return (

@@ -1,7 +1,7 @@
 """Tests for VectorStore HNSW index."""
 import numpy as np
 import pytest
-from graphstore.vector.store import VectorStore
+from supergraph.vector.store import VectorStore
 
 
 class TestVectorStoreBasic:

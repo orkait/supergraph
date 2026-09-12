@@ -7,11 +7,11 @@ instance, so reset_memory() and lazy vector-store init propagate to
 every consumer via shared reference.
 """
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def test_reset_memory_propagates_to_all_components(tmp_path):
-    gs = GraphStore(path=str(tmp_path))
+    gs = SuperGraph(path=str(tmp_path))
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED name')
     gs.execute('CREATE NODE "n1" name = "alpha" kind = "item"')
     gs.execute('CREATE NODE "n2" name = "beta" kind = "item"')
@@ -41,7 +41,7 @@ def test_reset_memory_propagates_to_all_components(tmp_path):
 
 
 def test_lazy_vector_store_propagates_to_all_components(tmp_path):
-    gs = GraphStore(path=str(tmp_path), embedder=None)
+    gs = SuperGraph(path=str(tmp_path), embedder=None)
 
     assert gs._runtime.vector_store is None
     assert gs._executor._vector_store is None
@@ -62,7 +62,7 @@ def test_lazy_vector_store_propagates_to_all_components(tmp_path):
 
 
 def test_runtime_state_is_single_source_of_truth(tmp_path):
-    gs = GraphStore(path=str(tmp_path))
+    gs = SuperGraph(path=str(tmp_path))
 
     # Every component's _runtime attribute must be the SAME object,
     # not a copy - that's the whole invariant.
@@ -77,7 +77,7 @@ def test_runtime_state_is_single_source_of_truth(tmp_path):
 
 def test_rollback_vector_store_change_propagates(tmp_path):
     """SYS ROLLBACK can swap the vector store; runtime should carry the swap."""
-    gs = GraphStore(path=str(tmp_path))
+    gs = SuperGraph(path=str(tmp_path))
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED name')
     gs.execute(
         'CREATE NODE "v1" kind = "item" name = "alpha" VECTOR [0.1, 0.2, 0.3, 0.4]'

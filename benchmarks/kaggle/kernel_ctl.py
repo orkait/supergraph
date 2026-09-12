@@ -6,7 +6,7 @@ Usage:
     python kernel_ctl.py logs
     python kernel_ctl.py cancel
     python kernel_ctl.py run
-    python kernel_ctl.py run --kernel graphstore-pipeline-refactored
+    python kernel_ctl.py run --kernel supergraph-pipeline-refactored
 """
 
 import argparse
@@ -21,7 +21,7 @@ from kagglesdk.kernels.types.kernels_api_service import (
 )
 
 OWNER = "superkaiii"
-DEFAULT_KERNEL = "graphstore-jina-v5-small"
+DEFAULT_KERNEL = "supergraph-jina-v5-small"
 
 
 def get_client():

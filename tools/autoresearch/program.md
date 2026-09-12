@@ -38,7 +38,7 @@ Only import from this list:
 `functools`, `operator`, `enum`, `bisect`, `array`, `struct`, `abc`, `contextlib`
 
 ### Forbidden (auto-rejected if found)
-`graphstore`, `pytest`, `fastapi`, `uvicorn`, `starlette`, `sqlite3`, `httpx`,
+`supergraph`, `pytest`, `fastapi`, `uvicorn`, `starlette`, `sqlite3`, `httpx`,
 `httpcore`, `urllib3`, `urllib`, `http`, `logging`, `asyncio`, `multiprocessing`,
 `subprocess`, `socket`, `ssl`, `threading`, `os`, `sys`, `pathlib`, `tempfile`,
 `shutil`, `pickle`, `marshal`, `shelve`

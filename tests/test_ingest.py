@@ -1,7 +1,7 @@
 """Tests for ingestion protocol and chunker."""
 import pytest
-from graphstore.ingest.base import Chunk, IngestResult, Ingestor, ExtractedImage
-from graphstore.ingest.chunker import chunk_by_heading, chunk_by_paragraph, chunk_fixed, _make_summary
+from supergraph.ingest.base import Chunk, IngestResult, Ingestor, ExtractedImage
+from supergraph.ingest.chunker import chunk_by_heading, chunk_by_paragraph, chunk_fixed, _make_summary
 
 
 class TestMakeSummary:
@@ -106,43 +106,43 @@ class TestMarkItDownIngestor:
     def test_convert_text_file(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("Hello world\nThis is a test")
-        from graphstore.ingest.markitdown_ingestor import MarkItDownIngestor
+        from supergraph.ingest.markitdown_ingestor import MarkItDownIngestor
         ingestor = MarkItDownIngestor()
         result = ingestor.convert(str(f))
         assert "Hello" in result.markdown
         assert result.parser_used == "markitdown"
 
     def test_supported_extensions(self):
-        from graphstore.ingest.markitdown_ingestor import MarkItDownIngestor
+        from supergraph.ingest.markitdown_ingestor import MarkItDownIngestor
         assert "txt" in MarkItDownIngestor.supported_extensions
         assert "html" in MarkItDownIngestor.supported_extensions
 
 
 class TestRouter:
     def test_txt_routes_to_markitdown(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("notes.txt") == "markitdown"
 
     def test_pdf_routes_to_pymupdf4llm(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("report.pdf") == "pymupdf4llm"
 
     def test_docx_routes_to_markitdown(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("doc.docx") == "markitdown"
 
     def test_explicit_override(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("report.pdf", using="docling") == "docling"
 
     def test_unsupported_format_raises(self):
         import pytest
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         with pytest.raises(ValueError, match="Unsupported format"):
             select_ingestor("file.xyz")
 
     def test_list_ingestors(self):
-        from graphstore.ingest.router import list_ingestors
+        from supergraph.ingest.router import list_ingestors
         ingestors = list_ingestors()
         names = [i["name"] for i in ingestors]
         assert "markitdown" in names
@@ -164,47 +164,47 @@ class TestRouterDoclingExtensions:
         pytest.importorskip("docling")
 
     def test_tex_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("paper.tex") == "docling"
 
     def test_adoc_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("manual.adoc") == "docling"
 
     def test_tiff_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("scan.tiff") == "docling"
 
     def test_tif_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("scan.tif") == "docling"
 
     def test_bmp_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("image.bmp") == "docling"
 
     def test_m4a_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("audio.m4a") == "docling"
 
     def test_aac_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("audio.aac") == "docling"
 
     def test_mp4_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("video.mp4") == "docling"
 
     def test_avi_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("video.avi") == "docling"
 
     def test_mov_routes_to_docling(self):
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("video.mov") == "docling"
 
     def test_docling_ingestor_supported_extensions_complete(self):
-        from graphstore.ingest.docling_ingestor import DoclingIngestor
+        from supergraph.ingest.docling_ingestor import DoclingIngestor
         exts = set(DoclingIngestor.supported_extensions)
         assert "tex" in exts
         assert "adoc" in exts
@@ -215,7 +215,7 @@ class TestRouterDoclingExtensions:
 
     def test_existing_formats_unchanged(self):
         """Docling presence should NOT change routing for already-handled formats."""
-        from graphstore.ingest.router import select_ingestor
+        from supergraph.ingest.router import select_ingestor
         assert select_ingestor("report.pdf") == "pymupdf4llm"
         assert select_ingestor("doc.docx") == "markitdown"
         assert select_ingestor("notes.txt") == "markitdown"
@@ -223,7 +223,7 @@ class TestRouterDoclingExtensions:
     def test_ingest_text_file(self, tmp_path):
         f = tmp_path / "test.txt"
         f.write_text("# Hello\n\nWorld")
-        from graphstore.ingest.router import ingest_file
+        from supergraph.ingest.router import ingest_file
         result = ingest_file(str(f))
         assert "Hello" in result.markdown
 
@@ -231,15 +231,15 @@ class TestRouterDoclingExtensions:
 class TestVisionHandler:
     def test_init_with_explicit_base_url(self):
         """VisionHandler with an explicit base_url skips sidecar resolution."""
-        from graphstore.ingest.vision import VisionHandler
+        from supergraph.ingest.vision import VisionHandler
         vh = VisionHandler(base_url="http://example.invalid:9/v1")
         assert vh.model == "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf"
         assert vh._base_url == "http://example.invalid:9/v1"
 
     def test_init_resolves_via_env(self, monkeypatch):
-        """GRAPHSTORE_VISION_URL env should short-circuit sidecar probing."""
-        from graphstore.ingest.vision import VisionHandler
-        monkeypatch.setenv("GRAPHSTORE_VISION_URL", "http://remote.invalid:1234/v1")
+        """SUPERGRAPH_VISION_URL env should short-circuit sidecar probing."""
+        from supergraph.ingest.vision import VisionHandler
+        monkeypatch.setenv("SUPERGRAPH_VISION_URL", "http://remote.invalid:1234/v1")
         vh = VisionHandler()
         assert vh._base_url == "http://remote.invalid:1234/v1"
 
@@ -248,14 +248,14 @@ class TestVisionHandler:
 # INGEST DSL integration tests
 # ====================================================================
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 class TestIngestDSL:
     def test_ingest_text_file(self, tmp_path):
         f = tmp_path / "notes.txt"
         f.write_text("# Meeting Notes\n\nDiscussed Q3 results.\n\n## Action Items\n\nFollow up with Alice.")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}"')
         assert result.data["chunks"] >= 2
         assert result.data["parser"] in ("markitdown", "direct")
@@ -264,7 +264,7 @@ class TestIngestDSL:
     def test_ingest_with_as_and_kind(self, tmp_path):
         f = tmp_path / "report.txt"
         f.write_text("# Report\nContent here")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}" AS "doc:report" KIND "report"')
         assert result.data["doc_id"] == "doc:report"
         node = g.execute('NODE "doc:report"')
@@ -275,14 +275,14 @@ class TestIngestDSL:
     def test_ingest_creates_edges(self, tmp_path):
         f = tmp_path / "doc.txt"
         f.write_text("# Part 1\nContent\n\n# Part 2\nMore content")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:test"')
         edges = g.execute('EDGES FROM "doc:test"')
         assert len(edges.data) >= 2
         g.close()
 
     def test_node_with_document(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "n1" kind = "note" name = "test" DOCUMENT "Full text here"')
         node = g.execute('NODE "n1"')
         assert "_document" not in node.data
@@ -292,7 +292,7 @@ class TestIngestDSL:
 
     def test_ingest_nonexistent_raises(self, tmp_path):
         import pytest
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         with pytest.raises(Exception):
             g.execute('INGEST "/nonexistent/file.txt"')
         g.close()
@@ -301,7 +301,7 @@ class TestIngestDSL:
         import pytest
         f = tmp_path / "dup.txt"
         f.write_text("content")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:dup"')
         with pytest.raises(Exception):
             g.execute(f'INGEST "{f}" AS "doc:dup"')
@@ -310,7 +310,7 @@ class TestIngestDSL:
     def test_chunks_have_summaries(self, tmp_path):
         f = tmp_path / "doc.txt"
         f.write_text("# Section 1\nSome detailed content about something important.")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:sum"')
         nodes = g.execute('NODES WHERE kind = "chunk"')
         assert len(nodes.data) >= 1
@@ -320,7 +320,7 @@ class TestIngestDSL:
     def test_ingest_stores_document_in_docstore(self, tmp_path):
         f = tmp_path / "stored.txt"
         f.write_text("# Hello\nThis is the full document content.")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:stored"')
         # Verify the parent node's document is in the doc store
         node = g.execute('NODE "doc:stored" WITH DOCUMENT')
@@ -332,7 +332,7 @@ class TestIngestDSL:
         """INGEST without AS should generate a doc:hash ID."""
         f = tmp_path / "auto.txt"
         f.write_text("# Auto ID\nContent")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}"')
         assert result.data["doc_id"].startswith("doc:")
         assert len(result.data["doc_id"]) > 4  # doc: + hash
@@ -350,7 +350,7 @@ class TestIngestSecurity:
         outside_file = tmp_path / "secret.txt"
         outside_file.write_text("secret data")
 
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None, ingest_root=str(allowed_dir))
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None, ingest_root=str(allowed_dir))
 
         # Safe path works
         result = g.execute(f'INGEST "{allowed_dir / "safe.txt"}" AS "doc:safe"')
@@ -370,7 +370,7 @@ class TestIngestSecurity:
         """Without ingest_root, INGEST works on any valid path (library mode)."""
         f = tmp_path / "anywhere.txt"
         f.write_text("content")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute(f'INGEST "{f}" AS "doc:any"')
         assert result.data["chunks"] >= 1
         g.close()

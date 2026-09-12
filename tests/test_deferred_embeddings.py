@@ -6,8 +6,8 @@ dominates. These tests verify both correctness (same vectors as the immediate
 path) and that batching actually happens.
 """
 import numpy as np
-from graphstore import GraphStore
-from graphstore.embedding.base import Embedder
+from supergraph import SuperGraph
+from supergraph.embedding.base import Embedder
 
 
 class CountingEmbedder(Embedder):
@@ -49,7 +49,7 @@ def test_deferred_mode_batches_create_node():
     """Within deferred_embeddings, N CREATE NODEs should trigger 1 batched embed call,
     not N calls. Each node produces 2 embeddings (1 sentence + 1 parent) for short text."""
     emb = CountingEmbedder()
-    gs = GraphStore(embedder=emb)
+    gs = SuperGraph(embedder=emb)
     gs.execute('SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text')
 
     with gs.deferred_embeddings(batch_size=64):
@@ -65,7 +65,7 @@ def test_deferred_mode_batches_create_node():
 def test_deferred_mode_auto_flushes_when_batch_size_reached():
     """Deferred mode should auto-flush when the pending queue hits batch_size."""
     emb = CountingEmbedder()
-    gs = GraphStore(embedder=emb)
+    gs = SuperGraph(embedder=emb)
     gs.execute('SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text')
 
     with gs.deferred_embeddings(batch_size=4):
@@ -85,7 +85,7 @@ def test_deferred_mode_auto_flushes_when_batch_size_reached():
 
 def test_deferred_mode_retrieval_returns_correct_sentences():
     """After deferred ingestion, SIMILAR TO queries should return the right sentence nodes."""
-    gs = GraphStore(embedder=CountingEmbedder())
+    gs = SuperGraph(embedder=CountingEmbedder())
     gs.execute('SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text')
     with gs.deferred_embeddings(batch_size=8):
         for i in range(6):
@@ -111,7 +111,7 @@ def test_deferred_mode_retrieval_returns_correct_sentences():
 
 def test_deferred_mode_restores_prior_state_on_exception():
     """If an exception occurs inside deferred_embeddings, the defer flag must be reset."""
-    gs = GraphStore(embedder=CountingEmbedder())
+    gs = SuperGraph(embedder=CountingEmbedder())
     gs.execute('SYS REGISTER NODE KIND "doc" REQUIRED text:string EMBED text')
 
     assert gs._executor._defer_embeddings is False

@@ -3,13 +3,13 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from benchmarks.framework.adapters.graphstore_ import GraphStoreAdapter
+from benchmarks.framework.adapters.supergraph_ import SuperGraphAdapter
 from benchmarks.framework.adapters.base import QueryContext
 from benchmarks.framework.runners import ratchet_recall, ratchet_test
 
 
 def test_adapter_routes_categories_when_no_explicit_strategy():
-    adapter = GraphStoreAdapter(config={})
+    adapter = SuperGraphAdapter(config={})
 
     assert adapter._resolve_strategy("multi-session") == "full"
     assert adapter._resolve_strategy("temporal-reasoning") == "full"
@@ -21,7 +21,7 @@ def test_adapter_routes_categories_when_no_explicit_strategy():
 
 
 def test_adapter_passes_temporal_anchor_to_dispatch():
-    adapter = GraphStoreAdapter(config={})
+    adapter = SuperGraphAdapter(config={})
     adapter._gs = SimpleNamespace()  # truthy, no internal access needed
 
     seen = {}
@@ -42,7 +42,7 @@ def test_adapter_passes_temporal_anchor_to_dispatch():
 
 
 def test_adapter_ingest_done_runs_consolidation_when_enabled():
-    adapter = GraphStoreAdapter(config={"enable_consolidation": True})
+    adapter = SuperGraphAdapter(config={"enable_consolidation": True})
     execute = Mock()
     adapter._gs = SimpleNamespace(execute=execute)
 
@@ -51,7 +51,7 @@ def test_adapter_ingest_done_runs_consolidation_when_enabled():
 
 
 def test_adapter_ingest_done_skips_consolidation_by_default():
-    adapter = GraphStoreAdapter(config={})
+    adapter = SuperGraphAdapter(config={})
     execute = Mock()
     adapter._gs = SimpleNamespace(execute=execute)
 

@@ -1,4 +1,4 @@
-from graphstore.ingest.llm.resolve import (
+from supergraph.ingest.llm.resolve import (
     resolve_model, build_provider_chain, DEFAULT_FREE_FIRST_CHAIN,
 )
 

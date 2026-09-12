@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from graphstore.algos.materialization import materialize_bulk
-from graphstore.core.types import Result
+from supergraph.algos.materialization import materialize_bulk
+from supergraph.core.types import Result
 
 
 def _build_case(node_count: int, batch_size: int) -> dict[str, object]:

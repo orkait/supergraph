@@ -1,6 +1,6 @@
 import numpy as np
 
-from graphstore.algos.eviction import needs_optimization, rank_evictable_slots
+from supergraph.algos.eviction import needs_optimization, rank_evictable_slots
 
 
 def test_needs_optimization_returns_expected_ops():

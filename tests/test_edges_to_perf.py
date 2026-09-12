@@ -1,5 +1,5 @@
 """Test that get_edges_to uses CSR transpose, not O(E) scan."""
-from graphstore.core.store import CoreStore
+from supergraph.core.store import CoreStore
 
 
 def test_get_edges_to_uses_transpose():

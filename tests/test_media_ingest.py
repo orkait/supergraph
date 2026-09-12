@@ -1,10 +1,10 @@
-"""graphstore owns multimodal understanding: media bytes -> text -> stored.
+"""supergraph owns multimodal understanding: media bytes -> text -> stored.
 Covers all required modalities: image / audio / video / pdf."""
 import base64
 
 import pytest
 
-import graphstore.ingest.media as media
+import supergraph.ingest.media as media
 
 
 def test_image_builds_image_part_with_vision_models():
@@ -53,7 +53,7 @@ def test_ingest_media_endpoint_understands_and_stores(monkeypatch):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    import graphstore.server as server
+    import supergraph.server as server
     monkeypatch.setattr(media, "understand_media",
                         lambda data, mime, **kw: "a red bicycle leaning on a brick wall")
     server._store = None
@@ -71,7 +71,7 @@ def test_ingest_media_endpoint_rejects_bad_base64(monkeypatch):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 
-    import graphstore.server as server
+    import supergraph.server as server
     server._store = None
     with TestClient(server.app) as client:
         r = client.post("/api/ingest-media", json={"id": "m:2", "mime": "image/jpeg", "data_b64": "!!!notb64"})

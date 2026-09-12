@@ -2,7 +2,7 @@
 """Pre-push Kaggle validation. Runs locally against real models.
 
 Tests:
-  1. Core imports (graphstore, onnxruntime, etc.)
+  1. Core imports (supergraph, onnxruntime, etc.)
   2. Circular import check
   3. Model path structure (jina + tinybert)
   4. Benchmark pipeline - 1 record, CPU mode
@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 JINA_DIR = ROOT / "jina-small"
 NER_DIR = ROOT / "models" / "tinybert-ner"
 FIXTURE = ROOT / "tests" / "fixtures" / "benchmarks" / "longmemeval_sample.json"
-CONFIG = ROOT / "benchmarks" / "graphstore.json"
+CONFIG = ROOT / "benchmarks" / "supergraph.json"
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"
@@ -42,10 +42,10 @@ def check(label, fn):
 def validate_imports():
     print("\n[1] Core imports")
     ok = True
-    ok &= check("graphstore package", lambda: __import__("graphstore"))
-    ok &= check("graphstore.store.GraphStore", lambda: __import__("graphstore.store", fromlist=["GraphStore"]))
-    ok &= check("graphstore.ingest.entity_extract", lambda: __import__("graphstore.ingest.entity_extract"))
-    ok &= check("graphstore.registry.installer", lambda: __import__("graphstore.registry.installer"))
+    ok &= check("supergraph package", lambda: __import__("supergraph"))
+    ok &= check("supergraph.store.SuperGraph", lambda: __import__("supergraph.store", fromlist=["SuperGraph"]))
+    ok &= check("supergraph.ingest.entity_extract", lambda: __import__("supergraph.ingest.entity_extract"))
+    ok &= check("supergraph.registry.installer", lambda: __import__("supergraph.registry.installer"))
     ok &= check("benchmarks.framework.docker_runner", lambda: __import__("benchmarks.framework.docker_runner"))
     ok &= check("onnxruntime", lambda: __import__("onnxruntime"))
     ok &= check("huggingface_hub", lambda: __import__("huggingface_hub"))
@@ -57,8 +57,8 @@ def validate_no_circular():
     import importlib, sys
     mods_before = set(sys.modules.keys())
     ok = True
-    for mod in ["graphstore", "graphstore.store", "graphstore.registry.installer",
-                "graphstore.ingest.entity_extract"]:
+    for mod in ["supergraph", "supergraph.store", "supergraph.registry.installer",
+                "supergraph.ingest.entity_extract"]:
         try:
             if mod in sys.modules:
                 del sys.modules[mod]
@@ -114,14 +114,14 @@ def validate_mini_run():
     json.dump(fixture_data[:1], tmpdata)
     tmpdata.close()
 
-    os.environ["GRAPHSTORE_CONFIG"] = str(CONFIG)
+    os.environ["SUPERGRAPH_CONFIG"] = str(CONFIG)
     out_dir = Path(tempfile.mkdtemp(prefix="kg_validate_"))
 
     sys.path.insert(0, str(ROOT / "src"))
     saved_argv = sys.argv[:]
     sys.argv = [
         "bench",
-        "--system", "graphstore",
+        "--system", "supergraph",
         "--dataset", "longmemeval",
         "--data-path", tmpdata.name,
         "--variant", "s",

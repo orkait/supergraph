@@ -9,8 +9,8 @@ from typing import Any
 # Keep the module import-safe without the SDK so tests that just exercise
 # chunking helpers don't require an optional dep.
 
-from graphstore import GraphStore
-from graphstore.registry.installer import load_installed_embedder, set_cache_dir
+from supergraph import SuperGraph
+from supergraph.registry.installer import load_installed_embedder, set_cache_dir
 
 
 ANSWER_GENERATION_FOR_RAG = """
@@ -139,9 +139,9 @@ def _build_embedder(spec: str, cache_dir: str | None):
     return load_installed_embedder(model, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
 
-def _create_graphstore(chunks: list[dict[str, Any]], embedder_spec: str, cache_dir: str | None, ceiling_mb: int) -> GraphStore:
+def _create_supergraph(chunks: list[dict[str, Any]], embedder_spec: str, cache_dir: str | None, ceiling_mb: int) -> SuperGraph:
     embedder = _build_embedder(embedder_spec, cache_dir)
-    gs = GraphStore(path=None, embedder=embedder, ceiling_mb=ceiling_mb)
+    gs = SuperGraph(path=None, embedder=embedder, ceiling_mb=ceiling_mb)
     gs.execute(
         'SYS REGISTER NODE KIND "beam_chunk" '
         'REQUIRED text:string OPTIONAL batch_number:int, turn_number:int, pair_number:int EMBED text'
@@ -161,7 +161,7 @@ def _create_graphstore(chunks: list[dict[str, Any]], embedder_spec: str, cache_d
     return gs
 
 
-def _retrieve_context(gs: GraphStore, question: str, k: int, max_chars: int = 100000) -> str:
+def _retrieve_context(gs: SuperGraph, question: str, k: int, max_chars: int = 100000) -> str:
     q = question.replace('"', '\\"')
     result = gs.execute(f'REMEMBER "{q}" LIMIT {k} WHERE kind = "beam_chunk"')
     parts: list[str] = []
@@ -195,14 +195,14 @@ def run_chat(
     probing_questions = json.loads(Path(probing_file).read_text())
 
     chunks = create_chunking(messages, retrieval_method=retrieval_method)
-    gs = _create_graphstore(chunks, embedder, embedder_cache_dir, ceiling_mb)
+    gs = _create_supergraph(chunks, embedder, embedder_cache_dir, ceiling_mb)
     client = _load_reader(reader_model_url, reader_model_name, reader_model_api_key)
     answers: dict[tuple[str, int], str] = {}
     try:
         for key, questions in probing_questions.items():
-            print(f'[beam_graphstore] section={key} n={len(questions)}')
+            print(f'[beam_supergraph] section={key} n={len(questions)}')
             for index, question in enumerate(questions):
-                print(f'[beam_graphstore] q {key}[{index}]')
+                print(f'[beam_supergraph] q {key}[{index}]')
                 context = _retrieve_context(gs, question["question"], k=k)
                 answers[(key, index)] = _answer_question(
                     client,
@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reader-model-name", required=True)
     parser.add_argument("--reader-model-url", default=None)
     parser.add_argument("--reader-model-api-key", default=None)
-    parser.add_argument("--result-file-name", default="graphstore_beam_answers.json")
+    parser.add_argument("--result-file-name", default="supergraph_beam_answers.json")
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--ceiling-mb", type=int, default=1024)
     args = parser.parse_args(argv)

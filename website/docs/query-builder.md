@@ -5,14 +5,14 @@ sidebar_position: 4
 
 # Query builder
 
-Typed, composable Python API for every verb in the graphstore DSL.
+Typed, composable Python API for every verb in the supergraph DSL.
 
 Ships in v0.3.0. Grammar-locked - every builder output is verified to parse. 100% DSL coverage (87 verbs across read / write / SYS / vault / cron / evolve).
 
 ```python
-from graphstore import GraphStore, q, F
+from supergraph import SuperGraph, q, F
 
-gs = GraphStore(path="./brain")
+gs = SuperGraph(path="./brain")
 
 q.create_node("mem:1", kind="memory", topic="travel",
               document="Paris is the capital of France.").execute(gs)
@@ -23,7 +23,7 @@ q.recall("mem:1", depth=2, limit=20).execute(gs)
 
 q.nodes(where=F.eq("kind", "memory") & F.gt("importance", 0.5), limit=10).execute(gs)
 
-# Full retrieve + synthesize loop (needs GraphStore(reader=callable))
+# Full retrieve + synthesize loop (needs SuperGraph(reader=callable))
 q.answer("What European capitals have I seen?", limit=5).execute(gs)
 ```
 
@@ -41,14 +41,14 @@ plan.meta["signals"]      # full pipeline telemetry
 
 ## Retrieval + reader synthesis
 
-`q.answer(...)` runs `REMEMBER` internally, hands retrieved passages + question to a user-supplied reader LLM, returns an answer with citations. graphstore ships no LLM dependency; the reader is a plain callable wired at `GraphStore(reader=...)` or `GraphStore(readers={"name": callable})`. Reader exceptions are captured in `data["error"]` rather than raised.
+`q.answer(...)` runs `REMEMBER` internally, hands retrieved passages + question to a user-supplied reader LLM, returns an answer with citations. supergraph ships no LLM dependency; the reader is a plain callable wired at `SuperGraph(reader=...)` or `SuperGraph(readers={"name": callable})`. Reader exceptions are captured in `data["error"]` rather than raised.
 
 ```python
 def my_reader(prompt: str, max_tokens: int = 1000) -> str:
     # call any LLM backend (openai, litellm, local, ...)
     ...
 
-gs = GraphStore(reader=my_reader)
+gs = SuperGraph(reader=my_reader)
 r = q.answer("What is the capital of France?", limit=3).execute(gs)
 
 r.data["answer"]         # "Paris"
@@ -60,7 +60,7 @@ r.meta["signals"]        # REMEMBER pipeline telemetry
 Use named readers to A/B two LLMs on the same query:
 
 ```python
-gs = GraphStore(readers={"fast": fast_llm, "careful": careful_llm})
+gs = SuperGraph(readers={"fast": fast_llm, "careful": careful_llm})
 q.answer("q", limit=3, using="fast").execute(gs)
 q.answer("q", limit=3, using="careful").execute(gs)
 ```
@@ -86,7 +86,7 @@ q.create_node(id, kind="memory", document=untrusted_text).execute(gs)
 ## Import surface
 
 ```python
-from graphstore import q, F, Query, register_verb
+from supergraph import q, F, Query, register_verb
 ```
 
 - `q` - namespace holding every built-in verb. `q.nodes(...)`, `q.sys.status()`, `q.vault.search(...)`.
@@ -242,7 +242,7 @@ Evolve: `q.sys.evolve.{rule(name, when, then, cooldown?, priority?), list(), sho
 Third-party packages can register custom verbs. v1 ships the registry but does not use it internally.
 
 ```python
-from graphstore.query import register_verb, Query
+from supergraph.query import register_verb, Query
 
 @register_verb("ts_downsample")
 def ts_downsample(series_id: str, *, window: str, agg: str) -> Query:
@@ -259,7 +259,7 @@ Attribute lookup on `q` falls through to the registry if the requested name is n
 
 ## Testing the builder in your code
 
-Every `Query` has `.dsl()`. Use it in your tests to assert the exact DSL your code emits without hitting a GraphStore:
+Every `Query` has `.dsl()`. Use it in your tests to assert the exact DSL your code emits without hitting a SuperGraph:
 
 ```python
 def test_my_adapter_emits_right_query():
@@ -270,5 +270,5 @@ def test_my_adapter_emits_right_query():
 
 ## Related
 
-- [Grammar source](https://github.com/orkait/graphstore/blob/main/src/graphstore/dsl/grammar.lark) - source of truth for DSL syntax.
+- [Grammar source](https://github.com/orkait/supergraph/blob/main/src/supergraph/dsl/grammar.lark) - source of truth for DSL syntax.
 - [DSL reference](./dsl/reference) - every verb in the DSL.

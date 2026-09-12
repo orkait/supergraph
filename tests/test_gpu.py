@@ -1,4 +1,4 @@
-"""Tests for graphstore.gpu auto-setup module.
+"""Tests for supergraph.gpu auto-setup module.
 
 Real CUDA bind cannot be tested here (CI runners are CPU-only and host
 configs vary). These tests cover the deterministic logic: lib discovery,
@@ -12,14 +12,14 @@ from unittest.mock import patch
 
 import pytest
 
-from graphstore import gpu
+from supergraph import gpu
 
 
 @pytest.fixture(autouse=True)
 def _reset_gpu_status(monkeypatch):
     """Each test starts from a fresh probe-not-yet-run state.
 
-    setup() sets ``GRAPHSTORE_GPU=1`` in the process env when the probe
+    setup() sets ``SUPERGRAPH_GPU=1`` in the process env when the probe
     succeeds (so compute_profile picks it up). monkeypatch keeps a
     snapshot of os.environ at entry; on teardown it restores the entry
     state. That prevents this test from polluting later tests in the
@@ -116,8 +116,8 @@ class TestLibDiscovery:
 
 
 class TestSetupSurfacesEnvFlag:
-    def test_setup_ready_sets_graphstore_gpu(self, monkeypatch):
-        monkeypatch.delenv("GRAPHSTORE_GPU", raising=False)
+    def test_setup_ready_sets_supergraph_gpu(self, monkeypatch):
+        monkeypatch.delenv("SUPERGRAPH_GPU", raising=False)
         with patch.object(gpu, "_find_nvidia_libs", return_value=[]), \
              patch.object(gpu, "_probe_onnxruntime",
                           return_value=(True, "CUDAExecutionProvider", None)), \
@@ -128,10 +128,10 @@ class TestSetupSurfacesEnvFlag:
         # Honors compute_profile gate: env var lit means downstream
         # _detect_gpu() classifies host as gpu-tier.
         import os
-        assert os.environ.get("GRAPHSTORE_GPU") == "1"
+        assert os.environ.get("SUPERGRAPH_GPU") == "1"
 
     def test_setup_failed_does_not_touch_env(self, monkeypatch):
-        monkeypatch.delenv("GRAPHSTORE_GPU", raising=False)
+        monkeypatch.delenv("SUPERGRAPH_GPU", raising=False)
         with patch.object(gpu, "_find_nvidia_libs", return_value=[]), \
              patch.object(gpu, "_probe_onnxruntime",
                           return_value=(False, None, "no ort")), \
@@ -139,7 +139,7 @@ class TestSetupSurfacesEnvFlag:
                           return_value=(False, None, "no llama-cpp")):
             gpu.setup()
         import os
-        assert "GRAPHSTORE_GPU" not in os.environ
+        assert "SUPERGRAPH_GPU" not in os.environ
 
 
 class TestPreloadBestEffort:

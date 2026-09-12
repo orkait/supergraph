@@ -1,11 +1,11 @@
 import pytest
 import numpy as np
-from graphstore import GraphStore
-from graphstore.core.compressed_edges import CompressedEdgeMatrix
+from supergraph import SuperGraph
+from supergraph.core.compressed_edges import CompressedEdgeMatrix
 
 def test_compressed_edge_storage():
     # 1. Initialize with compression enabled
-    gs = GraphStore(use_compression=True)
+    gs = SuperGraph(use_compression=True)
     
     # 2. Add some nodes and edges
     gs.execute('CREATE NODE "a" kind="person"')

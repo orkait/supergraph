@@ -30,7 +30,7 @@ def _is_mount(path: str) -> bool:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="docker_runner")
-    p.add_argument("--system", default="graphstore")
+    p.add_argument("--system", default="supergraph")
     p.add_argument("--dataset", default="longmemeval", choices=["longmemeval"])
     p.add_argument("--data-path", default="/data/longmemeval")
     p.add_argument("--variant", default="s", choices=["s", "m", "l"])
@@ -49,7 +49,7 @@ def main() -> int:
     p.add_argument("--embedder-model-dir", default=None,
                    help="local dir for onnx embedder (tokenizer.json + onnx/*.onnx)")
     p.add_argument("--embedder-cache-dir", default=None,
-                   help="graphstore registry cache root (for --embedder installed)")
+                   help="supergraph registry cache root (for --embedder installed)")
     p.add_argument("--embedder-output-dims", type=int, default=None)
     p.add_argument("--embedder-max-length", type=int, default=512)
     p.add_argument("--embedder-pooling", default="mean",
@@ -101,7 +101,7 @@ def main() -> int:
     p.add_argument("--recency-boost-k", type=int, default=None,
                    help="multiplier for recency-sorted results in knowledge-update")
 
-    # GraphStore engine config (mirrors graphstore.json, overrides config chain)
+    # SuperGraph engine config (mirrors supergraph.json, overrides config chain)
     p.add_argument("--remember-weights", default=None,
                    help="dsl.remember_weights - 3 or 4 comma-separated fusion weights (vec,bm25,recency[,graph])")
     p.add_argument("--search-oversample", type=int, default=None,
@@ -204,7 +204,7 @@ def main() -> int:
         "reranker_onnx_file": args.reranker_onnx_file,
         "reranker_projector_path": args.reranker_projector_path,
     }
-    # Only pass tuning knobs the user explicitly set (otherwise adapter/graphstore defaults apply)
+    # Only pass tuning knobs the user explicitly set (otherwise adapter/supergraph defaults apply)
     for attr, key in [
         ("retrieval_depth", "retrieval_depth"),
         ("recall_depth", "recall_depth"),

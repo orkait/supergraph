@@ -1,4 +1,4 @@
-# graphstore docker-compose.
+# supergraph docker-compose.
 #
 # Two profiles:
 #   default - CPU image, lightweight, fits 90% of deploys.
@@ -7,29 +7,29 @@
 # Usage:
 #   docker compose up -d                       # CPU service on :7200
 #   docker compose --profile pro up -d         # GPU service (requires nvidia-container-toolkit)
-#   docker compose --profile pro run --rm graphstore-pro graphstore pro setup
+#   docker compose --profile pro run --rm supergraph-pro supergraph pro setup
 #
 # Resource limits cap CPU and RAM per Docker Rule 12 - prevents a
-# graphstore container from saturating the host.
+# supergraph container from saturating the host.
 
 services:
-  graphstore:
+  supergraph:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        GRAPHSTORE_VERSION: "0.6.0"
-    image: graphstore:0.6.0
-    container_name: graphstore
+        SUPERGRAPH_VERSION: "0.6.0"
+    image: supergraph:0.6.0
+    container_name: supergraph
     restart: unless-stopped
     ports:
       - "7200:7200"
     volumes:
       - gs-data:/data
     environment:
-      GRAPHSTORE_DB_PATH: /data
-      GRAPHSTORE_HOST: 0.0.0.0
-      GRAPHSTORE_PORT: "7200"
+      SUPERGRAPH_DB_PATH: /data
+      SUPERGRAPH_HOST: 0.0.0.0
+      SUPERGRAPH_PORT: "7200"
     deploy:
       resources:
         limits:
@@ -42,26 +42,26 @@ services:
       retries: 3
       start_period: 10s
 
-  graphstore-pro:
+  supergraph-pro:
     profiles: ["pro"]
     build:
       context: .
       dockerfile: Dockerfile.pro
       args:
-        GRAPHSTORE_VERSION: "0.6.0"
-    image: graphstore-pro:0.6.0
-    container_name: graphstore-pro
+        SUPERGRAPH_VERSION: "0.6.0"
+    image: supergraph-pro:0.6.0
+    container_name: supergraph-pro
     restart: unless-stopped
     ports:
       - "7200:7200"
     volumes:
       - gs-data:/data
-      - gs-cache:/root/.cache/graphstore
+      - gs-cache:/root/.cache/supergraph
       - gs-hf-cache:/root/.cache/huggingface
     environment:
-      GRAPHSTORE_DB_PATH: /data
-      GRAPHSTORE_HOST: 0.0.0.0
-      GRAPHSTORE_PORT: "7200"
+      SUPERGRAPH_DB_PATH: /data
+      SUPERGRAPH_HOST: 0.0.0.0
+      SUPERGRAPH_PORT: "7200"
     deploy:
       resources:
         limits:

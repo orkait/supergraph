@@ -1,16 +1,16 @@
-"""Tests for graphstore.memory - memory estimator and ceiling enforcement."""
+"""Tests for supergraph.memory - memory estimator and ceiling enforcement."""
 
 import pytest
 
-from graphstore.core.errors import CeilingExceeded
-from graphstore.core.memory import (
+from supergraph.core.errors import CeilingExceeded
+from supergraph.core.memory import (
     BYTES_PER_EDGE,
     BYTES_PER_NODE,
     DEFAULT_CEILING_BYTES,
     check_ceiling,
     estimate,
 )
-from graphstore.core.store import CoreStore
+from supergraph.core.store import CoreStore
 
 
 # ── estimate() ───────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
-"""The Research facade: the lean 8-verb deep-research SDK over GraphStore."""
+"""The Research facade: the lean 8-verb deep-research SDK over SuperGraph."""
 import numpy as np
 import pytest
 
-from graphstore.embedding.base import Embedder
-from graphstore.research import Research
-from graphstore.store import GraphStore
+from supergraph.embedding.base import Embedder
+from supergraph.research import Research
+from supergraph.store import SuperGraph
 
 
 class StubEmbedder(Embedder):
@@ -33,7 +33,7 @@ class StubEmbedder(Embedder):
 
 @pytest.fixture
 def r():
-    return Research(GraphStore(embedder=StubEmbedder(), enable_sentence_nodes=False))
+    return Research(SuperGraph(embedder=StubEmbedder(), enable_sentence_nodes=False))
 
 
 def test_ingest_returns_id_and_search_finds_it(r):

@@ -1,9 +1,9 @@
 """Tests for the intelligent log layer: auto-tagging, trace binding, SYS LOG."""
 import logging
 import pytest
-from graphstore import GraphStore
-from graphstore.dsl.tagger import infer_tag, infer_phase
-from graphstore.dsl.parser import parse
+from supergraph import SuperGraph
+from supergraph.dsl.tagger import infer_tag, infer_phase
+from supergraph.dsl.parser import parse
 
 
 class TestAutoTagger:
@@ -40,7 +40,7 @@ class TestAutoTagger:
 
 class TestLogEnrichment:
     def test_log_entries_have_tags(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute('CREATE NODE "a" kind = "test" name = "Alice"')
         gs.execute('NODE "a"')
 
@@ -62,7 +62,7 @@ class TestLogEnrichment:
         gs.close()
 
     def test_trace_binding(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.bind_trace("session-42")
         gs.execute('CREATE NODE "traced" kind = "test"')
         gs.discard_trace()
@@ -81,7 +81,7 @@ class TestLogEnrichment:
         gs.close()
 
     def test_sys_log_since_filter(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"))
+        gs = SuperGraph(path=str(tmp_path / "db"))
         gs.execute('CREATE NODE "x" kind = "test"')
         result = gs.execute('SYS LOG SINCE "2020-01-01T00:00:00" LIMIT 10')
         assert result.kind == "log_entries"
@@ -89,7 +89,7 @@ class TestLogEnrichment:
         gs.close()
 
     def test_sys_log_empty_db(self):
-        gs = GraphStore()  # no persistence - no query log
+        gs = SuperGraph()  # no persistence - no query log
         result = gs.execute('SYS LOG LIMIT 10')
         assert result.kind == "log_entries"
         assert result.data == []
@@ -98,8 +98,8 @@ class TestLogEnrichment:
 
 class TestEventLogger:
     def test_event_emitted(self, tmp_path, caplog):
-        gs = GraphStore(path=str(tmp_path / "db"))
-        with caplog.at_level(logging.INFO, logger="graphstore.events"):
+        gs = SuperGraph(path=str(tmp_path / "db"))
+        with caplog.at_level(logging.INFO, logger="supergraph.events"):
             gs.execute('CREATE NODE "evt" kind = "test"')
         assert any("write" in r.message for r in caplog.records), \
             f"Expected event log with 'write', got: {[r.message for r in caplog.records]}"

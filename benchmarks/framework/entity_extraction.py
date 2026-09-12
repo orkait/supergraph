@@ -94,7 +94,7 @@ class OnnxTokenClassificationEntityExtractor:
                 "TinyBERT ONNX entity extraction requires onnxruntime and tokenizers"
             ) from e
 
-        from graphstore.embedding.onnx_hf_embedder import _create_inference_session, _resolve_providers
+        from supergraph.embedding.onnx_hf_embedder import _create_inference_session, _resolve_providers
 
         model_dir = Path(model_dir)
         tok_path = model_dir / "tokenizer.json"

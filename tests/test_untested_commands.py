@@ -1,15 +1,15 @@
 """Tests for DSL commands that previously had zero coverage."""
 import tempfile
 import pytest
-from graphstore import GraphStore
-from graphstore.core.store import CoreStore
+from supergraph import SuperGraph
+from supergraph.core.store import CoreStore
 
 
 class TestWeightedShortestPath:
     """WEIGHTED SHORTEST PATH FROM "a" TO "b" - uses Dijkstra with edge weights."""
 
     def test_basic_weighted_path(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE NODE "c" kind = "node"')
@@ -25,7 +25,7 @@ class TestWeightedShortestPath:
         gs.close()
 
     def test_weighted_path_direct_is_cheapest(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "x" kind = "node"')
         gs.execute('CREATE NODE "y" kind = "node"')
         gs.execute('CREATE NODE "z" kind = "node"')
@@ -38,7 +38,7 @@ class TestWeightedShortestPath:
         gs.close()
 
     def test_weighted_path_no_path(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "isolated1" kind = "node"')
         gs.execute('CREATE NODE "isolated2" kind = "node"')
         result = gs.execute('WEIGHTED SHORTEST PATH FROM "isolated1" TO "isolated2"')
@@ -46,7 +46,7 @@ class TestWeightedShortestPath:
         gs.close()
 
     def test_weighted_path_same_node(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "self" kind = "node"')
         gs.execute('CREATE NODE "other" kind = "node"')
         gs.execute('CREATE EDGE "self" -> "other" kind = "link" weight = 1')
@@ -56,7 +56,7 @@ class TestWeightedShortestPath:
         gs.close()
 
     def test_weighted_path_nonexistent_node(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         result = gs.execute('WEIGHTED SHORTEST PATH FROM "ghost" TO "phantom"')
         assert result.data is None
         gs.close()
@@ -66,7 +66,7 @@ class TestWeightedDistance:
     """WEIGHTED DISTANCE FROM "a" TO "b" - returns total edge weight cost."""
 
     def test_basic_weighted_distance(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE NODE "c" kind = "node"')
@@ -79,7 +79,7 @@ class TestWeightedDistance:
         gs.close()
 
     def test_weighted_distance_no_path(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "x" kind = "node"')
         gs.execute('CREATE NODE "y" kind = "node"')
         result = gs.execute('WEIGHTED DISTANCE FROM "x" TO "y"')
@@ -87,7 +87,7 @@ class TestWeightedDistance:
         gs.close()
 
     def test_weighted_distance_same_node(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "s" kind = "node"')
         result = gs.execute('WEIGHTED DISTANCE FROM "s" TO "s"')
         assert result.data == 0.0
@@ -95,7 +95,7 @@ class TestWeightedDistance:
 
     def test_weighted_distance_default_weight(self):
         """Edges without explicit weight default to 1.0."""
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "p" kind = "node"')
         gs.execute('CREATE NODE "q" kind = "node"')
         gs.execute('CREATE NODE "r" kind = "node"')
@@ -111,7 +111,7 @@ class TestUpdateEdge:
     """UPDATE EDGE "src" -> "tgt" SET field = value WHERE kind = "x"."""
 
     def test_update_edge_fields(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "friend" weight = 5')
@@ -124,7 +124,7 @@ class TestUpdateEdge:
         gs.close()
 
     def test_update_edge_add_field(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "x" kind = "node"')
         gs.execute('CREATE NODE "y" kind = "node"')
         gs.execute('CREATE EDGE "x" -> "y" kind = "link"')
@@ -137,7 +137,7 @@ class TestUpdateEdge:
         gs.close()
 
     def test_update_edge_no_match(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "friend"')
@@ -148,7 +148,7 @@ class TestUpdateEdge:
 
     def test_update_edge_without_where(self):
         """UPDATE EDGE without WHERE updates all edge types between src/tgt."""
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "type1"')
@@ -163,7 +163,7 @@ class TestForgetNode:
     """FORGET NODE "id" - hard delete blob + vector + graph (irreversible)."""
 
     def test_forget_removes_node(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "ephemeral" kind = "temp" data = "secret"')
         result = gs.execute('NODE "ephemeral"')
         assert result.data is not None
@@ -174,7 +174,7 @@ class TestForgetNode:
         gs.close()
 
     def test_forget_removes_edges(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         gs.execute('CREATE NODE "a" kind = "node"')
         gs.execute('CREATE NODE "b" kind = "node"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "link"')
@@ -187,7 +187,7 @@ class TestForgetNode:
     def test_forget_cascades_document(self):
         """FORGET on a document node should cascade to its chunks."""
         with tempfile.TemporaryDirectory() as td:
-            gs = GraphStore(path=td)
+            gs = SuperGraph(path=td)
             # Create a mock document with chunks manually
             gs.execute('CREATE NODE "doc:test" kind = "document" source = "test.txt"')
             gs.execute('CREATE NODE "doc:test:chunk:0" kind = "chunk" summary = "chunk zero"')
@@ -203,14 +203,14 @@ class TestForgetNode:
             gs.close()
 
     def test_forget_nonexistent_raises(self):
-        gs = GraphStore()
+        gs = SuperGraph()
         with pytest.raises(Exception):
             gs.execute('FORGET NODE "ghost"')
         gs.close()
 
     def test_forget_with_vector(self):
         """FORGET removes the vector as well."""
-        from graphstore.embedding.base import Embedder
+        from supergraph.embedding.base import Embedder
         import numpy as np
 
         class TinyEmbedder(Embedder):
@@ -223,7 +223,7 @@ class TestForgetNode:
             def encode_queries(self, texts):
                 return np.random.randn(len(texts), 4).astype(np.float32)
 
-        gs = GraphStore(embedder=TinyEmbedder())
+        gs = SuperGraph(embedder=TinyEmbedder())
         gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
         gs.execute('CREATE NODE "vec_node" kind = "item" text = "hello world"')
 

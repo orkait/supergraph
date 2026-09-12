@@ -1,7 +1,7 @@
 """Tests for DocumentStore SQLite storage."""
 import os
 import pytest
-from graphstore.document.store import DocumentStore
+from supergraph.document.store import DocumentStore
 
 
 @pytest.fixture

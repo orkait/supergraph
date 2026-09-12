@@ -2,7 +2,7 @@
 
 Why here: the conversion needs ~17 GB peak disk + a llama.cpp build. Doing it on
 Kaggle keeps it off the dev machine and publishes the result to HF Hub so every
-GraphStore dev pulls the same artifact.
+SuperGraph dev pulls the same artifact.
 
 Inputs (Kaggle kernel config):
   - dataset_sources: ["superkaiii/hf-token-private"]  (provides HF_TOKEN file)

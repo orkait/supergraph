@@ -1,20 +1,20 @@
-"""Tests for graphstore.persistence (database, serializer, deserializer)."""
+"""Tests for supergraph.persistence (database, serializer, deserializer)."""
 
 import time
 
 import pytest
 
-from graphstore.core.errors import VersionMismatch
-from graphstore.persistence.database import (
+from supergraph.core.errors import VersionMismatch
+from supergraph.persistence.database import (
     SCHEMA_VERSION,
     get_metadata,
     open_database,
     set_metadata,
 )
-from graphstore.persistence.deserializer import load
-from graphstore.persistence.serializer import checkpoint
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.store import CoreStore
+from supergraph.persistence.deserializer import load
+from supergraph.persistence.serializer import checkpoint
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.store import CoreStore
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -824,19 +824,19 @@ class TestColumnPersistence:
 
 
 def test_wal_manager_is_wired(tmp_path):
-    """GraphStore must have _wal attribute (WALManager)."""
-    from graphstore import GraphStore
-    gs = GraphStore(path=str(tmp_path))
-    assert hasattr(gs, '_wal'), "GraphStore must have _wal attribute (WALManager)"
-    from graphstore.wal import WALManager
+    """SuperGraph must have _wal attribute (WALManager)."""
+    from supergraph import SuperGraph
+    gs = SuperGraph(path=str(tmp_path))
+    assert hasattr(gs, '_wal'), "SuperGraph must have _wal attribute (WALManager)"
+    from supergraph.wal import WALManager
     assert isinstance(gs._wal, WALManager)
     gs.close()
 
 
 def test_wal_manager_no_inline_methods(tmp_path):
-    """Inline WAL methods must be deleted from GraphStore."""
-    from graphstore import GraphStore
-    gs = GraphStore(path=str(tmp_path))
+    """Inline WAL methods must be deleted from SuperGraph."""
+    from supergraph import SuperGraph
+    gs = SuperGraph(path=str(tmp_path))
     assert not hasattr(gs, '_wal_append'), "inline _wal_append must be deleted"
     assert not hasattr(gs, '_replay_wal'), "inline _replay_wal must be deleted"
     assert not hasattr(gs, '_maybe_auto_checkpoint'), "inline _maybe_auto_checkpoint must be deleted"
@@ -845,19 +845,19 @@ def test_wal_manager_no_inline_methods(tmp_path):
     gs.close()
 
 
-def test_graphstore_has_public_api():
-    """GraphStore must expose public methods so server.py does not need private access."""
-    from graphstore import GraphStore
-    gs = GraphStore()
+def test_supergraph_has_public_api():
+    """SuperGraph must expose public methods so server.py does not need private access."""
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     assert hasattr(gs, 'get_all_nodes'), "missing get_all_nodes()"
     assert hasattr(gs, 'get_all_edges'), "missing get_all_edges()"
-    assert hasattr(GraphStore, 'cost_threshold'), "missing cost_threshold property"
-    assert hasattr(GraphStore, 'ceiling_mb'), "missing ceiling_mb property"
+    assert hasattr(SuperGraph, 'cost_threshold'), "missing cost_threshold property"
+    assert hasattr(SuperGraph, 'ceiling_mb'), "missing ceiling_mb property"
 
 
 def test_cost_threshold_property():
-    from graphstore import GraphStore
-    gs = GraphStore()
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     original = gs.cost_threshold
     gs.cost_threshold = 50_000
     assert gs.cost_threshold == 50_000
@@ -865,7 +865,7 @@ def test_cost_threshold_property():
 
 
 def test_ceiling_mb_property():
-    from graphstore import GraphStore
-    gs = GraphStore()
+    from supergraph import SuperGraph
+    gs = SuperGraph()
     gs.ceiling_mb = 512
     assert gs.ceiling_mb == 512

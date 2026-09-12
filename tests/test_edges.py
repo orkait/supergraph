@@ -1,8 +1,8 @@
-"""Tests for graphstore.edges.EdgeMatrices."""
+"""Tests for supergraph.edges.EdgeMatrices."""
 
 import numpy as np
 
-from graphstore.core.edges import EdgeMatrices
+from supergraph.core.edges import EdgeMatrices
 
 
 # ── Helpers ─────────────────────────────────────────────────────────

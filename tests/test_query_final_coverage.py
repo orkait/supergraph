@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from graphstore import q, F, P, Time, agg, EvolveWhen, EvolveThen
-from graphstore.dsl.parser import parse
+from supergraph import q, F, P, Time, agg, EvolveWhen, EvolveThen
+from supergraph.dsl.parser import parse
 
 
 # Canonical one-liner for every top-level user/SYS/vault verb in grammar.lark.
@@ -228,7 +228,7 @@ def test_every_agg_func_reachable():
 
 
 def test_every_evolve_action_reachable():
-    from graphstore.query.evolve_expr import EvolveThen as A
+    from supergraph.query.evolve_expr import EvolveThen as A
     # All action variants
     q.sys.evolve.rule("r", when=[EvolveWhen.cond("x", ">", 0)],
                      then=[A.set("y", 0.5)]).dsl()

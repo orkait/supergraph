@@ -1,11 +1,11 @@
 """Tests for WAL replay and query log rotation."""
 import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def test_wal_replay_tolerates_duplicate_create(tmp_path):
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path))
+    gs = SuperGraph(path=str(path))
     try:
         gs.execute('CREATE NODE "dup" kind = "doc" text = "x"')
         gs.checkpoint()
@@ -25,7 +25,7 @@ def test_wal_replay_tolerates_duplicate_create(tmp_path):
             gs._path_lock.release()
             gs._path_lock = None
 
-    gs2 = GraphStore(path=str(path))
+    gs2 = SuperGraph(path=str(path))
     try:
         assert gs2.execute('NODE "dup"').data is not None
     finally:
@@ -34,7 +34,7 @@ def test_wal_replay_tolerates_duplicate_create(tmp_path):
 
 def test_query_log_row_cap(tmp_path):
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path))
+    gs = SuperGraph(path=str(path))
     try:
         gs._wal._query_log_max_rows = 50
         for i in range(120):
@@ -50,7 +50,7 @@ def test_wal_replay_moves_failing_statement_to_dlq(tmp_path):
     """A WAL statement that crashes replay lands in failed_wal_entries and
     gets removed from the main wal table so it does not loop forever."""
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path))
+    gs = SuperGraph(path=str(path))
     try:
         gs.execute('CREATE NODE "ok" kind = "doc" text = "x"')
         gs.checkpoint()
@@ -72,7 +72,7 @@ def test_wal_replay_moves_failing_statement_to_dlq(tmp_path):
             gs._path_lock.release()
             gs._path_lock = None
 
-    gs2 = GraphStore(path=str(path))
+    gs2 = SuperGraph(path=str(path))
     try:
         # Failing entry should have been moved to DLQ, wal should not still
         # contain it (otherwise next replay would hit it again).
@@ -93,7 +93,7 @@ def test_wal_replay_dlq_insert_failure_does_not_wedge_wal(tmp_path, monkeypatch)
     """If the DLQ insert itself fails, the main wal entry must still get
     deleted so replay does not infinite-loop on next open."""
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path))
+    gs = SuperGraph(path=str(path))
     try:
         gs.execute('CREATE NODE "ok" kind = "doc" text = "x"')
         gs.checkpoint()
@@ -116,7 +116,7 @@ def test_wal_replay_dlq_insert_failure_does_not_wedge_wal(tmp_path, monkeypatch)
             gs._path_lock.release()
             gs._path_lock = None
 
-    gs2 = GraphStore(path=str(path))
+    gs2 = SuperGraph(path=str(path))
     try:
         # Even with DLQ broken, the bad statement should not remain in wal.
         wal_remaining = gs2._conn.execute(

@@ -3,13 +3,13 @@
 import time
 import pytest
 
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor_system import SystemExecutor
-from graphstore.persistence.database import open_database
-from graphstore.core.errors import GraphStoreError
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor_system import SystemExecutor
+from supergraph.persistence.database import open_database
+from supergraph.core.errors import SuperGraphError
 
 
 @pytest.fixture
@@ -391,16 +391,16 @@ class TestUnknownCommand:
     def test_unknown_raises(self, setup):
         store, schema = setup
         executor = SystemExecutor(RuntimeState(store=store, schema=schema))
-        with pytest.raises(GraphStoreError, match="Unknown system command"):
+        with pytest.raises(SuperGraphError, match="Unknown system command"):
             executor.execute("not an AST node")
 
 
 def test_executor_base_split_integrity():
     """All ExecutorBase helpers must be accessible from Executor after split."""
-    from graphstore.dsl.executor import Executor
-    from graphstore.core.store import CoreStore
-    from graphstore.core.schema import SchemaRegistry
-    from graphstore.core.runtime import RuntimeState
+    from supergraph.dsl.executor import Executor
+    from supergraph.core.store import CoreStore
+    from supergraph.core.schema import SchemaRegistry
+    from supergraph.core.runtime import RuntimeState
     store = CoreStore()
     schema = SchemaRegistry()
     ex = Executor(RuntimeState(store=store, schema=schema))

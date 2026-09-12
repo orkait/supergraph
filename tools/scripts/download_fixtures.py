@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download test fixtures for graphstore mock testing.
+"""Download test fixtures for supergraph mock testing.
 
 Run once:  python tools/scripts/download_fixtures.py
 Total: ~100MB, gitignored under tests/fixtures/
@@ -29,7 +29,7 @@ def dl(url, dest, label=""):
     tag = label or p.name
     print(f"  {tag}", end="", flush=True)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "graphstore-fixtures/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "supergraph-fixtures/1.0"})
         with urllib.request.urlopen(req, context=CTX) as r, open(p, "wb") as f:
             f.write(r.read())
         kb = p.stat().st_size // 1024

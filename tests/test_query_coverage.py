@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from graphstore.query.runtime import _COMPILERS
+from supergraph.query.runtime import _COMPILERS
 
 
 # Every verb we ship a builder for. One entry per grammar production.
@@ -91,7 +91,7 @@ def test_grammar_rule_count_sanity():
     Does not enforce per-rule mapping (that would require a lark introspection
     pass). Just asserts the ballpark so a major grammar redesign trips this.
     """
-    grammar_path = Path(__file__).resolve().parent.parent / "src" / "graphstore" / "dsl" / "grammar.lark"
+    grammar_path = Path(__file__).resolve().parent.parent / "src" / "supergraph" / "dsl" / "grammar.lark"
     text = grammar_path.read_text()
 
     # Count top-level productions that look like verb rules (lowercase_underscore:)

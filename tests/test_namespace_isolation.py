@@ -6,7 +6,7 @@ Contract (the anti-pollution guarantee):
   - BIND NAMESPACE "X" -> reads show ONLY namespace X; new writes tag __namespace__=X
   - namespaces are mutually isolated
 """
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def _ids(result):
@@ -14,7 +14,7 @@ def _ids(result):
 
 
 def test_namespaced_node_excluded_from_default_view():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "general1" kind = "memory" content = "general fact"')
     gs.execute('BIND NAMESPACE "intel:acme"')
     gs.execute('CREATE NODE "intel1" kind = "evidence" content = "secret intel"')
@@ -25,7 +25,7 @@ def test_namespaced_node_excluded_from_default_view():
 
 
 def test_namespaced_node_visible_only_when_bound():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('BIND NAMESPACE "intel:acme"')
     gs.execute('CREATE NODE "intel1" kind = "evidence" content = "x"')
     assert "intel1" in _ids(gs.execute('NODES'))      # visible within namespace
@@ -34,7 +34,7 @@ def test_namespaced_node_visible_only_when_bound():
 
 
 def test_namespaces_are_mutually_isolated():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('BIND NAMESPACE "a"')
     gs.execute('CREATE NODE "na" kind = "evidence" content = "a-fact"')
     gs.execute('DISCARD NAMESPACE')
@@ -45,7 +45,7 @@ def test_namespaces_are_mutually_isolated():
 
 
 def test_count_nodes_excludes_namespaced_by_default():
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "g" kind = "memory"')
     gs.execute('BIND NAMESPACE "intel"')
     gs.execute('CREATE NODE "i" kind = "evidence"')
@@ -55,7 +55,7 @@ def test_count_nodes_excludes_namespaced_by_default():
 
 def test_lexical_retrieval_respects_namespace():
     # the real intelligence read path (LEXICAL/REMEMBER/SIMILAR) must not leak
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "g1" kind = "memory" content = "public notes" DOCUMENT "public notes"')
     gs.execute('BIND NAMESPACE "intel"')
     gs.execute('CREATE NODE "i1" kind = "evidence" content = "secret breach" DOCUMENT "secret breach"')
@@ -69,7 +69,7 @@ def test_lexical_retrieval_respects_namespace():
 
 def test_edges_isolated_by_namespace_in_count():
     # an edge between two namespaced nodes must not leak into the default COUNT EDGES
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('CREATE NODE "g1" kind = "memory"')
     gs.execute('CREATE NODE "g2" kind = "memory"')
     gs.execute('CREATE EDGE "g1" -> "g2" kind = "rel"')
@@ -85,13 +85,13 @@ def test_edges_isolated_by_namespace_in_count():
 def test_namespace_and_context_are_mutually_exclusive():
     # binding both silently AND'd filters to empty - a footgun. Guard it.
     import pytest
-    from graphstore.core.errors import GraphStoreError
-    gs = GraphStore(embedder="none", enable_sentence_nodes=False)
+    from supergraph.core.errors import SuperGraphError
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     gs.execute('BIND CONTEXT "c1"')
-    with pytest.raises(GraphStoreError, match="(?i)namespace.*context|context.*namespace"):
+    with pytest.raises(SuperGraphError, match="(?i)namespace.*context|context.*namespace"):
         gs.execute('BIND NAMESPACE "intel"')
     gs.execute('DISCARD CONTEXT "c1"')
     gs.execute('BIND NAMESPACE "intel"')
-    with pytest.raises(GraphStoreError, match="(?i)namespace.*context|context.*namespace"):
+    with pytest.raises(SuperGraphError, match="(?i)namespace.*context|context.*namespace"):
         gs.execute('BIND CONTEXT "c1"')
     gs.execute('DISCARD NAMESPACE')

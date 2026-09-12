@@ -1,14 +1,14 @@
 """Tests for the CRON scheduler: CRUD, tick, persistence, DSL commands."""
 import pytest
-from graphstore import GraphStore
-from graphstore.cron import CronScheduler
+from supergraph import SuperGraph
+from supergraph.cron import CronScheduler
 
 pytestmark = pytest.mark.needs_scheduler
 
 
 class TestCronCRUD:
     def test_add_and_list(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "expire" SCHEDULE "0 * * * *" QUERY "SYS EXPIRE"')
         result = gs.execute('SYS CRON LIST')
         assert result.kind == "cron_jobs"
@@ -21,7 +21,7 @@ class TestCronCRUD:
         gs.close()
 
     def test_delete_job(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "test" SCHEDULE "@hourly" QUERY "SYS STATS"')
         gs.execute('SYS CRON DELETE "test"')
         result = gs.execute('SYS CRON LIST')
@@ -29,7 +29,7 @@ class TestCronCRUD:
         gs.close()
 
     def test_enable_disable(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "j" SCHEDULE "*/5 * * * *" QUERY "SYS STATS"')
         gs.execute('SYS CRON DISABLE "j"')
         result = gs.execute('SYS CRON LIST')
@@ -40,7 +40,7 @@ class TestCronCRUD:
         gs.close()
 
     def test_duplicate_name_rejected(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "dup" SCHEDULE "@daily" QUERY "SYS STATS"')
         with pytest.raises(Exception) as exc_info:
             gs.execute('SYS CRON ADD "dup" SCHEDULE "@hourly" QUERY "SYS EXPIRE"')
@@ -49,7 +49,7 @@ class TestCronCRUD:
         gs.close()
 
     def test_invalid_cron_expression_rejected(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         with pytest.raises(Exception) as exc_info:
             gs.execute('SYS CRON ADD "bad" SCHEDULE "not-a-cron" QUERY "SYS STATS"')
         msg = str(exc_info.value).lower()
@@ -57,7 +57,7 @@ class TestCronCRUD:
         gs.close()
 
     def test_run_now(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('CREATE NODE "x" kind = "test"')
         gs.execute('SYS CRON ADD "stats" SCHEDULE "0 0 1 1 *" QUERY "SYS STATS"')
         result = gs.execute('SYS CRON RUN "stats"')
@@ -69,14 +69,14 @@ class TestCronExpressions:
     """Verify croniter handles full cron syntax."""
 
     def test_standard_five_field(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "a" SCHEDULE "30 2 * * 1-5" QUERY "SYS STATS"')
         result = gs.execute('SYS CRON LIST')
         assert result.data[0]["schedule"] == "30 2 * * 1-5"
         gs.close()
 
     def test_at_shortcuts(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         for name, sched in [("h", "@hourly"), ("d", "@daily"), ("w", "@weekly"), ("m", "@monthly"), ("y", "@yearly")]:
             gs.execute(f'SYS CRON ADD "{name}" SCHEDULE "{sched}" QUERY "SYS STATS"')
         result = gs.execute('SYS CRON LIST')
@@ -84,7 +84,7 @@ class TestCronExpressions:
         gs.close()
 
     def test_step_and_range(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "s" SCHEDULE "*/15 9-17 * * MON-FRI" QUERY "SYS STATS"')
         result = gs.execute('SYS CRON LIST')
         assert result.data[0]["schedule"] == "*/15 9-17 * * MON-FRI"
@@ -93,11 +93,11 @@ class TestCronExpressions:
 
 class TestCronPersistence:
     def test_jobs_survive_restart(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=True)
         gs.execute('SYS CRON ADD "persist" SCHEDULE "@daily" QUERY "SYS EXPIRE"')
         gs.close()
 
-        gs2 = GraphStore(path=str(tmp_path / "db"), queued=True)
+        gs2 = SuperGraph(path=str(tmp_path / "db"), queued=True)
         result = gs2.execute('SYS CRON LIST')
         assert len(result.data) == 1
         assert result.data[0]["name"] == "persist"
@@ -108,7 +108,7 @@ class TestCronSchedulerUnit:
     def test_tick_fires_due_job(self, tmp_path):
         """Manually trigger tick and verify job executes."""
         from concurrent.futures import Future
-        from graphstore.persistence.database import open_database
+        from supergraph.persistence.database import open_database
 
         results = []
 
@@ -131,7 +131,7 @@ class TestCronSchedulerUnit:
 
 class TestCronRequiresQueued:
     def test_cron_not_available_without_queued(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), queued=False)
+        gs = SuperGraph(path=str(tmp_path / "db"), queued=False)
         with pytest.raises(Exception) as exc_info:
             gs.execute('SYS CRON LIST')
         msg = str(exc_info.value).lower()

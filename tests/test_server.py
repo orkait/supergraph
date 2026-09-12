@@ -2,9 +2,9 @@
 
 import pytest
 
-import graphstore.server as server_module
-from graphstore.server import app
-from graphstore.core.store import CoreStore
+import supergraph.server as server_module
+from supergraph.server import app
+from supergraph.core.store import CoreStore
 
 from fastapi.testclient import TestClient
 

@@ -1,10 +1,10 @@
-"""Unit tests for graphstore.columns.ColumnStore."""
+"""Unit tests for supergraph.columns.ColumnStore."""
 
 import numpy as np
 import pytest
 
-from graphstore.core.columns import ColumnStore
-from graphstore.core.strings import StringTable
+from supergraph.core.columns import ColumnStore
+from supergraph.core.strings import StringTable
 
 
 class TestSetAndPresence:
@@ -346,7 +346,7 @@ class TestMemoryBytes:
 
 # -- CoreStore integration tests --
 
-from graphstore.core.store import CoreStore
+from supergraph.core.store import CoreStore
 
 
 class TestCoreStoreColumnIntegration:

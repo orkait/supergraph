@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from graphstore.core.path import (
+from supergraph.core.path import (
     bidirectional_bfs,
     bfs_traverse,
     common_neighbors,

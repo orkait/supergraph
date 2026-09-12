@@ -53,7 +53,7 @@ _CAT_ORDER = ["open-domain", "single-hop", "multi-hop", "temporal", "adversarial
 # Rules below cover every category in one prompt. The reader infers question
 # shape from the question text, same as it would in real deployment.
 #
-# Lives in the bench, not in graphstore core. graphstore stays dataset-
+# Lives in the bench, not in supergraph core. supergraph stays dataset-
 # agnostic; LoCoMo's phrasing requirements stay here.
 # ---------------------------------------------------------------------------
 _LOCOMO_QA_PROMPT = """\
@@ -169,7 +169,7 @@ def run_locomo(
         total_ingest_ms += ingest_ms
         print(f"  Ingested in {ingest_ms:.0f}ms")
 
-        # Phase 1: Retrieval (serial - GraphStore is single-writer)
+        # Phase 1: Retrieval (serial - SuperGraph is single-writer)
         print(f"[{conv_id}] Retrieving {len(qas)} questions...")
         has_query_ctx = hasattr(adapter, "query_with_context")
 
@@ -309,10 +309,10 @@ def main():
                         help="max questions PER conversation")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--embedder", default="model2vec")
-    parser.add_argument("--adapter", default="graphstore",
-                        choices=["graphstore", "skill", "bonsai"],
-                        help="graphstore = deterministic NER+CREATE; "
-                             "skill = LLM-driven DSL emission via graphstore-dsl skill; "
+    parser.add_argument("--adapter", default="supergraph",
+                        choices=["supergraph", "skill", "bonsai"],
+                        help="supergraph = deterministic NER+CREATE; "
+                             "skill = LLM-driven DSL emission via supergraph-dsl skill; "
                              "bonsai = local Ternary-Bonsai 4B TQ1_0 for ingest + recall")
     parser.add_argument("--skill-dump-dir", default=None,
                         help="Only used with --adapter skill: dump raw LLM output per session")
@@ -356,14 +356,14 @@ def main():
         config["embedder"] = args.embedder
 
     if args.adapter == "skill":
-        from ..adapters.graphstore_skill import GraphStoreSkillAdapter
+        from ..adapters.supergraph_skill import SuperGraphSkillAdapter
         if args.skill_dump_dir:
             config["skill_dump_raw_dir"] = args.skill_dump_dir
         if args.no_carry_facts:
             config["skill_carry_facts"] = False
-        adapter = GraphStoreSkillAdapter(config=config)
+        adapter = SuperGraphSkillAdapter(config=config)
     elif args.adapter == "bonsai":
-        from ..adapters.graphstore_bonsai import GraphStoreBonsaiAdapter
+        from ..adapters.supergraph_bonsai import SuperGraphBonsaiAdapter
         config["bonsai_n_gpu_layers"] = args.bonsai_gpu_layers
         if args.bonsai_prompt:
             config["bonsai_prompt_path"] = args.bonsai_prompt
@@ -371,10 +371,10 @@ def main():
             config["bonsai_kv_cache_path"] = args.bonsai_kv_cache
         # Conversations are long (hundreds of turns); need room for KNOWN FACTS block
         config["bonsai_n_ctx"] = 4096
-        adapter = GraphStoreBonsaiAdapter(config=config)
+        adapter = SuperGraphBonsaiAdapter(config=config)
     else:
-        from ..adapters.graphstore_ import GraphStoreAdapter
-        adapter = GraphStoreAdapter(config=config)
+        from ..adapters.supergraph_ import SuperGraphAdapter
+        adapter = SuperGraphAdapter(config=config)
 
     summary, details = run_locomo(
         adapter, ds, k=args.k, max_questions=args.max_questions,

@@ -9,11 +9,11 @@ import pytest
 import numpy as np
 from pathlib import Path
 
-from graphstore import GraphStore
-from graphstore.embedding.base import Embedder
+from supergraph import SuperGraph
+from supergraph.embedding.base import Embedder
 
 # Slow suite (~40s). Skip by default; opt in via --run-slow or
-# GRAPHSTORE_RUN_SLOW=1. See conftest.py for the gating logic.
+# SUPERGRAPH_RUN_SLOW=1. See conftest.py for the gating logic.
 pytestmark = pytest.mark.slow
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -51,8 +51,8 @@ class MockEmbedder(Embedder):
 
 @pytest.fixture
 def gs(tmp_path):
-    """GraphStore with mock embedder and persistence."""
-    store = GraphStore(
+    """SuperGraph with mock embedder and persistence."""
+    store = SuperGraph(
         path=str(tmp_path / "brain"),
         embedder=MockEmbedder(),
         ceiling_mb=256,
@@ -63,8 +63,8 @@ def gs(tmp_path):
 
 @pytest.fixture
 def gs_queued(tmp_path):
-    """Queued GraphStore with mock embedder (submission queue + cron enabled)."""
-    store = GraphStore(
+    """Queued SuperGraph with mock embedder (submission queue + cron enabled)."""
+    store = SuperGraph(
         path=str(tmp_path / "brain"),
         embedder=MockEmbedder(),
         ceiling_mb=256,
@@ -291,7 +291,7 @@ class TestVectorSearchWithFixtures:
 
     def test_remember_with_persistence(self, tmp_path):
         """REMEMBER uses FTS5 BM25 when a persistent store is available."""
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
         )
@@ -373,7 +373,7 @@ class TestDocumentIngestion:
         if not Path(path).exists():
             pytest.skip("metamorphosis.txt not found")
 
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
         )
@@ -425,7 +425,7 @@ class TestDocumentIngestion:
 
     def test_ingest_connect_workflow(self, tmp_path):
         """Ingest multiple docs then run SYS CONNECT to wire similar chunks."""
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
         )
@@ -648,7 +648,7 @@ class TestAgentWorkflow:
 
     def test_research_agent_session(self, tmp_path):
         """Agent ingests docs, builds knowledge graph, queries, then maintains."""
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "brain"),
             embedder=MockEmbedder(),
         )
@@ -724,12 +724,12 @@ class TestAgentWorkflow:
     def test_persistence_survives_restart(self, tmp_path):
         """Data created before close() is readable after re-open."""
         path = str(tmp_path / "persist")
-        gs = GraphStore(path=path, embedder=MockEmbedder())
+        gs = SuperGraph(path=path, embedder=MockEmbedder())
         gs.execute('CREATE NODE "survive" kind = "test" val = 42')
         gs.checkpoint()
         gs.close()
 
-        gs2 = GraphStore(path=path, embedder=MockEmbedder())
+        gs2 = SuperGraph(path=path, embedder=MockEmbedder())
         try:
             result = gs2.execute('NODE "survive"')
             assert result.data is not None

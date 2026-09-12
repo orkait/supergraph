@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 import pytest
 
-from graphstore.query.escape import dsl_identifier, dsl_literal, dsl_node_id
+from supergraph.query.escape import dsl_identifier, dsl_literal, dsl_node_id
 
 
 class TestDslLiteral:

@@ -1,10 +1,10 @@
-"""Test command queue for thread-safe GraphStore access."""
+"""Test command queue for thread-safe SuperGraph access."""
 import threading
 import time
 from concurrent.futures import Future
 
-from graphstore import GraphStore
-from graphstore.core.queue import CommandQueue
+from supergraph import SuperGraph
+from supergraph.core.queue import CommandQueue
 
 
 def test_queue_submit_returns_result():
@@ -109,9 +109,9 @@ def test_queue_submit_after_shutdown_raises():
         q.submit("too late")
 
 
-def test_graphstore_queued_execute():
-    """GraphStore(queued=True) executes queries correctly."""
-    gs = GraphStore(queued=True)
+def test_supergraph_queued_execute():
+    """SuperGraph(queued=True) executes queries correctly."""
+    gs = SuperGraph(queued=True)
     result = gs.execute('CREATE NODE "test_t" kind = "item" name = "hello"')
     assert result.kind == "node"
     assert result.data["name"] == "hello"
@@ -121,9 +121,9 @@ def test_graphstore_queued_execute():
     gs.close()
 
 
-def test_graphstore_queued_background():
+def test_supergraph_queued_background():
     """submit_background returns a Future that resolves."""
-    gs = GraphStore(queued=True)
+    gs = SuperGraph(queued=True)
     gs.execute('CREATE NODE "bg_test" kind = "item" name = "x"')
     future = gs.submit_background('NODE "bg_test"')
     assert isinstance(future, Future)
@@ -132,18 +132,18 @@ def test_graphstore_queued_background():
     gs.close()
 
 
-def test_graphstore_not_queued_rejects_background():
+def test_supergraph_not_queued_rejects_background():
     """submit_background without queued=True raises."""
-    gs = GraphStore()
+    gs = SuperGraph()
     import pytest
     with pytest.raises(RuntimeError, match="queued"):
         gs.submit_background('SYS STATS')
     gs.close()
 
 
-def test_graphstore_concurrent_access():
-    """Multiple threads can safely call execute on queued GraphStore."""
-    gs = GraphStore(queued=True)
+def test_supergraph_concurrent_access():
+    """Multiple threads can safely call execute on queued SuperGraph."""
+    gs = SuperGraph(queued=True)
     errors = []
     results = []
 
@@ -166,9 +166,9 @@ def test_graphstore_concurrent_access():
     gs.close()
 
 
-def test_graphstore_default_not_queued():
-    """Default GraphStore has no queue overhead."""
-    gs = GraphStore()
+def test_supergraph_default_not_queued():
+    """Default SuperGraph has no queue overhead."""
+    gs = SuperGraph()
     assert gs._queue is None
     result = gs.execute('CREATE NODE "noqueue" kind = "item"')
     assert result.kind == "node"
@@ -186,7 +186,7 @@ def test_background_failure_logs_warning(caplog):
         return query
 
     q = CommandQueue(failing_execute)
-    with caplog.at_level(logging.WARNING, logger="graphstore.core.queue"):
+    with caplog.at_level(logging.WARNING, logger="supergraph.core.queue"):
         future = q.submit_background("fail_me")
         try:
             future.result(timeout=5)

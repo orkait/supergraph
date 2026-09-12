@@ -1,6 +1,6 @@
 """Tests for ONNX entity extraction and co-reference resolution."""
 import pytest
-from graphstore.ingest.entity_extract import (
+from supergraph.ingest.entity_extract import (
     extract_entities, CoReferenceResolver, Entity, _get_extractor
 )
 
@@ -82,7 +82,7 @@ class TestCoReferenceResolver:
 
 
 def test_slug_no_collision_on_truncation():
-    from graphstore.ingest.entity_extract import slug
+    from supergraph.ingest.entity_extract import slug
     a = slug("Barack Hussein Obama II the Second of That Name")
     b = slug("Barack Hussein Obama Jr the Son of the First")
     assert a != b, f"slugs collided: {a!r} == {b!r}"
@@ -91,6 +91,6 @@ def test_slug_no_collision_on_truncation():
 
 
 def test_slug_short_unchanged():
-    from graphstore.ingest.entity_extract import slug
+    from supergraph.ingest.entity_extract import slug
     assert slug("Alice") == "alice"
     assert slug("Bob Smith") == "bob_smith"

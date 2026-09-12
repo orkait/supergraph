@@ -20,11 +20,11 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
-os.environ.setdefault("GRAPHSTORE_MODEL_CACHE_DIR", "/tmp/gs_models")
-logging.getLogger("graphstore.events").setLevel(logging.WARNING)
+os.environ.setdefault("SUPERGRAPH_MODEL_CACHE_DIR", "/tmp/gs_models")
+logging.getLogger("supergraph.events").setLevel(logging.WARNING)
 
 from ..datasets import load_locomo
-from ..adapters.graphstore_ import GraphStoreAdapter
+from ..adapters.supergraph_ import SuperGraphAdapter
 
 
 def build_evidence_lookup(conv: dict) -> dict[str, str]:
@@ -128,7 +128,7 @@ def run(label: str = "test", k: int = 10, max_conversations: int | None = None) 
         if conv_id not in sessions_by_conv:
             sessions_by_conv[conv_id] = rec.sessions
 
-    adapter = GraphStoreAdapter(config=config)
+    adapter = SuperGraphAdapter(config=config)
     try:
         for conv_id, records in records_by_conv.items():
             evidence_lookup = evidence_lookups.get(conv_id, {})

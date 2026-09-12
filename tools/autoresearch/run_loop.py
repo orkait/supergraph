@@ -1,5 +1,5 @@
 """
-Algo Autoresearch - Scientific ratchet loop for graphstore/algos/.
+Algo Autoresearch - Scientific ratchet loop for supergraph/algos/.
 
 Design principles:
   - Baseline is sacred: never modified until a statistically confirmed winner
@@ -31,7 +31,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-ALGO_DIR = REPO_ROOT / "src" / "graphstore" / "algos"
+ALGO_DIR = REPO_ROOT / "src" / "supergraph" / "algos"
 VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 from tools.autoresearch.providers import CONFIG_PATH as CONFIG_FILE
 PROGRAM_FILE = Path(__file__).resolve().parent / "program.md"
@@ -521,7 +521,7 @@ def build_prompt(
 ## Environment
 {env_manifest}
 
-## Proven baseline - graphstore/algos/{algo}.py
+## Proven baseline - supergraph/algos/{algo}.py
 ```python
 {baseline_code}
 ```
@@ -548,7 +548,7 @@ def get_llm_proposal(prompt: str, config: dict) -> tuple[str, str, str]:
     Returns (extracted_code, model_used, raw_response).
     """
     import re as _re
-    from graphstore.llm_runner import LLMRunner
+    from supergraph.llm_runner import LLMRunner
     from tools.autoresearch.providers import resolve_providers
 
     runner = LLMRunner(resolve_providers(config), timeout_s=800)

@@ -1,7 +1,7 @@
 """q.raw() escape hatch + plugin registry."""
 import pytest
 
-from graphstore import q, register_verb, Query
+from supergraph import q, register_verb, Query
 
 
 class TestRaw:

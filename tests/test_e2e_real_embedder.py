@@ -1,6 +1,6 @@
 """End-to-end tests with REAL embedder and REAL fixture data.
 
-These tests verify that graphstore works as a cognitive layer for AI agents:
+These tests verify that supergraph works as a cognitive layer for AI agents:
 ingest real documents, build knowledge, query semantically, maintain over time.
 """
 
@@ -22,11 +22,11 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 def brain(tmp_path_factory):
-    """Persistent GraphStore with real Model2Vec embedder. Shared across module."""
-    from graphstore import GraphStore
-    from graphstore.embedding.model2vec_embedder import Model2VecEmbedder
+    """Persistent SuperGraph with real Model2Vec embedder. Shared across module."""
+    from supergraph import SuperGraph
+    from supergraph.embedding.model2vec_embedder import Model2VecEmbedder
     td = tmp_path_factory.mktemp("brain")
-    gs = GraphStore(
+    gs = SuperGraph(
         path=str(td),
         embedder=Model2VecEmbedder(),
         ceiling_mb=256,
@@ -288,7 +288,7 @@ class TestAgentLifecycle:
 # ===================================================================
 
 class TestRealCognitiveRetrieval:
-    """The test that proves graphstore works as agent memory.
+    """The test that proves supergraph works as agent memory.
 
     'Ingest real papers, ask what transformers and BERT have in common,
     verify REMEMBER returns attention mechanism chunks.'

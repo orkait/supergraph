@@ -123,7 +123,7 @@ def _run_framework(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="benchmarks.framework.cli",
-        description="GraphStore benchmark runner (LongMemEval, LoCoMo, BEAM)",
+        description="SuperGraph benchmark runner (LongMemEval, LoCoMo, BEAM)",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -131,7 +131,7 @@ def main() -> int:
     p_list.set_defaults(func=cmd_list)
 
     p_run = sub.add_parser("run", help="Run a benchmark")
-    p_run.add_argument("--system", default="graphstore", choices=sorted(AVAILABLE.keys()))
+    p_run.add_argument("--system", default="supergraph", choices=sorted(AVAILABLE.keys()))
     p_run.add_argument("--dataset", required=True, choices=SUPPORTED_DATASETS)
     p_run.add_argument("--data-path", required=True, type=str)
     p_run.add_argument("--variant", default="s", help="LongMemEval: s/m/l. BEAM: chat size (16k/64k/256k)")

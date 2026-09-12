@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from graphstore import q, F, P, agg, EvolveThen
-from graphstore.dsl.parser import parse
+from supergraph import q, F, P, agg, EvolveThen
+from supergraph.dsl.parser import parse
 
 
 def _rt(query_obj):
@@ -121,7 +121,7 @@ class TestWriteValidationBranches:
         # Internal compiler path: delete_nodes() rejects None at build, but
         # if an empty where dict snuck through, compile_where returns None
         # and compiler raises. Reach it by directly calling compile path.
-        from graphstore.query.verbs.writes import _compile_delete_nodes
+        from supergraph.query.verbs.writes import _compile_delete_nodes
         with pytest.raises(ValueError, match="empty WHERE"):
             _compile_delete_nodes({"where": {}})
 
@@ -137,13 +137,13 @@ class TestWriteValidationBranches:
 class TestEvolveRunEmpty:
     def test_evolve_run_at_compile_time_raises(self):
         # EvolveAction with empty tokens (constructed via direct class use)
-        from graphstore.query.evolve_expr import EvolveAction
+        from supergraph.query.evolve_expr import EvolveAction
         a = EvolveAction("run", None, ())
         with pytest.raises(ValueError, match="at least one identifier"):
             a.to_dsl()
 
     def test_evolve_unknown_kind(self):
-        from graphstore.query.evolve_expr import EvolveAction
+        from supergraph.query.evolve_expr import EvolveAction
         a = EvolveAction("bogus", None, None)
         with pytest.raises(ValueError, match="unknown"):
             a.to_dsl()
@@ -190,7 +190,7 @@ class TestUpsertExpires:
 class TestPatternToStepDirect:
     def test_to_accepts_bare_step(self):
         # Cover the elif branch where step is _Step directly (not Pattern)
-        from graphstore.query.pattern import _Step
+        from supergraph.query.pattern import _Step
         right = _Step(bound_id=None, var_name="x", where=None)
         left = P.node("a")
         combined = left.to(right)

@@ -1,7 +1,7 @@
 """Query object: modifiers, pipe, batch compose, immutability."""
 import pytest
 
-from graphstore import q, F, Query
+from supergraph import q, F, Query
 
 
 class TestImmutability:
@@ -132,7 +132,7 @@ class TestBatchCompose:
 
 class TestExecute:
     def test_execute_none_raises(self):
-        with pytest.raises(TypeError, match="requires a GraphStore"):
+        with pytest.raises(TypeError, match="requires a SuperGraph"):
             q.nodes().execute(None)
 
 

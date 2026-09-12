@@ -1,4 +1,4 @@
-"""GraphStore(profile="pro") integration tests.
+"""SuperGraph(profile="pro") integration tests.
 
 Profile="pro" is an opt-in path that runs spec validation against a live
 host snapshot before the rest of the constructor wires anything. These
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from graphstore import GraphStore
-from graphstore.pro import (
+from supergraph import SuperGraph
+from supergraph.pro import (
     CalibrationCache, CalibrationEntry, HostSnapshot, ProSpec,
     ProCalibrationMissing, ProExtraNotInstalled, ProUnsupportedHostError,
 )
@@ -84,7 +84,7 @@ def stub_host(monkeypatch):
 
 class TestProfileKwarg:
     def test_default_profile_none_is_noop(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         try:
             assert gs.pro_spec is None
             assert gs.pro_resolved is None
@@ -93,11 +93,11 @@ class TestProfileKwarg:
 
     def test_unknown_profile_raises(self, tmp_path):
         with pytest.raises(ValueError, match="unknown profile"):
-            GraphStore(path=str(tmp_path / "db"), profile="ultra")
+            SuperGraph(path=str(tmp_path / "db"), profile="ultra")
 
     def test_pro_spec_must_be_prospec_instance(self, tmp_path, stub_host):
         with pytest.raises(TypeError, match="ProSpec"):
-            GraphStore(
+            SuperGraph(
                 path=str(tmp_path / "db"),
                 profile="pro",
                 pro_spec="default",  # str, not ProSpec
@@ -116,7 +116,7 @@ class TestProCalibration:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         with pytest.raises(ProCalibrationMissing) as excinfo:
-            GraphStore(
+            SuperGraph(
                 path=str(tmp_path / "db"),
                 profile="pro",
                 pro_cache_dir=str(cache_dir),
@@ -131,7 +131,7 @@ class TestProCalibration:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         with caplog.at_level("WARNING"):
-            gs = GraphStore(
+            gs = SuperGraph(
                 path=str(tmp_path / "db"),
                 profile="pro",
                 pro_cache_dir=str(cache_dir),
@@ -150,7 +150,7 @@ class TestProCalibration:
         cache_dir.mkdir()
         spec = ProSpec()
         _seed_cache(cache_dir, stub_host, spec)
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "db"),
             profile="pro",
             pro_spec=spec,
@@ -190,7 +190,7 @@ class TestProExtras:
             classmethod(lambda cls, cache_dir=None, probe_gpu=True: host),
         )
         with pytest.raises(ProExtraNotInstalled):
-            GraphStore(
+            SuperGraph(
                 path=str(tmp_path / "db"),
                 profile="pro",
                 pro_cache_dir=str(tmp_path / "cache"),
@@ -206,7 +206,7 @@ class TestProExtras:
 
 class TestCreateBonsaiFactory:
     def test_requires_profile_pro(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         try:
             with pytest.raises(RuntimeError, match="profile='pro'"):
                 gs.create_bonsai()
@@ -218,7 +218,7 @@ class TestCreateBonsaiFactory:
         cache_dir.mkdir()
         spec = ProSpec(ingest_mode="deterministic")
         _seed_cache(cache_dir, stub_host, spec)
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "db"),
             profile="pro",
             pro_spec=spec,
@@ -235,7 +235,7 @@ class TestCreateBonsaiFactory:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
         # Empty cache → fits=False.
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "db"),
             profile="pro",
             pro_cache_dir=str(cache_dir),
@@ -283,7 +283,7 @@ class TestCreateBonsaiFactory:
         # to verify create_bonsai assembled the right kwargs and reached
         # the constructor.
         captured = {}
-        from graphstore import bonsai_ingestor as _bi
+        from supergraph import bonsai_ingestor as _bi
         original = _bi.BonsaiIngestor
 
         class _StubIngestor:
@@ -291,7 +291,7 @@ class TestCreateBonsaiFactory:
                 captured.update(kwargs)
 
         monkeypatch.setattr(_bi, "BonsaiIngestor", _StubIngestor)
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "db"),
             profile="pro",
             pro_spec=spec,

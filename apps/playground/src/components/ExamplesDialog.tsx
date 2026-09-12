@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { categories, type Example } from '@/examples'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 
 interface ExamplesDialogProps {
   open: boolean
@@ -21,9 +21,9 @@ interface ExamplesDialogProps {
  * than push siblings off the bottom.
  */
 export function ExamplesDialog({ open, onOpenChange }: ExamplesDialogProps) {
-  const setEditorContent = useGraphStore((s) => s.setEditorContent)
-  const resetGraph = useGraphStore((s) => s.resetGraph)
-  const refreshGraph = useGraphStore((s) => s.refreshGraph)
+  const setEditorContent = useSuperGraph((s) => s.setEditorContent)
+  const resetGraph = useSuperGraph((s) => s.resetGraph)
+  const refreshGraph = useSuperGraph((s) => s.refreshGraph)
 
   const [activeCategoryId, setActiveCategoryId] = useState(categories[0]?.id ?? '')
   const [activeExampleId, setActiveExampleId] = useState<string | null>(
@@ -49,7 +49,7 @@ export function ExamplesDialog({ open, onOpenChange }: ExamplesDialogProps) {
     if (ex.resetsGraph) {
       const queries = splitSeedStatements(ex.script)
       for (const q of queries) {
-        await useGraphStore.getState().executeQuery(q, true)
+        await useSuperGraph.getState().executeQuery(q, true)
       }
     }
     await refreshGraph()

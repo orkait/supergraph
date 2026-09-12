@@ -1,6 +1,6 @@
 import CodeMirror from '@uiw/react-codemirror'
-import { graphstoreLang, graphstoreAutocomplete } from '@/lang/graphstore'
-import { useGraphStore } from '@/hooks/useGraphStore'
+import { supergraphLang, supergraphAutocomplete } from '@/lang/supergraph'
+import { useSuperGraph } from '@/hooks/useSuperGraph'
 import { keymap, type ViewUpdate, EditorView } from '@codemirror/view'
 import { useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
@@ -38,22 +38,22 @@ function toggleComment(view: EditorView): boolean {
 }
 
 export function EditorPanel() {
-  const editorContent = useGraphStore((s) => s.editorContent)
-  const setEditorContent = useGraphStore((s) => s.setEditorContent)
-  const setEditorSelection = useGraphStore((s) => s.setEditorSelection)
-  const executeQuery = useGraphStore((s) => s.executeQuery)
-  const executeAll = useGraphStore((s) => s.executeAll)
-  const executeSelected = useGraphStore((s) => s.executeSelected)
-  const editorSelection = useGraphStore((s) => s.editorSelection)
-  const isDark = useGraphStore((s) => s.config.isDark)
-  const fontSize = useGraphStore((s) => s.config.fontSize)
-  const updateConfig = useGraphStore((s) => s.updateConfig)
-  const loading = useGraphStore((s) => s.loading)
-  const activeResultId = useGraphStore((s) => s.activeResultId)
-  const clearHighlights = useGraphStore((s) => s.clearHighlights)
-  const clearResults = useGraphStore((s) => s.clearResults)
-  const resetGraph = useGraphStore((s) => s.resetGraph)
-  const results = useGraphStore((s) => s.results)
+  const editorContent = useSuperGraph((s) => s.editorContent)
+  const setEditorContent = useSuperGraph((s) => s.setEditorContent)
+  const setEditorSelection = useSuperGraph((s) => s.setEditorSelection)
+  const executeQuery = useSuperGraph((s) => s.executeQuery)
+  const executeAll = useSuperGraph((s) => s.executeAll)
+  const executeSelected = useSuperGraph((s) => s.executeSelected)
+  const editorSelection = useSuperGraph((s) => s.editorSelection)
+  const isDark = useSuperGraph((s) => s.config.isDark)
+  const fontSize = useSuperGraph((s) => s.config.fontSize)
+  const updateConfig = useSuperGraph((s) => s.updateConfig)
+  const loading = useSuperGraph((s) => s.loading)
+  const activeResultId = useSuperGraph((s) => s.activeResultId)
+  const clearHighlights = useSuperGraph((s) => s.clearHighlights)
+  const clearResults = useSuperGraph((s) => s.clearResults)
+  const resetGraph = useSuperGraph((s) => s.resetGraph)
+  const results = useSuperGraph((s) => s.results)
   const hasSelection = editorSelection.trim().length > 0
 
   const getFullLines = useCallback((view: EditorView) => {
@@ -100,8 +100,8 @@ export function EditorPanel() {
 
   const extensions = useMemo(
     () => [
-      graphstoreLang,
-      graphstoreAutocomplete,
+      supergraphLang,
+      supergraphAutocomplete,
       fontTheme,
       keymap.of([
         { key: 'Ctrl-Enter', run: handleRunSelected },

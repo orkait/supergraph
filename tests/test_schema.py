@@ -1,9 +1,9 @@
-"""Tests for graphstore.schema - SchemaRegistry and validation."""
+"""Tests for supergraph.schema - SchemaRegistry and validation."""
 
 import pytest
 
-from graphstore.core.errors import SchemaError
-from graphstore.core.schema import SchemaRegistry
+from supergraph.core.errors import SchemaError
+from supergraph.core.schema import SchemaRegistry
 
 
 # ── 1. Empty registry ────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """Eviction primitives micro-benchmarks."""
 
-from graphstore.algos.eviction import needs_optimization, rank_evictable_slots
+from supergraph.algos.eviction import needs_optimization, rank_evictable_slots
 
 
 class TestNeedsOptimization:

@@ -1,10 +1,10 @@
-"""Tests for graphstore.store.CoreStore."""
+"""Tests for supergraph.store.CoreStore."""
 
 import pytest
 
-from graphstore.core.errors import CeilingExceeded, GraphStoreError, NodeExists, NodeNotFound
-from graphstore.core.memory import BYTES_PER_EDGE, BYTES_PER_NODE
-from graphstore.core.store import CoreStore
+from supergraph.core.errors import CeilingExceeded, SuperGraphError, NodeExists, NodeNotFound
+from supergraph.core.memory import BYTES_PER_EDGE, BYTES_PER_NODE
+from supergraph.core.store import CoreStore
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ class TestDuplicateEdge:
         s.put_node("a", "t", {})
         s.put_node("b", "t", {})
         s.put_edge("a", "b", "rel")
-        with pytest.raises(GraphStoreError, match="Duplicate edge"):
+        with pytest.raises(SuperGraphError, match="Duplicate edge"):
             s.put_edge("a", "b", "rel")
 
     def test_different_kind_allowed(self):

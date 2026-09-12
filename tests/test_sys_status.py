@@ -1,11 +1,11 @@
 """Tests for SYS CONNECT, SYS REEMBED, RETRACT/DELETE cascade, and SYS STATUS."""
 import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 class TestSysConnect:
     def test_connect_creates_edges(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "chunk" summary = "Paris travel" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "chunk" summary = "France tourism" VECTOR [0.95, 0.05, 0.0, 0.0]')
         g.execute('CREATE NODE "c" kind = "chunk" summary = "quantum physics" VECTOR [0.0, 0.0, 1.0, 0.0]')
@@ -13,7 +13,7 @@ class TestSysConnect:
         assert result.data["edges_created"] >= 1
 
     def test_connect_idempotent(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "chunk" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "chunk" VECTOR [0.95, 0.05, 0.0, 0.0]')
         r1 = g.execute('SYS CONNECT THRESHOLD 0.8')
@@ -21,21 +21,21 @@ class TestSysConnect:
         assert r2.data["edges_created"] == 0  # already connected
 
     def test_connect_node(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "chunk" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "chunk" VECTOR [0.9, 0.1, 0.0, 0.0]')
         result = g.execute('CONNECT NODE "a" THRESHOLD 0.8')
         assert result.data["edges_created"] >= 1
 
     def test_connect_no_vectors(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "chunk"')
         g.execute('CREATE NODE "b" kind = "chunk"')
         result = g.execute('SYS CONNECT')
         assert result.data["edges_created"] == 0
 
     def test_connect_default_threshold(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "x" kind = "chunk" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "y" kind = "chunk" VECTOR [0.99, 0.01, 0.0, 0.0]')
         result = g.execute('SYS CONNECT')
@@ -47,7 +47,7 @@ class TestRetractCascade:
     def test_retract_doc_retracts_chunks(self, tmp_path):
         f = tmp_path / "doc.txt"
         f.write_text("# Part 1\nContent\n\n# Part 2\nMore")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:test"')
         chunks_before = g.execute('NODES WHERE kind = "chunk"')
         assert len(chunks_before.data) >= 2
@@ -57,7 +57,7 @@ class TestRetractCascade:
 
     def test_retract_non_doc_no_cascade(self, tmp_path):
         """Retracting a non-document node should not cascade."""
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test"')
         g.execute('CREATE NODE "b" kind = "chunk" summary = "other"')
         g.execute('CREATE EDGE "a" -> "b" kind = "has_chunk"')
@@ -69,7 +69,7 @@ class TestRetractCascade:
     def test_delete_doc_cascades(self, tmp_path):
         f = tmp_path / "doc.txt"
         f.write_text("# Part 1\nContent")
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute(f'INGEST "{f}" AS "doc:del"')
         g.execute('DELETE NODE "doc:del"')
         assert len(g.execute('NODES WHERE kind = "chunk"').data) == 0
@@ -77,7 +77,7 @@ class TestRetractCascade:
 
     def test_delete_non_doc_no_cascade(self, tmp_path):
         """Deleting a non-document node should not cascade."""
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test"')
         g.execute('CREATE NODE "b" kind = "chunk" summary = "other"')
         g.execute('CREATE EDGE "a" -> "b" kind = "has_chunk"')
@@ -89,13 +89,13 @@ class TestRetractCascade:
 
 class TestSysReembed:
     def test_reembed_no_embedder_raises(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         with pytest.raises(Exception, match="No embedder"):
             g.execute('SYS REEMBED')
 
     def test_embedder_dirty_flag(self, tmp_path):
         """Dirty flag should block SIMILAR TO queries."""
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "chunk" summary = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         # Manually set dirty flag
         g._embedder_dirty = True
@@ -104,7 +104,7 @@ class TestSysReembed:
 
     @pytest.mark.needs_embedder
     def test_reembed_clears_dirty_flag(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         # Create node using auto-embed (embedder creates proper vector dimensions)
         g.execute('CREATE NODE "a" kind = "chunk" summary = "hello world"')
         # Manually embed to initialize vector store with correct dims
@@ -121,7 +121,7 @@ class TestSysReembed:
 
 class TestSysStatus:
     def test_returns_all_fields(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         result = g.execute('SYS STATUS')
         assert "nodes" in result.data
         assert "edges" in result.data
@@ -129,7 +129,7 @@ class TestSysStatus:
         assert "embedder" in result.data
 
     def test_status_with_data(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         g.execute('CREATE NODE "a" kind = "test" summary = "hello"')
         g.execute('CREATE NODE "b" kind = "test" summary = "world"')
         g.execute('CREATE EDGE "a" -> "b" kind = "related"')
@@ -138,12 +138,12 @@ class TestSysStatus:
         assert result.data["edges"] == 1
 
     def test_status_documents(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = g.execute('SYS STATUS')
         assert "documents" in result.data
 
     def test_status_edge_types(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        g = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         g.execute('CREATE NODE "a" kind = "test"')
         g.execute('CREATE NODE "b" kind = "test"')
         g.execute('CREATE EDGE "a" -> "b" kind = "knows"')
@@ -152,6 +152,6 @@ class TestSysStatus:
         assert "knows" in result.data["edge_types"]
 
     def test_status_uptime(self, tmp_path):
-        g = GraphStore(path=str(tmp_path / "db"))
+        g = SuperGraph(path=str(tmp_path / "db"))
         result = g.execute('SYS STATUS')
         assert result.data["uptime_seconds"] >= 0

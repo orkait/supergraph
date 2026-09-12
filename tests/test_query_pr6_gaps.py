@@ -9,8 +9,8 @@ Covers:
 """
 import pytest
 
-from graphstore import q, F, Time
-from graphstore.dsl.parser import parse
+from supergraph import q, F, Time
+from supergraph.dsl.parser import parse
 
 
 def _roundtrip(query_obj):

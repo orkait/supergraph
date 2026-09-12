@@ -1,4 +1,4 @@
-"""Tests for graphstore.pro: ProSpec, HostSnapshot, calibration cache,
+"""Tests for supergraph.pro: ProSpec, HostSnapshot, calibration cache,
 resolve(). Live calibration probing is exercised by PR#3's CLI tests;
 this file covers the deterministic parts.
 """
@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 import msgspec
 
-from graphstore.pro import (
+from supergraph.pro import (
     CalibrationCache, CalibrationEntry,
     HostSnapshot, ProSpec, ResolvedConfig,
     ProCalibrationMissing, ProExtraNotInstalled, ProUnsupportedHostError,
@@ -183,7 +183,7 @@ class TestCalibrationCache:
     def test_load_schema_mismatch_returns_empty(self, tmp_path):
         (tmp_path / "calibration.json").write_text(json.dumps({
             "schema_version": 9999,
-            "graphstore_version": "0.5.0",
+            "supergraph_version": "0.5.0",
             "host_signature": "test-sig",
             "measured_at": "2026-05-02T00:00:00+00:00",
             "components": {"x": {}},
@@ -192,10 +192,10 @@ class TestCalibrationCache:
         assert cache.components == {}
 
     def test_load_host_signature_mismatch_discards(self, tmp_path):
-        from graphstore import __version__ as gs_v
+        from supergraph import __version__ as gs_v
         (tmp_path / "calibration.json").write_text(json.dumps({
             "schema_version": 1,
-            "graphstore_version": gs_v,
+            "supergraph_version": gs_v,
             "host_signature": "other-host",
             "measured_at": "2026-05-02T00:00:00+00:00",
             "components": {"embedder:jina-v5-small": {
@@ -248,7 +248,7 @@ class TestCheckExtras:
         with pytest.raises(ProExtraNotInstalled) as excinfo:
             check_extras_installed(spec, host)
         assert "llama-cpp-python" in excinfo.value.missing_dists
-        assert "graphstore[pro]" in str(excinfo.value)
+        assert "supergraph[pro]" in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------

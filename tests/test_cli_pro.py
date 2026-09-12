@@ -1,4 +1,4 @@
-"""Tests for `graphstore pro` CLI subcommand.
+"""Tests for `supergraph pro` CLI subcommand.
 
 PR#3 ships read-only commands (check / status) end-to-end against a
 mocked calibration cache. setup / probe are stubs that print the manual
@@ -19,9 +19,9 @@ GS = sys.executable  # use the venv python directly to dodge entry-point lookup
 
 
 def _run(args: list[str], cwd=None) -> subprocess.CompletedProcess:
-    """Run `python -m graphstore.cli pro <args>` capturing stdout+stderr."""
+    """Run `python -m supergraph.cli pro <args>` capturing stdout+stderr."""
     return subprocess.run(
-        [GS, "-m", "graphstore.cli", "pro", *args],
+        [GS, "-m", "supergraph.cli", "pro", *args],
         cwd=cwd, capture_output=True, text=True, timeout=30,
     )
 

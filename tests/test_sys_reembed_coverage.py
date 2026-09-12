@@ -6,9 +6,9 @@ DOCUMENT vectors were left in the old embedder's space while the flag went green
 import numpy as np
 import pytest
 
-from graphstore.core.errors import GraphStoreError
-from graphstore.embedding.base import Embedder
-from graphstore.store import GraphStore
+from supergraph.core.errors import SuperGraphError
+from supergraph.embedding.base import Embedder
+from supergraph.store import SuperGraph
 
 DOC1 = "alpha beta gamma delta epsilon"
 DOC2 = "zeta eta theta iota kappa"
@@ -43,7 +43,7 @@ class StubEmbedder(Embedder):
 
 
 def _store(path, embedder):
-    return GraphStore(path=str(path), embedder=embedder, enable_sentence_nodes=False)
+    return SuperGraph(path=str(path), embedder=embedder, enable_sentence_nodes=False)
 
 
 def test_reembed_reencodes_document_vectors_and_clears_dirty(tmp_path):
@@ -56,7 +56,7 @@ def test_reembed_reencodes_document_vectors_and_clears_dirty(tmp_path):
     gs2 = _store(p, StubEmbedder("B"))
     assert gs2._embedder_dirty is True
     # reads blocked until reembed
-    with pytest.raises(GraphStoreError):
+    with pytest.raises(SuperGraphError):
         gs2.execute(f'SIMILAR TO "{DOC1}" LIMIT 2')
 
     r = gs2.execute("SYS REEMBED")

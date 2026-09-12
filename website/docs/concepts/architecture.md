@@ -8,7 +8,7 @@ sidebar_position: 1
 Three storage engines, one typed DSL, a tiered ingest pipeline, and a hybrid retrieval engine that fuses all of them.
 
 <p align="center">
-  <img src="/img/architecture.svg" alt="graphstore architecture: DSL + three storage engines + ingest pipeline + retrieval" width="780" />
+  <img src="/img/architecture.svg" alt="supergraph architecture: DSL + three storage engines + ingest pipeline + retrieval" width="780" />
 </p>
 
 ## What flows where
@@ -42,8 +42,8 @@ Pipeline output flows into the same three engines.
 
 ## Single-owner per path
 
-Persistent stores take an advisory lock on `<path>/.graphstore.lock`. A second `GraphStore(path=...)` against the same path raises `StoreInUse` - WAL replay + compact + checkpoint are not safe across processes. In-memory stores are unlocked. OS reclaims the lock on process exit.
+Persistent stores take an advisory lock on `<path>/.supergraph.lock`. A second `SuperGraph(path=...)` against the same path raises `StoreInUse` - WAL replay + compact + checkpoint are not safe across processes. In-memory stores are unlocked. OS reclaims the lock on process exit.
 
 ## Thread safety
 
-Default is single-threaded. `queued=True` installs a worker thread that serialises writes from multiple callers. BLAS thread count is capped at import time (`OMP_NUM_THREADS=2` by default; override with `GRAPHSTORE_BLAS_CAP=N`) so importing graphstore doesn't saturate all cores.
+Default is single-threaded. `queued=True` installs a worker thread that serialises writes from multiple callers. BLAS thread count is capped at import time (`OMP_NUM_THREADS=2` by default; override with `SUPERGRAPH_BLAS_CAP=N`) so importing supergraph doesn't saturate all cores.

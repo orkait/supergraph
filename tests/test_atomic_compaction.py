@@ -2,16 +2,16 @@ import pytest
 import sqlite3
 import numpy as np
 from unittest.mock import patch
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.document.store import DocumentStore
-from graphstore.vector.store import VectorStore
-from graphstore.core.optimizer import compact_tombstones_safe
-from graphstore.persistence.database import open_database
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.document.store import DocumentStore
+from supergraph.vector.store import VectorStore
+from supergraph.core.optimizer import compact_tombstones_safe
+from supergraph.persistence.database import open_database
 
 def test_atomic_compaction_rollback_on_failure(tmp_path):
     """Verify that if an error occurs mid-compaction, the atomic transaction rolls back."""
-    db_path = tmp_path / "graphstore.db"
+    db_path = tmp_path / "supergraph.db"
     docs_path = tmp_path / "documents.db"
     
     conn = open_database(str(db_path))
@@ -44,7 +44,7 @@ def test_atomic_compaction_rollback_on_failure(tmp_path):
         raise sqlite3.OperationalError("Simulated disk full or I/O error during final checkpoint!")
 
     # Patch the checkpoint function where it is imported/used
-    with patch('graphstore.persistence.serializer.checkpoint', side_effect=failing_checkpoint):
+    with patch('supergraph.persistence.serializer.checkpoint', side_effect=failing_checkpoint):
         with pytest.raises(sqlite3.OperationalError, match="Simulated disk full"):
             compact_tombstones_safe(store, schema, conn, vec_store, doc_store)
             

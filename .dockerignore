@@ -58,3 +58,6 @@ Dockerfile
 Dockerfile.*
 docker-compose*.yml
 .dockerignore
+
+# allow the CPU-pro image for Railway deploy
+!Dockerfile.pro-cpu

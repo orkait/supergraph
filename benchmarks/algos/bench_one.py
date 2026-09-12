@@ -10,7 +10,7 @@ Contract:
     - Stdout prints one line per benchmark:
           METRIC <benchmark_name> <mean_us>
       plus a trailing:
-          METRIC_FILE graphstore/algos/<algo>.py
+          METRIC_FILE supergraph/algos/<algo>.py
     - All metrics are microseconds, lower is better
     - Raw pytest-benchmark dump at .benchmarks/metric_<algo>.json
 
@@ -22,7 +22,7 @@ Usage:
 
 Autoresearch wiring example:
     {
-        "file_under_improvement": "graphstore/algos/graph.py",
+        "file_under_improvement": "supergraph/algos/graph.py",
         "metric_command": "python -m benchmarks.algos.bench_one graph --fast --json",
         "metric_format": "json",
         "metric_direction": "lower_is_better"
@@ -39,14 +39,14 @@ from pathlib import Path
 
 
 ALGO_TO_FILE = {
-    "graph": "graphstore/algos/graph.py",
-    "compact": "graphstore/algos/compact.py",
-    "fusion": "graphstore/algos/fusion.py",
-    "materialization": "graphstore/algos/materialization.py",
-    "spreading": "graphstore/algos/spreading.py",
-    "eviction": "graphstore/algos/eviction.py",
-    "sort": "graphstore/algos/sort.py",
-    "text": "graphstore/algos/text.py",
+    "graph": "supergraph/algos/graph.py",
+    "compact": "supergraph/algos/compact.py",
+    "fusion": "supergraph/algos/fusion.py",
+    "materialization": "supergraph/algos/materialization.py",
+    "spreading": "supergraph/algos/spreading.py",
+    "eviction": "supergraph/algos/eviction.py",
+    "sort": "supergraph/algos/sort.py",
+    "text": "supergraph/algos/text.py",
 }
 
 ALGO_TO_BENCH = {

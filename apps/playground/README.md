@@ -1,23 +1,23 @@
-# Graphstore Playground (Under Development)
+# SuperGraph Playground (Under Development)
 
-Interactive browser-based workbench for the graphstore DSL. Write queries, execute them, and visualize the graph in real-time.
+Interactive browser-based workbench for the supergraph DSL. Write queries, execute them, and visualize the graph in real-time.
 
 
 ## Quick Start
 
 ```bash
-pip install graphstore[playground]
-graphstore playground
+pip install supergraph[playground]
+supergraph playground
 ```
 
 Opens `http://localhost:7200` in your browser.
 
 ```bash
 # Custom port
-graphstore playground --port 8080
+supergraph playground --port 8080
 
 # Don't open browser
-graphstore playground --no-browser
+supergraph playground --no-browser
 ```
 
 ## Layout
@@ -44,7 +44,7 @@ Three resizable panels:
 ## Features
 
 ### Editor
-- Custom syntax highlighting for the graphstore DSL
+- Custom syntax highlighting for the supergraph DSL
 - **Ctrl+Enter** - run selected text (or current line)
 - **Ctrl+Shift+Enter** - run all queries
 - Supports `BEGIN...COMMIT` batch blocks
@@ -127,7 +127,7 @@ curl http://localhost:7200/api/graph
 pip install -e ".[dev,playground]"
 
 # Start backend
-graphstore playground --no-browser --port 7200
+supergraph playground --no-browser --port 7200
 
 # In another terminal, start frontend dev server
 cd playground

@@ -1,14 +1,14 @@
 """Tests for the cost estimator module."""
 
 import pytest
-from graphstore.core.store import CoreStore
-from graphstore.dsl.cost_estimator import (
+from supergraph.core.store import CoreStore
+from supergraph.dsl.cost_estimator import (
     estimate_match_cost,
     estimate_traverse_cost,
     CostEstimate,
     DEFAULT_FRONTIER_THRESHOLD,
 )
-from graphstore.dsl.ast_nodes import (
+from supergraph.dsl.ast_nodes import (
     MatchPattern,
     PatternStep,
     PatternArrow,

@@ -7,11 +7,11 @@ import pytest
 @pytest.fixture
 def client():
     """Create a test client without auth (in-memory store)."""
-    os.environ.pop("GRAPHSTORE_AUTH_TOKEN", None)
-    os.environ.pop("GRAPHSTORE_DB_PATH", None)
+    os.environ.pop("SUPERGRAPH_AUTH_TOKEN", None)
+    os.environ.pop("SUPERGRAPH_DB_PATH", None)
 
     import importlib
-    import graphstore.server as srv
+    import supergraph.server as srv
     srv._store = None
     importlib.reload(srv)
 
@@ -25,16 +25,16 @@ def client():
 def persistent_client():
     """Create a test client backed by a temporary on-disk DB.
 
-    Logs and script metadata only work when GraphStore has a real SQLite
+    Logs and script metadata only work when SuperGraph has a real SQLite
     connection (path != None), so tests that need them use this fixture.
     """
-    os.environ.pop("GRAPHSTORE_AUTH_TOKEN", None)
+    os.environ.pop("SUPERGRAPH_AUTH_TOKEN", None)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        os.environ["GRAPHSTORE_DB_PATH"] = tmpdir
+        os.environ["SUPERGRAPH_DB_PATH"] = tmpdir
 
         import importlib
-        import graphstore.server as srv
+        import supergraph.server as srv
         srv._store = None
         importlib.reload(srv)
 
@@ -43,7 +43,7 @@ def persistent_client():
         yield c
 
         srv._store = None
-        os.environ.pop("GRAPHSTORE_DB_PATH", None)
+        os.environ.pop("SUPERGRAPH_DB_PATH", None)
 
 
 class TestApiLogs:

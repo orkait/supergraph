@@ -1,6 +1,6 @@
 import numpy as np
 
-from graphstore.algos.materialization import materialize_bulk
+from supergraph.algos.materialization import materialize_bulk
 
 
 def test_materialize_bulk_skips_reserved_fields():

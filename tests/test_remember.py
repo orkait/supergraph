@@ -1,11 +1,11 @@
 """Tests for REMEMBER hybrid retrieval command."""
 import tempfile
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def test_remember_basic():
     """REMEMBER returns results from an in-memory store."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "fact1" kind = "fact" summary = "quantum entanglement is spooky"')
     gs.execute('CREATE NODE "fact2" kind = "fact" summary = "classical physics is deterministic"')
     gs.execute('CREATE NODE "fact3" kind = "fact" summary = "quantum computing uses qubits"')
@@ -20,7 +20,7 @@ def test_remember_basic():
 def test_remember_with_persistence():
     """REMEMBER works with persisted store (has FTS5 for BM25)."""
     with tempfile.TemporaryDirectory() as td:
-        gs = GraphStore(path=td)
+        gs = SuperGraph(path=td)
         # Create nodes with summaries that will be in DocumentStore
         gs.execute('CREATE NODE "doc1" kind = "fact" summary = "photosynthesis converts light"')
         gs.execute('CREATE NODE "doc2" kind = "fact" summary = "mitochondria produces energy"')
@@ -33,7 +33,7 @@ def test_remember_with_persistence():
 
 def test_remember_returns_scores():
     """REMEMBER results include breakdown scores."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "test" summary = "hello world"')
     result = gs.execute('REMEMBER "hello" LIMIT 5')
     if result.data:
@@ -45,7 +45,7 @@ def test_remember_returns_scores():
 
 def test_remember_with_where():
     """REMEMBER respects WHERE clause."""
-    gs = GraphStore()
+    gs = SuperGraph()
     gs.execute('CREATE NODE "a" kind = "fact" summary = "quantum physics"')
     gs.execute('CREATE NODE "b" kind = "opinion" summary = "quantum is weird"')
     result = gs.execute('REMEMBER "quantum" LIMIT 10 WHERE kind = "fact"')
@@ -56,7 +56,7 @@ def test_remember_with_where():
 
 def test_remember_empty_store():
     """REMEMBER on empty store returns empty."""
-    gs = GraphStore()
+    gs = SuperGraph()
     result = gs.execute('REMEMBER "anything" LIMIT 5')
     assert result.kind == "nodes"
     assert result.data == []
@@ -65,7 +65,7 @@ def test_remember_empty_store():
 
 def test_remember_limit():
     """REMEMBER respects LIMIT."""
-    gs = GraphStore()
+    gs = SuperGraph()
     for i in range(20):
         gs.execute(f'CREATE NODE "n{i}" kind = "test" summary = "test item {i}"')
     result = gs.execute('REMEMBER "test" LIMIT 3')
@@ -74,7 +74,7 @@ def test_remember_limit():
 
 
 def test_remember_at_without_event_column_warns():
-    gs = GraphStore()
+    gs = SuperGraph()
     try:
         gs.execute('CREATE NODE "a" kind = "doc" text = "hello world"')
         r = gs.execute('REMEMBER "hello" AT "2024-01-01" LIMIT 5')
@@ -88,7 +88,7 @@ def test_remember_at_without_event_column_warns():
 
 def test_remember_recall_count_persists_across_checkpoint(tmp_path):
     path = tmp_path / "gs"
-    gs = GraphStore(path=str(path))
+    gs = SuperGraph(path=str(path))
     try:
         gs.execute('CREATE NODE "doc1" kind = "doc" text = "the quick brown fox" DOCUMENT "the quick brown fox"')
         r = gs.execute('REMEMBER "quick" LIMIT 5')
@@ -97,7 +97,7 @@ def test_remember_recall_count_persists_across_checkpoint(tmp_path):
     finally:
         gs.close()
 
-    gs2 = GraphStore(path=str(path))
+    gs2 = SuperGraph(path=str(path))
     try:
         cs = gs2._store
         n = cs._next_slot
@@ -114,7 +114,7 @@ def test_remember_reranker_error_surfaces_in_meta(tmp_path):
         def score(self, q, docs):
             raise RuntimeError("rerank boom")
 
-    gs = GraphStore(path=str(tmp_path / "gs"))
+    gs = SuperGraph(path=str(tmp_path / "gs"))
     gs._executor._reranker = BrokenReranker()
     try:
         for i in range(20):
@@ -132,7 +132,7 @@ def test_remember_reranker_error_surfaces_in_meta(tmp_path):
 
 
 def test_remember_nucleus_respects_visit_budget():
-    gs = GraphStore(nucleus_expansion=True, nucleus_hops=3,
+    gs = SuperGraph(nucleus_expansion=True, nucleus_hops=3,
                     nucleus_neighbors_per_hop=50,
                     nucleus_allowed_kinds=["chunk"])
     try:
@@ -153,7 +153,7 @@ def test_remember_nucleus_respects_visit_budget():
 def test_document_clause_populates_bm25_index():
     """CREATE NODE ... DOCUMENT "text" must make the content searchable via
     REMEMBER's BM25 channel without a separate put_summary() call."""
-    gs = GraphStore(embedder=None)
+    gs = SuperGraph(embedder=None)
     try:
         gs.execute('CREATE NODE "a" kind = "doc" text = "tag1" DOCUMENT "quantum entanglement"')
         gs.execute('CREATE NODE "b" kind = "doc" text = "tag2" DOCUMENT "classical mechanics"')
@@ -168,7 +168,7 @@ def test_document_clause_populates_bm25_index():
 def test_remember_empty_reports_diagnostic_reasons():
     """When REMEMBER returns zero, meta.debug.empty_result_reasons must
     explain why - no embedder, no FTS content, etc."""
-    gs = GraphStore(embedder=None)
+    gs = SuperGraph(embedder=None)
     try:
         gs.execute('CREATE NODE "a" kind = "doc" text = "just a column, no DOCUMENT"')
         r = gs.execute('REMEMBER "anything" LIMIT 5')
@@ -182,7 +182,7 @@ def test_remember_empty_reports_diagnostic_reasons():
 
 
 def test_remember_empty_store_reports_no_nodes():
-    gs = GraphStore(embedder=None)
+    gs = SuperGraph(embedder=None)
     try:
         r = gs.execute('REMEMBER "anything" LIMIT 5')
         reasons = (r.meta or {}).get("debug", {}).get("empty_result_reasons", [])

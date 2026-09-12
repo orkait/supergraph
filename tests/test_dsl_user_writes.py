@@ -1,12 +1,12 @@
 """End-to-end tests for DSL write operations: DSL string -> parse -> execute -> verify Result."""
 
 import pytest
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor import Executor
-from graphstore.core.errors import NodeExists, NodeNotFound, BatchRollback
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor import Executor
+from supergraph.core.errors import NodeExists, NodeNotFound, BatchRollback
 
 
 @pytest.fixture

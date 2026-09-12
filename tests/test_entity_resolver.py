@@ -1,4 +1,4 @@
-"""Tests for graphstore.entity_resolver.
+"""Tests for supergraph.entity_resolver.
 
 The resolver is pure-read - it never mutates the store. Tests build
 synthetic graph state via direct DSL writes, then call
@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from graphstore import GraphStore
-from graphstore.entity_resolver import (
+from supergraph import SuperGraph
+from supergraph.entity_resolver import (
     DEFAULT_HIGH_THRESHOLD,
     EDGE_REFERS_TO,
     KIND_ENTITY,
@@ -42,9 +42,9 @@ def gs(tmp_path):
     resolution leak into another. Clear it in both setup and
     teardown.
     """
-    from graphstore.entity_resolver import reset_resolver_cache_for_tests
+    from supergraph.entity_resolver import reset_resolver_cache_for_tests
     reset_resolver_cache_for_tests()
-    store = GraphStore(path=str(tmp_path / "db"))
+    store = SuperGraph(path=str(tmp_path / "db"))
     yield store
     store.close()
     reset_resolver_cache_for_tests()

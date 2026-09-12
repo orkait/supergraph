@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from graphstore.embedding.base import Embedder
+from supergraph.embedding.base import Embedder
 
 from benchmarks.framework.runners.longmemeval import (
     build_corpus,

@@ -16,10 +16,10 @@ import tempfile
 import time
 from typing import Callable
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
-def _bulk_create(gs: GraphStore, n: int) -> float:
+def _bulk_create(gs: SuperGraph, n: int) -> float:
     t0 = time.perf_counter()
     with gs.deferred_embeddings(batch_size=256):
         for i in range(n):
@@ -30,7 +30,7 @@ def _bulk_create(gs: GraphStore, n: int) -> float:
     return time.perf_counter() - t0
 
 
-def _bench(gs: GraphStore, q: str, iters: int = 30, warmup: int = 5) -> float:
+def _bench(gs: SuperGraph, q: str, iters: int = 30, warmup: int = 5) -> float:
     for _ in range(warmup):
         gs.execute(q)
     times = []
@@ -53,10 +53,10 @@ QUERIES: list[tuple[str, str]] = [
 
 def run(n: int, mode: str) -> None:
     if mode == "mem":
-        gs = GraphStore(path=None)
+        gs = SuperGraph(path=None)
     else:
         td = tempfile.mkdtemp(prefix=f"gs_bench_{n}_")
-        gs = GraphStore(path=f"{td}/db")
+        gs = SuperGraph(path=f"{td}/db")
 
     ingest_s = _bulk_create(gs, n)
 

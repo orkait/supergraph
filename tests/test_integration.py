@@ -1,20 +1,20 @@
-"""Integration tests for the GraphStore public API.
+"""Integration tests for the SuperGraph public API.
 
 Tests exercise the full stack: DSL parsing, execution, persistence,
-and error handling through the GraphStore facade.
+and error handling through the SuperGraph facade.
 """
 
 import pytest
 
-from graphstore import GraphStore
-from graphstore.core.errors import BatchRollback, CeilingExceeded
+from supergraph import SuperGraph
+from supergraph.core.errors import BatchRollback, CeilingExceeded
 
 
 # ── Test 1: Full workflow - schema, bulk load, query, mutate, verify ──
 
 
 def test_full_workflow(tmp_path):
-    with GraphStore(path=str(tmp_path / "db")) as g:
+    with SuperGraph(path=str(tmp_path / "db")) as g:
         # Register schema
         g.execute('SYS REGISTER NODE KIND "function" REQUIRED name OPTIONAL file, line')
         g.execute('SYS REGISTER NODE KIND "class" REQUIRED name OPTIONAL file')
@@ -76,14 +76,14 @@ def test_persistence_roundtrip(tmp_path):
     db_path = str(tmp_path / "db")
 
     # Create and populate
-    with GraphStore(path=db_path) as g:
+    with SuperGraph(path=db_path) as g:
         g.execute('CREATE NODE "a" kind = "x" name = "alpha"')
         g.execute('CREATE NODE "b" kind = "x" name = "beta"')
         g.execute('CREATE EDGE "a" -> "b" kind = "link"')
         g.checkpoint()
 
     # Reload and verify
-    with GraphStore(path=db_path) as g:
+    with SuperGraph(path=db_path) as g:
         assert g.node_count == 2
         assert g.edge_count == 1
 
@@ -104,7 +104,7 @@ def test_wal_recovery(tmp_path):
     # Create, mutate without explicit checkpoint.
     # Writes are appended to the WAL table before execution, so they
     # survive even if we skip the normal close() checkpoint path.
-    g = GraphStore(path=db_path)
+    g = SuperGraph(path=db_path)
     g.execute('CREATE NODE "a" kind = "x" name = "alpha"')
     g.execute('CREATE NODE "b" kind = "x" name = "beta"')
 
@@ -119,7 +119,7 @@ def test_wal_recovery(tmp_path):
         g._path_lock = None
 
     # Reopen - the constructor should replay the WAL
-    with GraphStore(path=db_path) as g2:
+    with SuperGraph(path=db_path) as g2:
         assert g2.node_count == 2
         r = g2.execute('NODE "a"')
         assert r.data is not None
@@ -129,7 +129,7 @@ def test_wal_recovery(tmp_path):
 
 
 def test_batch_rollback():
-    g = GraphStore()
+    g = SuperGraph()
     g.execute('CREATE NODE "a" kind = "x" name = "alpha"')
 
     # The second CREATE inside the batch creates "a" again, which
@@ -153,7 +153,7 @@ def test_batch_rollback():
 
 
 def test_memory_ceiling():
-    g = GraphStore(ceiling_mb=1)  # ~1 MB ceiling
+    g = SuperGraph(ceiling_mb=1)  # ~1 MB ceiling
 
     with pytest.raises(CeilingExceeded):
         for i in range(100_000):
@@ -164,7 +164,7 @@ def test_memory_ceiling():
 
 
 def test_in_memory_mode():
-    g = GraphStore()  # No path -> in-memory
+    g = SuperGraph()  # No path -> in-memory
     g.execute('CREATE NODE "a" kind = "x" name = "alpha"')
     assert g.node_count == 1
     g.checkpoint()  # should be a no-op
@@ -175,7 +175,7 @@ def test_in_memory_mode():
 
 
 def test_system_queries_disabled():
-    g = GraphStore(allow_system_queries=False)
+    g = SuperGraph(allow_system_queries=False)
     g.execute('CREATE NODE "a" kind = "x" name = "alpha"')  # user query works
 
     with pytest.raises(PermissionError):
@@ -186,7 +186,7 @@ def test_system_queries_disabled():
 
 
 def test_execute_batch():
-    g = GraphStore()
+    g = SuperGraph()
     results = g.execute_batch([
         'CREATE NODE "a" kind = "x" name = "alpha"',
         'CREATE NODE "b" kind = "x" name = "beta"',
@@ -202,11 +202,11 @@ def test_execute_batch():
 
 def test_context_manager(tmp_path):
     db_path = str(tmp_path / "db")
-    with GraphStore(path=db_path) as g:
+    with SuperGraph(path=db_path) as g:
         g.execute('CREATE NODE "a" kind = "x" name = "alpha"')
     # __exit__ calls close() which calls checkpoint()
 
-    with GraphStore(path=db_path) as g:
+    with SuperGraph(path=db_path) as g:
         assert g.node_count == 1
 
 
@@ -214,7 +214,7 @@ def test_context_manager(tmp_path):
 
 
 def test_complex_queries():
-    g = GraphStore()
+    g = SuperGraph()
 
     # Build a linear call chain: fn0 -> fn1 -> fn2 -> ... -> fn9
     for i in range(10):
@@ -260,7 +260,7 @@ def test_complex_queries():
 
 
 def test_upsert():
-    g = GraphStore()
+    g = SuperGraph()
     g.execute('UPSERT NODE "a" kind = "x" name = "v1"')
     r = g.execute('NODE "a"')
     assert r.data["name"] == "v1"
@@ -275,7 +275,7 @@ def test_upsert():
 
 
 def test_delete_nodes_where():
-    g = GraphStore()
+    g = SuperGraph()
     g.execute('CREATE NODE "a" kind = "x" name = "keep"')
     g.execute('CREATE NODE "b" kind = "y" name = "delete"')
     g.execute('CREATE NODE "c" kind = "y" name = "delete"')
@@ -289,7 +289,7 @@ def test_delete_nodes_where():
 
 
 def test_increment():
-    g = GraphStore()
+    g = SuperGraph()
     g.execute('CREATE NODE "a" kind = "x" name = "alpha" hits = 0')
     g.execute('INCREMENT NODE "a" hits BY 1')
     g.execute('INCREMENT NODE "a" hits BY 5')
@@ -301,7 +301,7 @@ def test_increment():
 
 
 def test_common_neighbors():
-    g = GraphStore()
+    g = SuperGraph()
     g.execute('CREATE NODE "a" kind = "x" name = "a"')
     g.execute('CREATE NODE "b" kind = "x" name = "b"')
     g.execute('CREATE NODE "c" kind = "x" name = "c"')

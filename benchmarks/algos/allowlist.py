@@ -1,4 +1,4 @@
-"""Single source of truth for what graphstore/algos/ may import.
+"""Single source of truth for what supergraph/algos/ may import.
 
 Consumed by:
     - tests/test_algos_purity.py  → blocks forbidden imports at CI time
@@ -81,7 +81,7 @@ OPTIONAL: dict[str, dict[str, str]] = {
 }
 
 FORBIDDEN_PREFIXES: frozenset[str] = frozenset({
-    "graphstore",
+    "supergraph",
     "pytest",
     "fastapi",
     "uvicorn",

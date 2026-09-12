@@ -1,11 +1,11 @@
 """Tests for SYS DUPLICATES, SYS EMBEDDERS, and vector persistence."""
 import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 class TestSysDuplicates:
     def test_finds_near_duplicates(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.99, 0.01, 0.0, 0.0]')
@@ -17,7 +17,7 @@ class TestSysDuplicates:
         assert pair["similarity"] > 0.9
 
     def test_no_duplicates(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.0, 1.0, 0.0, 0.0]')
@@ -25,7 +25,7 @@ class TestSysDuplicates:
         assert result.count == 0
 
     def test_duplicates_with_where(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "memory" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "memory" VECTOR [0.99, 0.01, 0.0, 0.0]')
@@ -36,7 +36,7 @@ class TestSysDuplicates:
             assert pair["node_a"] != "c" and pair["node_b"] != "c"
 
     def test_duplicates_default_threshold(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.99, 0.01, 0.0, 0.0]')
@@ -46,7 +46,7 @@ class TestSysDuplicates:
 
     def test_deduplicates_pairs(self):
         """Should not report both A->B and B->A."""
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "a" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "b" kind = "test" VECTOR [0.99, 0.01, 0.0, 0.0]')
@@ -61,34 +61,34 @@ class TestSysDuplicates:
 class TestSysEmbedders:
     @pytest.mark.needs_embedder
     def test_lists_active_embedder(self):
-        g = GraphStore()
+        g = SuperGraph()
         result = g.execute('SYS EMBEDDERS')
         assert result.count >= 1
         assert result.data[0]["name"] == "model2vec"
 
     def test_no_embedder(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         result = g.execute('SYS EMBEDDERS')
         assert result.data[0]["status"] == "no embedder configured"
 
 
 class TestVectorPersistence:
     def test_roundtrip(self, tmp_path):
-        g = GraphStore(path=str(tmp_path), embedder=None)
+        g = SuperGraph(path=str(tmp_path), embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "m1" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('CREATE NODE "m2" kind = "test" VECTOR [0.0, 1.0, 0.0, 0.0]')
         g.checkpoint()
         g.close()
 
-        g2 = GraphStore(path=str(tmp_path), embedder=None)
+        g2 = SuperGraph(path=str(tmp_path), embedder=None)
         result = g2.execute('SIMILAR TO [1.0, 0.0, 0.0, 0.0] LIMIT 5')
         assert len(result.data) >= 1
         assert result.data[0]["id"] == "m1"
         g2.close()
 
     def test_snapshot_rollback_with_vectors(self):
-        g = GraphStore(embedder=None)
+        g = SuperGraph(embedder=None)
         g._ensure_vector_store(4)
         g.execute('CREATE NODE "m1" kind = "test" VECTOR [1.0, 0.0, 0.0, 0.0]')
         g.execute('SYS SNAPSHOT "before"')

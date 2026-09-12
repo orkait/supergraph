@@ -1,4 +1,4 @@
-"""Kaggle: GraphStore benchmark on LongMemEval-S
+"""Kaggle: SuperGraph benchmark on LongMemEval-S
 
 To swap models/datasets: edit the CONFIG section below.
 """
@@ -9,7 +9,7 @@ import subprocess, sys, os, time, shutil
 # ============================================================
 
 # Run identity
-RUN_TAG         = "graphstore-jina-v5-small"
+RUN_TAG         = "supergraph-jina-v5-small"
 
 # Embedder
 EMBEDDER_REPO   = "jinaai/jina-embeddings-v5-text-small-retrieval"
@@ -24,8 +24,8 @@ NER_REPO        = "onnx-community/TinyBERT-finetuned-NER-ONNX"
 DATASET_REPO    = "xiaowu0162/longmemeval-cleaned"
 DATASET_VARIANT = "s"
 
-# GraphStore source
-REPO_URL        = "https://github.com/orkait/graphstore.git"
+# SuperGraph source
+REPO_URL        = "https://github.com/orkait/supergraph.git"
 REPO_BRANCH     = "main"
 
 # Hardware
@@ -41,12 +41,12 @@ NER_KAGGLE_SLUG      = "superkaiii/tinybert-ner-onnx"    # None to download fres
 # PATHS - derived from CONFIG, no need to edit
 # ============================================================
 WORKING         = "/kaggle/working"
-GRAPHSTORE_DIR  = f"{WORKING}/graphstore"
+SUPERGRAPH_DIR  = f"{WORKING}/supergraph"
 EMBEDDER_DIR    = f"{WORKING}/embedder-model"
 DATASET_DIR     = f"{WORKING}/dataset/longmemeval"
-NER_DIR         = f"{GRAPHSTORE_DIR}/models/ner"
+NER_DIR         = f"{SUPERGRAPH_DIR}/models/ner"
 RESULTS_DIR     = f"{WORKING}/results"
-CONFIG_PATH     = f"{GRAPHSTORE_DIR}/benchmarks/graphstore.json"
+CONFIG_PATH     = f"{SUPERGRAPH_DIR}/benchmarks/supergraph.json"
 HF_TOKEN_FILE   = "/kaggle/input/hf-token-private/hf_token.txt"
 KAGGLE_INPUT    = "/kaggle/input"
 
@@ -99,7 +99,7 @@ def download_with_retry(repo_id, local_dir, token, label, repo_type="model", max
 # ============================================================
 def cleanup():
     """Remove leftover dirs from previous failed runs."""
-    for d in [GRAPHSTORE_DIR, RESULTS_DIR]:
+    for d in [SUPERGRAPH_DIR, RESULTS_DIR]:
         if os.path.exists(d):
             try:
                 shutil.rmtree(d)
@@ -174,11 +174,11 @@ def hf_login(token):
 
 
 def clone_repo():
-    """Clone graphstore at target branch (skip LFS)."""
+    """Clone supergraph at target branch (skip LFS)."""
     env = os.environ.copy()
     env["GIT_LFS_SKIP_SMUDGE"] = "1"
     return run_cmd(
-        ["git", "clone", "--depth", "1", "--branch", REPO_BRANCH, REPO_URL, GRAPHSTORE_DIR],
+        ["git", "clone", "--depth", "1", "--branch", REPO_BRANCH, REPO_URL, SUPERGRAPH_DIR],
         f"git clone {REPO_BRANCH}", env=env
     )
 
@@ -222,15 +222,15 @@ def setup_env():
         log(f"FAIL config not found: {CONFIG_PATH}")
         return False
 
-    os.environ["GRAPHSTORE_CONFIG"] = CONFIG_PATH
-    # `graphstore` package lives under src/ (PEP 517 layout); `benchmarks`
+    os.environ["SUPERGRAPH_CONFIG"] = CONFIG_PATH
+    # `supergraph` package lives under src/ (PEP 517 layout); `benchmarks`
     # sits at the repo root. Both need to be importable.
-    sys.path.insert(0, f"{GRAPHSTORE_DIR}/src")
-    sys.path.insert(0, GRAPHSTORE_DIR)
+    sys.path.insert(0, f"{SUPERGRAPH_DIR}/src")
+    sys.path.insert(0, SUPERGRAPH_DIR)
 
     sys.argv = [
         "bench",
-        "--system",               "graphstore",
+        "--system",               "supergraph",
         "--dataset",              "longmemeval",
         "--data-path",            DATASET_DIR,
         "--variant",              DATASET_VARIANT,

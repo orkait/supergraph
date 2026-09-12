@@ -4,9 +4,9 @@ import time
 import pytest
 from unittest.mock import patch, MagicMock
 
-from graphstore import GraphStore
-from graphstore.dsl.parser import parse_uncached
-from graphstore.dsl.ast_nodes import LexicalSearchQuery, ForgetNode, SysRetain
+from supergraph import SuperGraph
+from supergraph.dsl.parser import parse_uncached
+from supergraph.dsl.ast_nodes import LexicalSearchQuery, ForgetNode, SysRetain
 
 
 # ============================================================
@@ -27,7 +27,7 @@ class TestLexicalRecall:
         assert ast.where is not None
 
     def test_lexical_search_returns_results(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "c1" kind = "chunk" summary = "machine learning algorithms"')
         gs.execute('CREATE NODE "c2" kind = "chunk" summary = "deep neural network training"')
         gs.execute('CREATE NODE "c3" kind = "chunk" summary = "database indexing strategies"')
@@ -48,14 +48,14 @@ class TestLexicalRecall:
         gs.close()
 
     def test_lexical_search_empty(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = gs.execute('LEXICAL SEARCH "nonexistent term xyz"')
         assert result.kind == "nodes"
         assert result.count == 0
         gs.close()
 
     def test_lexical_search_respects_limit(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         for i in range(10):
             gs.execute(f'CREATE NODE "n{i}" kind = "chunk" summary = "common topic here"')
             str_id = gs._store.string_table.intern(f"n{i}")
@@ -80,12 +80,12 @@ class TestVisionIngest:
         img_path = tmp_path / "test.png"
         img_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
 
         mock_vh = MagicMock()
         mock_vh.describe.return_value = "A test image showing a diagram"
 
-        with patch("graphstore.ingest.vision.VisionHandler", return_value=mock_vh):
+        with patch("supergraph.ingest.vision.VisionHandler", return_value=mock_vh):
             result = gs.execute(f'INGEST "{img_path}" USING VISION "test-model"')
 
         assert result.kind == "ok"
@@ -109,7 +109,7 @@ class TestForgetNode:
         assert ast.id == "old-memory"
 
     def test_forget_removes_node(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "mem1" kind = "memory" summary = "some memory"')
         result = gs.execute('NODE "mem1"')
         assert result.data is not None
@@ -120,7 +120,7 @@ class TestForgetNode:
         gs.close()
 
     def test_forget_cascades_document_children(self, tmp_path):
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         gs.execute('CREATE NODE "doc1" kind = "document" source = "test.md"')
         gs.execute('CREATE NODE "doc1:chunk:0" kind = "chunk" summary = "chunk text"')
         gs.execute('CREATE EDGE "doc1" -> "doc1:chunk:0" kind = "has_chunk"')
@@ -138,7 +138,7 @@ class TestSysRetain:
         assert isinstance(ast, SysRetain)
 
     def test_retain_transitions_blob_state(self, tmp_path):
-        gs = GraphStore(
+        gs = SuperGraph(
             path=str(tmp_path / "db"),
             embedder=None,
             retention={"blob_warm_days": 0, "blob_archive_days": 0, "blob_delete_days": 9999},
@@ -165,7 +165,7 @@ class TestBlobStateOnIngest:
         test_file = tmp_path / "test.txt"
         test_file.write_text("# Hello\nSome content here for testing.")
 
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = gs.execute(f'INGEST "{test_file}"')
         doc_id = result.data["doc_id"]
 
@@ -198,7 +198,7 @@ class TestSectionHierarchy:
             "The results show...\n"
         )
 
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = gs.execute(f'INGEST "{test_file}"')
 
         assert result.data["sections"] >= 2
@@ -235,7 +235,7 @@ class TestSectionHierarchy:
             "Beta content.\n"
         )
 
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = gs.execute(f'INGEST "{test_file}"')
         doc_id = result.data["doc_id"]
 
@@ -256,7 +256,7 @@ class TestSectionHierarchy:
         test_file = tmp_path / "flat.txt"
         test_file.write_text("Just a paragraph of text without any headings at all.")
 
-        gs = GraphStore(path=str(tmp_path / "db"), embedder=None)
+        gs = SuperGraph(path=str(tmp_path / "db"), embedder=None)
         result = gs.execute(f'INGEST "{test_file}"')
         assert result.data["sections"] == 0
 

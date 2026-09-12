@@ -4,10 +4,10 @@ from scipy.sparse import csr_matrix
 import sys
 import os
 
-# Ensure we can import graphstore algos
+# Ensure we can import supergraph algos
 sys.path.insert(0, os.path.abspath("."))
-from graphstore.algos.spreading import spreading_activation
-from graphstore.algos.fusion import weighted_remember_fusion
+from supergraph.algos.spreading import spreading_activation
+from supergraph.algos.fusion import weighted_remember_fusion
 
 def bench_hybrid_rag_logic():
     N = 10000

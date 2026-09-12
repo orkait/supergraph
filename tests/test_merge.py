@@ -1,15 +1,15 @@
 import pytest
-from graphstore import GraphStore
-from graphstore.core.errors import GraphStoreError
+from supergraph import SuperGraph
+from supergraph.core.errors import SuperGraphError
 
 
 def test_merge_self_is_rejected():
-    gs = GraphStore()
+    gs = SuperGraph()
     try:
         gs.execute('CREATE NODE "a" kind = "person" name = "alice"')
         gs.execute('CREATE NODE "b" kind = "person" name = "bob"')
         gs.execute('CREATE EDGE "a" -> "b" kind = "knows"')
-        with pytest.raises(GraphStoreError, match="same slot"):
+        with pytest.raises(SuperGraphError, match="same slot"):
             gs.execute('MERGE NODE "a" INTO "a"')
         assert gs.execute('NODE "a"').data is not None
         assert gs.execute('NODE "b"').data is not None
@@ -19,7 +19,7 @@ def test_merge_self_is_rejected():
 
 
 def test_merge_different_nodes_still_works():
-    gs = GraphStore()
+    gs = SuperGraph()
     try:
         gs.execute('CREATE NODE "a" kind = "person" name = "alice"')
         gs.execute('CREATE NODE "b" kind = "person" name = "bob"')

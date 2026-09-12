@@ -1,9 +1,9 @@
 import pytest
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 def test_batch_vector_rolled_back_on_failure():
-    gs = GraphStore(embedder=None)
+    gs = SuperGraph(embedder=None)
     try:
         gs.execute('CREATE NODE "seed" kind = "doc" text = "hello"')
         assert gs._vector_store is None or gs._vector_store.count() == 0
@@ -24,7 +24,7 @@ def test_batch_vector_rolled_back_on_failure():
 
 
 def test_auto_id_width_is_16_hex():
-    gs = GraphStore()
+    gs = SuperGraph()
     try:
         r = gs.execute('CREATE NODE AUTO kind = "k" v = 1')
         nid = r.data["id"]
@@ -37,7 +37,7 @@ def test_auto_id_width_is_16_hex():
 def test_batch_rollback_removes_multiple_pending_vectors():
     """Batch with several vector-bearing CREATE NODEs that fails partway
     must roll back every vector it added, not just the last one."""
-    gs = GraphStore(embedder=None)
+    gs = SuperGraph(embedder=None)
     try:
         assert gs._vector_store is None or gs._vector_store.count() == 0
 
@@ -62,7 +62,7 @@ def test_batch_rollback_removes_multiple_pending_vectors():
 def test_batch_disabled_rollback_leaves_committed_side_effects():
     """enable_rollback=False: pre-failure CREATEs persist after a later
     failure in the same batch. Pins the no-rollback contract."""
-    gs = GraphStore(enable_rollback=False, embedder=None)
+    gs = SuperGraph(enable_rollback=False, embedder=None)
     try:
         with pytest.raises(Exception):
             gs.execute(

@@ -1,8 +1,8 @@
 """Test that REMEMBER uses confidence, recall frequency, and recency."""
 import time
 import numpy as np
-from graphstore import GraphStore
-from graphstore.embedding.base import Embedder
+from supergraph import SuperGraph
+from supergraph.embedding.base import Embedder
 
 
 class FixedEmbedder(Embedder):
@@ -30,7 +30,7 @@ class FixedEmbedder(Embedder):
 
 def test_remember_records_recall_feedback():
     """REMEMBER should increment __recall_count__ on returned nodes."""
-    gs = GraphStore(embedder=FixedEmbedder())
+    gs = SuperGraph(embedder=FixedEmbedder())
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     gs.execute('CREATE NODE "r1" kind = "item" text = "quantum physics"')
 
@@ -47,7 +47,7 @@ def test_remember_records_recall_feedback():
 
 def test_remember_includes_score_breakdown():
     """Results should include the full per-signal breakdown on every node."""
-    gs = GraphStore(embedder=FixedEmbedder())
+    gs = SuperGraph(embedder=FixedEmbedder())
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     gs.execute('CREATE NODE "t1" kind = "item" text = "test content"')
 
@@ -66,11 +66,11 @@ def test_remember_includes_score_breakdown():
 def test_remember_meta_signals_telemetry():
     """meta['signals'] surfaces fusion method, weights, stage counts, reranker state.
 
-    This is Step 1 of graphstore's retrieval-observability effort. Callers who
+    This is Step 1 of supergraph's retrieval-observability effort. Callers who
     want to know *why* a REMEMBER result looks the way it does should be able
     to read the full pipeline telemetry without reading handler source.
     """
-    gs = GraphStore(embedder=FixedEmbedder(), graph_signal_enabled=True)
+    gs = SuperGraph(embedder=FixedEmbedder(), graph_signal_enabled=True)
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     for i in range(3):
         gs.execute(f'CREATE NODE "n{i}" kind = "item" text = "entry {i}"')
@@ -108,7 +108,7 @@ def test_remember_meta_signals_telemetry():
 
 def test_remember_graph_signal_reflected_in_meta():
     """Disabling the graph signal must show in meta['signals']['fusion']."""
-    gs = GraphStore(embedder=FixedEmbedder(), graph_signal_enabled=False)
+    gs = SuperGraph(embedder=FixedEmbedder(), graph_signal_enabled=False)
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     gs.execute('CREATE NODE "n1" kind = "item" text = "entry"')
     r = gs.execute('REMEMBER "entry" LIMIT 5')
@@ -118,7 +118,7 @@ def test_remember_graph_signal_reflected_in_meta():
 
 def test_sys_explain_remember_returns_plan_without_side_effects():
     """SYS EXPLAIN REMEMBER dry-runs: returns candidate plan, no state mutation."""
-    gs = GraphStore(embedder=FixedEmbedder())
+    gs = SuperGraph(embedder=FixedEmbedder())
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     for i in range(5):
         gs.execute(f'CREATE NODE "p{i}" kind = "item" text = "entry {i}"')
@@ -164,7 +164,7 @@ def test_sys_explain_remember_returns_plan_without_side_effects():
 
 def test_sys_explain_remember_empty_store_returns_empty_plan():
     """With no nodes, EXPLAIN must return kind='plan' with empty candidates."""
-    gs = GraphStore(embedder=FixedEmbedder())
+    gs = SuperGraph(embedder=FixedEmbedder())
     gs.execute('SYS REGISTER NODE KIND "item" REQUIRED text:string EMBED text')
     r = gs.execute('SYS EXPLAIN REMEMBER "anything" LIMIT 5')
     assert r.kind == "plan"

@@ -1,12 +1,12 @@
 """End-to-end tests for column-accelerated DSL queries."""
 
 import pytest
-from graphstore.core.store import CoreStore
-from graphstore.core.schema import SchemaRegistry
-from graphstore.core.runtime import RuntimeState
-from graphstore.dsl.parser import parse
-from graphstore.dsl.executor import Executor
-from graphstore.dsl.executor_system import SystemExecutor
+from supergraph.core.store import CoreStore
+from supergraph.core.schema import SchemaRegistry
+from supergraph.core.runtime import RuntimeState
+from supergraph.dsl.parser import parse
+from supergraph.dsl.executor import Executor
+from supergraph.dsl.executor_system import SystemExecutor
 
 
 def _make_runtime(store):
@@ -127,9 +127,9 @@ class TestColumnFilterDelete:
         assert r2.data == 4
 
 
-from graphstore.core.schema import SchemaRegistry
-from graphstore.dsl.executor_system import SystemExecutor
-from graphstore.core.errors import BatchRollback
+from supergraph.core.schema import SchemaRegistry
+from supergraph.dsl.executor_system import SystemExecutor
+from supergraph.core.errors import BatchRollback
 
 
 class TestBatchRollbackColumns:
@@ -186,18 +186,18 @@ class TestColumnMemoryStats:
         assert r.data["column_memory_bytes"] > 0
 
 
-from graphstore import GraphStore
+from supergraph import SuperGraph
 
 
 class TestEndToEnd:
-    def test_graphstore_round_trip(self, tmp_path):
-        with GraphStore(str(tmp_path / "db"), ceiling_mb=64) as gs:
+    def test_supergraph_round_trip(self, tmp_path):
+        with SuperGraph(str(tmp_path / "db"), ceiling_mb=64) as gs:
             gs.execute('CREATE NODE "fn1" kind = "function" name = "main" score = 100')
             gs.execute('CREATE NODE "fn2" kind = "function" name = "helper" score = 50')
             gs.execute('CREATE NODE "fn3" kind = "function" name = "parse" score = 200')
             gs.checkpoint()
 
-        with GraphStore(str(tmp_path / "db"), ceiling_mb=64) as gs:
+        with SuperGraph(str(tmp_path / "db"), ceiling_mb=64) as gs:
             r = gs.execute('NODES WHERE score > 90')
             ids = {n["id"] for n in r.data}
             assert ids == {"fn1", "fn3"}
@@ -206,7 +206,7 @@ class TestEndToEnd:
             assert r.data == 2
 
     def test_typed_schema_end_to_end(self, tmp_path):
-        with GraphStore(str(tmp_path / "db")) as gs:
+        with SuperGraph(str(tmp_path / "db")) as gs:
             gs.execute('SYS REGISTER NODE KIND "function" REQUIRED name:string, line:int OPTIONAL score:float')
             gs.execute('CREATE NODE "fn1" kind = "function" name = "main" line = 1 score = 9.5')
 
@@ -217,18 +217,18 @@ class TestEndToEnd:
             assert r.data == 1
 
     def test_columns_survive_wal_replay(self, tmp_path):
-        with GraphStore(str(tmp_path / "db")) as gs:
+        with SuperGraph(str(tmp_path / "db")) as gs:
             gs.execute('CREATE NODE "n1" kind = "fn" score = 42')
 
-        with GraphStore(str(tmp_path / "db")) as gs:
+        with SuperGraph(str(tmp_path / "db")) as gs:
             r = gs.execute('NODES WHERE score = 42')
             assert r.count == 1
 
 
 def test_compact_preserves_document_slots(tmp_path):
     """After compaction, document search must still find nodes by their new slots."""
-    from graphstore import GraphStore
-    gs = GraphStore(path=str(tmp_path))
+    from supergraph import SuperGraph
+    gs = SuperGraph(path=str(tmp_path))
 
     gs.execute('CREATE NODE "a" kind = "doc"')
     gs.execute('CREATE NODE "b" kind = "doc"')
