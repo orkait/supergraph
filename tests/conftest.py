@@ -41,9 +41,11 @@ _EXTRA_TO_DEP: dict[str, tuple[str, ...]] = {
     "needs_scheduler": ("croniter",),
     "needs_playground": ("fastapi", "pydantic"),
     "needs_gpu": ("onnxruntime",),
+    "needs_tui": ("textual",),
 }
 
 _FILES_REQUIRING: dict[str, str] = {
+    "test_superclaw_tui.py": "needs_tui",
     "test_vault.py": "needs_vault",
     "test_server.py": "needs_playground",
     "test_server_endpoints.py": "needs_playground",

@@ -44,8 +44,10 @@ cross-process `flock` on `.supergraph.lock` keeps two processes off one path.
 
 ## The harness
 
-See `superclaw/README.md`. It owns the seven harness layers the substrate does
-not already answer, and is a scaffold at time of writing.
+See `superclaw/README.md`. A terminal coding agent: one loop, a tool registry
+behind a permission gate, compaction and guardrails, with sessions, plan state
+and long-term memory stored in the substrate instead of on disk. Runs as the
+`superclaw` command.
 
 ## Why they live together
 

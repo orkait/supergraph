@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+MAX_EMPTY_TURNS = 3
+FAILURE_HINT_AT = 2
+FAILURE_STOP_AT = 6
+STALE_TOOL_CALLS = 10
+TOOL_ONLY_REMINDER_AT = 6
+MAX_CONTINUE_NUDGES = 3
+PLAN_TOOL = "update_plan"
+
+DROPPED_TOOL_CALL_NOTICE = (
+    "Your previous tool call was malformed (it was missing a tool name or had invalid JSON arguments) and was not executed. "
+    "Re-issue the tool call with a valid tool name and JSON arguments, or reply with your final answer."
+)
+EMPTY_TURN_NUDGE = (
+    "Your previous response had no visible output and no tool calls. "
+    "Continue the task by using a tool or reply with your final answer."
+)
+MAX_TURNS_FINAL_ANSWER_PROMPT = (
+    "You have reached the tool-turn limit. Do not call tools. Give a concise final answer now: "
+    "summarize what you completed, what you found, and any remaining blockers."
+)
+
+_CUES = (
+    "let me ", "let's ", "now i'll ", "now i will ", "now let me ", "let me now ",
+    "i'll now ", "i will now ", "next i'll ", "next, i'll ", "first, i'll ", "first let me ",
+)
+
+
+def continue_nudge(reason: str) -> str:
+    return (
+        f"You stopped without calling a tool, but the task is not finished ({reason}). "
+        "Do not stop here: take the next concrete action with a tool now. "
+        "If you are genuinely finished, first mark the plan complete with update_plan, then give your final summary."
+    )
+
+
+def tool_failure_hint(tool_name: str, schema_json: str, err_output: str) -> str:
+    return (
+        f"Your calls to the `{tool_name}` tool kept failing with the same error:\n{err_output.strip()}\n\n"
+        f"The `{tool_name}` tool expects arguments matching this schema; match it exactly:\n{schema_json.strip()}\n\n"
+        "Fix the arguments and try once more, or take a different approach."
+    )
+
+
+def tool_failure_stop_answer(tool_name: str, count: int) -> str:
+    return (
+        f"Agent stopped: the `{tool_name}` tool failed {count} times in a row with the same error, "
+        "so I halted instead of looping further. Please check the request or adjust the tool arguments."
+    )
+
+
+def no_output_stop_answer(turns: int) -> str:
+    return f"Agent stopped: {turns} turns produced no visible output and no tool calls, so I halted rather than continue silently."
+
+
+def plan_stale_reminder(calls_since_update: int) -> str:
+    return (
+        f"Reminder: you've made {calls_since_update} tool calls but have not updated the plan in a while. "
+        "Update the plan to reflect completed and remaining steps, then continue."
+    )
+
+
+def tool_only_progress_reminder(turns: int) -> str:
+    return (
+        f"Reminder: you've made {turns} consecutive tool-only turns without visible progress. "
+        "Before calling more tools, summarize what you already know, state the next concrete step, and finish if you have enough information."
+    )
+
+
+def ends_with_continuation_cue(text: str) -> bool:
+    trimmed = text.strip()
+    if not trimmed:
+        return False
+    last = next((line.strip().lower() for line in reversed(trimmed.split("\n")) if line.strip()), "")
+    if not last.endswith(":"):
+        return False
+    clause = last[last.rfind(". ") + 2:] if ". " in last else last
+    if clause.startswith("let me know"):
+        return False
+    return any(clause.startswith(cue) for cue in _CUES)
+
+
+def error_signature(output: str) -> str:
+    sig = output.strip().lower()
+    sig = re.sub(r"(?:/[^\s/]+)+", "<path>", sig)
+    sig = re.sub(r"\d+", "#", sig)
+    return sig[:160]
+
+
+@dataclass
+class FailureOutcome:
+    count: int
+    hint: bool
+    stop: bool
+
+
+class Guards:
+    def __init__(
+        self,
+        *,
+        max_empty_turns: int = MAX_EMPTY_TURNS,
+        hint_at: int = FAILURE_HINT_AT,
+        stop_at: int = FAILURE_STOP_AT,
+        stale_tool_calls: int = STALE_TOOL_CALLS,
+        tool_only_at: int = TOOL_ONLY_REMINDER_AT,
+    ) -> None:
+        self.max_empty_turns = max_empty_turns
+        self.hint_at = hint_at
+        self.stop_at = stop_at
+        self.stale_tool_calls = stale_tool_calls
+        self.tool_only_at = tool_only_at
+        self._empty = 0
+        self._silent = 0
+        self._tool_only_reminded = False
+        self._failure: tuple[str, str] | None = None
+        self._failure_count = 0
+        self._calls_since_plan = 0
+        self._plan_reminded = False
+
+    def observe_turn(self, text: str, tool_calls: int) -> bool:
+        if not text.strip() and tool_calls == 0:
+            self._empty += 1
+        else:
+            self._empty = 0
+        return self._empty >= self.max_empty_turns
+
+    def observe_tool_result(self, name: str, failed: bool, output: str) -> FailureOutcome:
+        if not failed:
+            self._failure = None
+            self._failure_count = 0
+            return FailureOutcome(0, False, False)
+        key = (name, error_signature(output))
+        if key == self._failure:
+            self._failure_count += 1
+        else:
+            self._failure = key
+            self._failure_count = 1
+        return FailureOutcome(
+            self._failure_count,
+            self._failure_count == self.hint_at,
+            self._failure_count >= self.stop_at,
+        )
+
+    def observe_tool_call(self, name: str) -> None:
+        if name == PLAN_TOOL:
+            self._calls_since_plan = 0
+            self._plan_reminded = False
+        else:
+            self._calls_since_plan += 1
+
+    def stale_plan_reminder(self, pending: bool) -> str | None:
+        if pending and not self._plan_reminded and self._calls_since_plan >= self.stale_tool_calls:
+            self._plan_reminded = True
+            return plan_stale_reminder(self._calls_since_plan)
+        return None
+
+    def tool_only_reminder(self, text: str, tool_calls: int) -> str | None:
+        if tool_calls > 0 and not text.strip():
+            self._silent += 1
+        else:
+            self._silent = 0
+            self._tool_only_reminded = False
+        if self._silent == self.tool_only_at and not self._tool_only_reminded:
+            self._tool_only_reminded = True
+            return tool_only_progress_reminder(self._silent)
+        return None
