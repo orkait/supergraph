@@ -29,7 +29,8 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 
 | Capability | How |
 |---|---|
-| Edits code | `read_file` `write_file` `edit_file` `list_directory` `glob` `grep`, all jailed to the workspace |
+| Edits code | `read_file` `write_file` `edit_file` `list_directory` `glob` `grep`, all jailed to the workspace; an edit or overwrite fails unless the file was read this session and is unchanged on disk since |
+| Labels what it did not write | tool output arrives in `<untrusted source=…>` blocks the prompt ranks below the user; secrets (API keys, tokens, JWTs, private keys, auth headers, `*_password=` values) are scrubbed at the tool boundary before the model sees them |
 | Runs commands | `bash` inside a `bubblewrap` sandbox: read-only root, writable workspace and `/tmp`, no network, `~/.ssh` `~/.aws` `~/.gnupg` masked; destructive and network commands classified and gated; `require_escalated` with a `justification` runs on the host after approval |
 | Plans | `update_plan`, persisted per session and restored on resume |
 | Remembers | `memory_search` `memory_note` over the graph, plus automatic recall into every run |

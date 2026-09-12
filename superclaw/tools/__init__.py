@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
+
+from superclaw.redaction import redact
 
 
 class SideEffect(str, Enum):
@@ -44,11 +47,35 @@ class Result:
         return cls(False, output, **kw)
 
 
+class FileTracker:
+    def __init__(self) -> None:
+        self._hashes: dict[Path, str] = {}
+
+    @staticmethod
+    def _hash(content: bytes) -> str:
+        return hashlib.sha256(content).hexdigest()
+
+    def record(self, path: Path, content: bytes) -> None:
+        self._hashes[path] = self._hash(content)
+
+    def seen(self, path: Path) -> bool:
+        return path in self._hashes
+
+    def conflict(self, path: Path, current: bytes) -> str:
+        known = self._hashes.get(path)
+        if known is None:
+            return "read the file before editing it"
+        if known != self._hash(current):
+            return "the file changed on disk since you last read it; read it again before editing"
+        return ""
+
+
 @dataclass
 class ToolContext:
     workspace: Path
     session_id: str = ""
     state: dict[str, Any] = field(default_factory=dict)
+    files: FileTracker = field(default_factory=FileTracker)
 
 
 class PathEscapes(ValueError):
@@ -130,6 +157,9 @@ class Registry:
             return Result.error(f"Error: {e}")
         except Exception as e:
             return Result.error(f"Error: {name} failed: {type(e).__name__}: {e}")
+        res.output, redacted = redact(res.output)
         res.output, capped = _cap(res.output)
         res.truncated = res.truncated or capped
+        if redacted:
+            res.meta["redacted"] = True
         return res
