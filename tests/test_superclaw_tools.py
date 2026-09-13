@@ -12,11 +12,12 @@ from superclaw.attach import read as read_attachments
 from superclaw.clipboard import parse_drop
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
-from superclaw.settings import LIMITS
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
+from superclaw.settings import LIMITS, Settings
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, jail, relative, web
 from superclaw.tools.budget import Category
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
+from superclaw.tools.web import WebSearch
 from superclaw.worktree import WorktreeError, prepare
 
 
@@ -76,8 +77,50 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory):
     gs.close()
 
 
-def test_file_tools(reg, ws):
+DUCK_HTML = (
+    '<div class="result web-result"><h2 class="result__title"><a rel="nofollow" class="result__a" href="https://textual.textualize.io/">Textual</a></h2>'
+    '<a class="result__snippet" href="https://textual.textualize.io/"><b>Textual</b> is a <b>TUI</b> framework for <b>Python</b>.</a></div>'
+    '<div class="result result--ad"><h2 class="result__title"><a rel="nofollow" class="result__a" href="https://duckduckgo.com/y.js?ad_provider=x">Buy TUI</a></h2>'
+    '<a class="result__snippet" href="https://duckduckgo.com/y.js?ad_provider=x">ad copy</a></div>'
+    '<div class="result"><h2 class="result__title"><a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Frealpython.com%2Fpython-textual%2F&amp;rut=1">Python Textual: Build UIs</a></h2>'
+    '<a class="result__snippet" href="#">Learn &amp; build.</a></div>'
+)
+
+
+def test_file_tools(reg, ws, monkeypatch):
     ctx = ToolContext(workspace=ws)
+    calls, pauses = [], []
+
+    def fake_fetch(url, headers, data=None):
+        calls.append((url, data))
+        if url.startswith("https://www.googleapis.com/"):
+            return json.dumps({"items": [{"title": "Textual", "link": "https://textual.textualize.io/", "snippet": "TUI framework"}]}).encode()
+        if data and (b"q=blocked" in data or (b"q=flaky" in data and sum(b"q=flaky" in (d or b"") for _, d in calls) == 1)):
+            return b"<html><div id='anomaly-modal'>challenge</div></html>"
+        if data and b"q=nothing" in data:
+            return b"<html><div class='no-results'></div></html>"
+        return DUCK_HTML.encode()
+
+    monkeypatch.setattr(web, "fetch", fake_fetch)
+    monkeypatch.setattr(web, "pause", pauses.append)
+    monkeypatch.setattr(web, "now", lambda: 0.0)
+    duck = WebSearch(Settings.from_env({}))
+    out = duck.run({"query": "textual tui"}, ctx).output
+    assert out == ("Results from duckduckgo for: textual tui\n1. Textual\n   https://textual.textualize.io/\n   Textual is a TUI framework for Python.\n"
+                   "2. Python Textual: Build UIs\n   https://realpython.com/python-textual/\n   Learn & build.")
+    assert calls[-1][0] == "https://html.duckduckgo.com/html/" and b"q=textual+tui" in calls[-1][1]
+    scoped = duck.run({"query": "x", "domains": ["realpython.com"]}, ctx).output
+    assert "1. Python Textual" in scoped and "textualize" not in scoped and duck.run({"query": "x", "limit": 1}, ctx).output.count("\n   https://") == 1
+    assert duck.run({"query": "nothing"}, ctx).output == "No results for: nothing" and duck.run({"query": " "}, ctx).output.startswith("Error:")
+    refused = duck.run({"query": "blocked"}, ctx)
+    assert not refused.ok and "DuckDuckGo refused" in refused.output and "GOOGLE_API_KEY" in refused.output
+    assert sum(b"q=blocked" in (d or b"") for _, d in calls) == LIMITS.web_search_attempts and LIMITS.web_search_retry_s in pauses
+    assert duck.run({"query": "flaky"}, ctx).ok and sum(b"q=flaky" in (d or b"") for _, d in calls) == 2 and pauses.count(LIMITS.web_search_min_interval_s) >= 2
+    keyed = Settings.from_env({"GOOGLE_API_KEY": "k", "GOOGLE_CSE_ID": "c"})
+    assert keyed.search_engine == "google" and Settings.from_env({"SUPERCLAW_SEARCH": "duckduckgo", "GOOGLE_API_KEY": "k", "GOOGLE_CSE_ID": "c"}).search_engine == "duckduckgo"
+    assert WebSearch(keyed).run({"query": "textual"}, ctx).output == "Results from google for: textual\n1. Textual\n   https://textual.textualize.io/\n   TUI framework"
+    assert "key=k" in calls[-1][0] and "num=5" in calls[-1][0] and "GOOGLE_API_KEY" in WebSearch(Settings.from_env({"SUPERCLAW_SEARCH": "google"})).run({"query": "x"}, ctx).output
+    assert WebSearch.deferred and WebSearch.safety.side_effect is SideEffect.NETWORK and WebSearch.output_category is Category.SEARCH
     assert reg.run("read_file", {"path": "src/a.py"}, ctx).output == "1→alpha\n2→beta\n3→gamma"
     assert "already in your context" in reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1}, ctx).output
     assert reg.run("read_file", {"path": "src/a.py", "offset": 2, "limit": 1, "force": True}, ctx).output == "2→beta\n[1 more lines; call read_file with offset=3 to continue]"
