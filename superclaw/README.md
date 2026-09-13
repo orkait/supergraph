@@ -117,7 +117,8 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/mode ask\|auto\|plan\|unsafe` | switch the permission mode for the session |
 | `/model [list\|id]` | no argument opens the picker: recent models first, then one group per connected provider, type to filter, enter picks. `list` prints the same rows. An id switches at once, fuzzy when unique (`/model v4-pro`), and a model on a provider without a key opens setup for that provider. The choice is saved as `SUPERCLAW_MODEL` |
 | `/effort low\|medium\|high\|off` | set the model's reasoning effort for the session, saved as `SUPERCLAW_EFFORT` and shown in the status bar |
-| `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
+| `/new`, `/resume [id\|latest]`, `/fork [id\|latest]`, `/sessions` | session lifecycle; `/fork` copies a session (the current one by default) into a new one and continues it |
+| `/usage` | tokens and cost spent in this session |
 | `/context [prompt]` | what the next request costs, by category |
 | `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |
 | `/compact` | summarize older turns into one message now, freeing the window before the next run; a session event, so it survives resume |
@@ -149,7 +150,7 @@ echo "prompt on stdin" | superclaw exec -
 
 Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `budget` `final` `run_end`, each tagged with `schemaVersion` and `runId`. `usage` carries `input_tokens` `output_tokens` `cache_read_tokens` `cost_usd` `run_cost_usd` `context_used` `context_window` `saved_tokens` `kept_out_tokens`; `run_end` carries `savedTokens` and `keptOutTokens`. Child events carry `child: <session id>`.
 
-`superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window. `superclaw models [--provider name] [--refresh]` prints every model each connected provider serves, one row per model with the context window, tool support, price per million tokens and whether the row came from the live list or the bundled catalog; `--refresh` ignores the day-old cache.
+`superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window. `superclaw models [--provider name] [--refresh]` prints every model each connected provider serves, one row per model with the context window, tool support, price per million tokens and whether the row came from the live list or the bundled catalog; `--refresh` ignores the day-old cache. `superclaw usage` prints per-session call, token and cost totals. `--fork <id|latest>` copies a session into a new one and continues from it, alongside `--resume`.
 
 </details>
 

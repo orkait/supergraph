@@ -178,7 +178,12 @@ def system_prompt_for(rt: Runtime, prompt: str) -> str:
     ))
 
 
-def resolve_session(rt: Runtime, resume: str | None) -> str:
+def resolve_session(rt: Runtime, resume: str | None, fork: str | None = None) -> str:
+    if fork:
+        source = rt.store.latest() if fork == "latest" else fork
+        if not source or rt.store.get(source) is None:
+            raise KeyError(f"no session {fork!r}")
+        return rt.store.fork(source)
     if not resume:
         return rt.store.create(cwd=str(rt.workspace), model=rt.model)
     sid = rt.store.latest() if resume == "latest" else resume

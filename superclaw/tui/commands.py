@@ -47,6 +47,21 @@ def _sessions(app: SuperclawApp, arg: str) -> None:
         app.note(f"{s['id']}  {s['event_count']} events  {s['cwd']}")
 
 
+def _fork(app: SuperclawApp, arg: str) -> None:
+    source = app.session_id if arg == "" else (app.rt.store.latest() if arg == "latest" else arg)
+    if not source or app.rt.store.get(source) is None:
+        app.note(f"no session {arg or 'latest'!r}", error=True)
+        return
+    app.open_session(app.rt.store.fork(source))
+    app.note(f"forked {source} into {app.session_id}")
+
+
+def _usage(app: SuperclawApp, arg: str) -> None:
+    u = app.rt.store.usage(app.session_id)
+    dot = app.glyphs.dot
+    app.note(f"this session: {u['calls']} calls {dot} {u['tokens']:,} tokens {dot} ${u['cost_usd']:.4f}")
+
+
 def _context(app: SuperclawApp, arg: str) -> None:
     from superclaw.report import context_report
 
@@ -148,6 +163,8 @@ COMMANDS = (
     Command("/new", "/new", "start a fresh session", _new),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions", "list recent sessions", _sessions),
+    Command("/fork", "/fork [id|latest]", "copy a session into a new one and continue it", _fork),
+    Command("/usage", "/usage", "tokens and cost spent in this session", _usage),
     Command("/context", "/context [prompt]", "what the next request costs", _context),
     Command("/compact", "/compact", "summarize older turns to free the window now", _compact),
     Command("/retry", "/retry", "run the last prompt again", _retry),
