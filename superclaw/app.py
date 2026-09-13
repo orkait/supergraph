@@ -44,8 +44,8 @@ class NoProviderKey(RuntimeError):
 @dataclass
 class Runtime:
     gs: Any
-    store: SessionStore
-    memory: Memory
+    store: SessionStore | None
+    memory: Memory | None
     registry: Registry
     policy: Policy
     provider: Provider | None
@@ -82,7 +82,8 @@ class Runtime:
             self.mcp.close()
         if self.kernel:
             self.kernel.close()
-        self.gs.close()
+        if self.gs is not None:
+            self.gs.close()
 
 
 def kernel_resolver(observations: ObservationStore, gs: Any) -> Callable[[str, dict[str, Any]], Any]:
@@ -148,22 +149,26 @@ def build_runtime(
     extra_dirs: tuple[Path, ...] = (),
     mcp_config: list[Path] | None = None,
     agent: Agent | None = None,
+    open_store: bool = True,
 ) -> Runtime:
     provider = connect_provider(settings.model, settings.effort, settings.fallback_models)
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
-    settings.db_path.mkdir(parents=True, exist_ok=True)
-    gs = SuperGraph(path=str(settings.db_path))
-    memory = Memory(gs)
     backend = detect()
-    observations = ObservationStore(gs)
-    kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
-    registry = build_registry(memory, observations, workspace, backend, settings, kernel)
+    gs = memory = kernel = None
+    registry = Registry()
+    if open_store:
+        settings.db_path.mkdir(parents=True, exist_ok=True)
+        gs = SuperGraph(path=str(settings.db_path))
+        memory = Memory(gs)
+        observations = ObservationStore(gs)
+        kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
+        registry = build_registry(memory, observations, workspace, backend, settings, kernel)
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
     if agent and agent.tools:
         allow_tools = (allow_tools & agent.tools) if allow_tools else agent.tools
     return Runtime(
-        gs=gs, store=SessionStore(gs), memory=memory, registry=registry,
+        gs=gs, store=SessionStore(gs) if gs is not None else None, memory=memory, registry=registry,
         policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs),
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,

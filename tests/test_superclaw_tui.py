@@ -1,14 +1,16 @@
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from textual.widgets import Markdown
 
 from supergraph import SuperGraph
+from supergraph.core.errors import StoreInUse
 
 from superclaw import catalog
-from superclaw.app import Runtime, build_registry
+from superclaw.app import Runtime, build_registry, build_runtime
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
@@ -54,6 +56,14 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     for provider in PROVIDERS:
         monkeypatch.delenv(provider.env, raising=False)
     monkeypatch.setattr("superclaw.report.keyed_providers", lambda: [])
+    locked = tmp_path / "locked"
+    holder = SuperGraph(path=str(locked), embedder="none", enable_sentence_nodes=False)
+    lean = build_runtime(replace(rt.settings, db_path=locked), tmp_path, Mode.ASK, require_provider=False, open_store=False)
+    assert lean.gs is None and lean.store is None and doctor_lines(lean, "/setup")[3].startswith(f"store {locked}")
+    lean.close()
+    with pytest.raises(StoreInUse):
+        SuperGraph(path=str(locked), embedder="none")
+    holder.close()
     lines = doctor_lines(rt, "/setup")
     assert lines[1].startswith("sandbox ") and f"model {rt.model}" in lines[2]
     assert str(rt.settings.db_path) in lines[3] and lines[4] == "mcp 0 tools · 0 servers" and lines[-1].endswith("none; /setup")

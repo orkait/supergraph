@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once
+from supergraph.core.errors import StoreInUse
+
 from superclaw.agents import load_agents
 from superclaw.agents import resolve as resolve_agent
 from superclaw.attach import read as read_attachments
@@ -30,6 +32,7 @@ from superclaw.worktree import WorktreeError
 from superclaw.worktree import prepare as prepare_worktree
 
 SCHEMA_VERSION = 1
+STORELESS = ("doctor", "mcp", "agents", "skills")
 _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
 _EVENT_TYPE_WIDTH = 12
@@ -289,11 +292,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
-                           require_provider=args.command not in (None, "doctor", "mcp", "agents"),
+                           require_provider=args.command not in (None, *STORELESS),
+                           open_store=args.command not in STORELESS,
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
                            mcp_config=mcp_paths(settings, workspace, args.trust_workspace), agent=agent)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
+    except StoreInUse as e:
+        sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
