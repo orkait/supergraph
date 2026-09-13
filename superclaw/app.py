@@ -31,6 +31,7 @@ from superclaw.settings import MCP_FILE, PROVIDERS, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
+from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
@@ -132,7 +133,7 @@ def build_registry(memory: Memory, observations: ObservationStore, workspace: Pa
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
-    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(),
+    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(), Download(),
                  memory.search_tool(), memory.note_tool(), Recall(observations), Delegate(), *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))

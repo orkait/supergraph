@@ -16,8 +16,9 @@ from superclaw.clipboard import parse_drop
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, fetch, jail, relative, web
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, jail, relative, web
 from superclaw.tools.budget import Category
+from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
@@ -55,15 +56,18 @@ def reg():
 
 class FakeResponse:
     def __init__(self, url, body, content_type="text/html; charset=utf-8", status=200):
-        self.url, self.body, self.headers, self.status = url, body, {"Content-Type": content_type}, status
+        self.url, self.body, self.headers, self.status, self.pos = url, body, {"Content-Type": content_type}, status, 0
 
     def read(self, n=-1):
-        return self.body[:n] if n > 0 else self.body
+        chunk = self.body[self.pos:] if n < 0 else self.body[self.pos:self.pos + n]
+        self.pos += len(chunk)
+        return chunk
 
     def geturl(self):
         return self.url
 
     def __enter__(self):
+        self.pos = 0
         return self
 
     def __exit__(self, *exc):
@@ -219,7 +223,7 @@ def test_file_tools(reg, ws, monkeypatch):
     assert reg.run("grep", {"pattern": "vendored", "path": str(vendor)}, wide).output == "lib.py:1:vendored"
 
 
-def test_bash(tmp_path):
+def test_bash(tmp_path, monkeypatch):
     ctx = ToolContext(workspace=tmp_path)
     (tmp_path / "sub").mkdir()
     bash = Bash()
@@ -228,6 +232,32 @@ def test_bash(tmp_path):
     assert bash.run({"command": "pwd", "cwd": "sub"}, ctx).output == str((tmp_path / "sub").resolve())
     assert "timed out" in bash.run({"command": "sleep 5", "timeout_ms": 200}, ctx).output
     assert bash.category({"command": "pytest -q"}) is Category.TEST and bash.category({"command": "ls"}) is Category.PROCESS
+    fake = tmp_path / "bin" / "yt-dlp"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\next=mp4\nwhile [ $# -gt 1 ]; do case "$1" in --paths) dest="$2"; shift;; --extract-audio) ext=mp3;; esac; shift; done\n'
+                    'case "$1" in *unsupported*) echo "ERROR: Unsupported URL: $1" >&2; exit 1;; esac\nf="$dest/clip-abc.$ext"\nprintf data > "$f"\necho "$f"\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr(download, "which", lambda name: str(fake))
+    monkeypatch.setattr(fetch, "resolve", lambda host: ["93.184.216.34"])
+    files = {"https://public.example/unsupported/report.pdf": FakeResponse("https://public.example/unsupported/report.pdf", b"%PDF", "application/pdf"),
+             "https://public.example/x": FakeResponse("https://public.example/x", b"notes", "text/plain")}
+    files["https://public.example/x"].headers["Content-Disposition"] = 'attachment; filename="served.bin"'
+    monkeypatch.setattr(download, "open_url", lambda request: files[request.full_url])
+    dl = Download()
+    res = dl.run({"url": "https://public.example/watch?v=1"}, ctx)
+    assert res.ok and res.output == "Saved clip-abc.mp4 (4B)" and res.changed_files == ["clip-abc.mp4"] and (tmp_path / "clip-abc.mp4").read_bytes() == b"data"
+    assert dl.run({"url": "https://public.example/watch?v=1", "kind": "audio", "dest": "media"}, ctx).output == "Saved media/clip-abc.mp3 (4B)"
+    assert dl.run({"url": "https://public.example/unsupported/report.pdf"}, ctx).output == "Saved report.pdf (4B)" and (tmp_path / "report.pdf").read_bytes() == b"%PDF"
+    assert dl.run({"url": "https://public.example/x", "kind": "file"}, ctx).output == "Saved served.bin (5B)"
+    assert dl.run({"url": "https://public.example/x", "kind": "file", "name": "../../notes.txt"}, ctx).output == "Saved notes.txt (5B)"
+    exists = dl.run({"url": "https://public.example/x", "kind": "file"}, ctx)
+    assert not exists.ok and "already exists" in exists.output and "escapes" in dl.run({"url": "https://public.example/x", "dest": "../out"}, ctx).output
+    assert "Unsupported URL" in dl.run({"url": "https://public.example/unsupported/clip", "kind": "video"}, ctx).output
+    monkeypatch.setattr(download, "which", lambda name: None)
+    assert "yt-dlp is not installed" in dl.run({"url": "https://public.example/watch", "kind": "video"}, ctx).output
+    monkeypatch.setattr(fetch, "resolve", lambda host: ["10.0.0.9"])
+    assert "private" in dl.run({"url": "https://public.example/x", "kind": "file"}, ctx).output
+    assert Download.deferred and Download.safety.side_effect is SideEffect.NETWORK
     argv = Bubblewrap().wrap(["bash", "-c", "x"], tmp_path, tmp_path, Grant(network=True, paths=["/opt/extra"]))
     assert argv[0] == "bwrap" and "--unshare-net" not in argv and "/opt/extra" in argv
     if detect():
