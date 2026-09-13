@@ -244,9 +244,10 @@ def validate_prefix(prefix: list[str], command: str) -> str:
 class Policy:
     def __init__(self, workspace: Path, mode: Mode = Mode.ASK, sandboxed: bool = False,
                  allow_tools: frozenset[str] = frozenset(), deny_tools: frozenset[str] = frozenset(),
-                 extra_dirs: tuple[Path, ...] = ()) -> None:
+                 extra_dirs: tuple[Path, ...] = (), plan_exempt: frozenset[str] = frozenset()) -> None:
         self.workspace = Path(workspace)
         self.extra_dirs = tuple(Path(d) for d in extra_dirs)
+        self.plan_exempt = plan_exempt
         self.mode = mode
         self.sandboxed = sandboxed
         self.allow_tools = allow_tools
@@ -291,7 +292,7 @@ class Policy:
         if tool.name in self.deny_tools or (self.allow_tools and tool.name not in self.allow_tools):
             return False
         if self.mode == Mode.PLAN:
-            return tool.safety.side_effect in (SideEffect.NONE, SideEffect.READ)
+            return tool.safety.side_effect in (SideEffect.NONE, SideEffect.READ) or tool.name in self.plan_exempt
         return not self._kind_blocks(tool.safety.side_effect)
 
     def _prefix_covers(self, segments: list[list[str]]) -> bool:
@@ -357,8 +358,10 @@ class Policy:
             return Decision(Action.DENY, block, risk)
         if se in (SideEffect.NONE, SideEffect.READ):
             return Decision(Action.ALLOW, "read-only", risk)
-        if self.mode == Mode.PLAN:
+        if self.mode == Mode.PLAN and tool.name not in self.plan_exempt:
             return Decision(Action.DENY, "plan mode is read-only", risk)
+        if self.mode == Mode.PLAN and safety.permission == Permission.ALLOW:
+            return Decision(Action.ALLOW, "allowed while planning", risk)
         if blocked := self._kind_blocks(se):
             return Decision(Action.DENY, blocked, risk)
         if se == SideEffect.SHELL:

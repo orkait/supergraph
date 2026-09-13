@@ -61,6 +61,9 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     assert p.evaluate(reg.get("bash"), {"command": "ls"}).action == Action.ALLOW and p.evaluate(reg.get("bash"), {"command": "rm -rf x"}).action == Action.PROMPT
     assert p.evaluate(reg.get("bash"), {"command": "git pull origin main"}).action == Action.ALLOW and p.evaluate(reg.get("bash"), {"command": "git push"}).action == Action.PROMPT
     assert [d["function"]["name"] for d in reg.definitions(Policy(tmp_path, Mode.PLAN).visible)] == ["glob", "grep", "list_directory", "read_file"]
+    exempt = Policy(tmp_path, Mode.PLAN, plan_exempt=frozenset({"write_file"}))
+    assert "write_file" in [d["function"]["name"] for d in reg.definitions(exempt.visible)] and exempt.evaluate(reg.get("write_file"), {"path": "a", "content": ""}).action == Action.PROMPT
+    assert exempt.evaluate(reg.get("bash"), {"command": "ls"}).action == Action.DENY
     allow = Policy(tmp_path, Mode.AUTO, allow_tools=frozenset({"read_file", "grep"}))
     assert {d["function"]["name"] for d in reg.definitions(allow.visible)} == {"read_file", "grep"}
     names = {d["function"]["name"] for d in reg.definitions(Policy(tmp_path, Mode.AUTO, deny_tools=frozenset({"bash", "web_fetch"})).visible)}

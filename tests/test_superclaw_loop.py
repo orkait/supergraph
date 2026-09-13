@@ -11,11 +11,11 @@ from supergraph import SuperGraph
 
 import argparse
 
-from superclaw import checks
+from superclaw import checks, spec
 from superclaw.acp import serve as acp_serve
 from superclaw.agents import Agent
 from superclaw.app import Runtime, build_registry
-from superclaw.cli import cmd_verify
+from superclaw.cli import cmd_spec, cmd_verify, draft_spec
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
@@ -193,6 +193,26 @@ def test_guards_gates_and_verifier(ws):
     finally:
         checks.detect = original_detect
         fix_gs.close()
+    spec_gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
+    drafter = Scripted(Completion(tool_calls=[call("submit_spec", "s1", title="Add retry to fetch", plan="## Goal\nRetry."), call("read_file", "s2", path="a.txt")]),
+                       Completion(text="should not run"))
+    spec_rt = Runtime(gs=spec_gs, store=SessionStore(spec_gs), memory=Memory(spec_gs), registry=build_registry(Memory(spec_gs), ObservationStore(spec_gs), ws),
+                      policy=Policy(ws, Mode.AUTO, sandboxed=True), provider=drafter, workspace=ws, model="fake/m",
+                      settings=Settings.from_env({"XDG_CONFIG_HOME": str(ws / "cfg"), "XDG_CACHE_HOME": str(ws / "cache")}))
+    drafted = draft_spec(spec_rt, "add retry to fetch", spec_rt.store.create(cwd=str(ws), model="m"), lambda event: None)
+    saved = list(spec.list_specs(ws))
+    assert drafted.stop_reason == spec.CONTROL and drafted.turns == 1 and len(saved) == 1 and saved[0].name.endswith("-add-retry-to-fetch.md")
+    assert saved[0].read_text().startswith("# Add retry to fetch\n\n## Goal\nRetry.") and spec_rt.mode is Mode.PLAN
+    assert [m.content for m in drafted.messages if m.role == "tool"] == [f"Spec saved for review: .superclaw/specs/{saved[0].name}", "Aborted: an earlier tool call halted the run."]
+    assert "write_file" not in [d["function"]["name"] for d in spec_rt.registry.definitions(spec_rt.policy.visible)] and "submit_spec" in [d["function"]["name"] for d in spec_rt.registry.definitions(spec_rt.policy.visible)]
+    body, path = spec.load(ws, saved[0].stem)
+    assert body.startswith("# Add retry to fetch") and spec.load(ws, str(path))[1] == path and "Spec file: " in spec.implementation_prompt(body, path, "keep it small") and "User note: keep it small" in spec.implementation_prompt(body, path, "keep it small")
+    with pytest.raises(spec.SpecError):
+        spec.load(ws, "../../etc/passwd")
+    spec_rt.mode, spec_rt.provider = Mode.AUTO, Scripted(Completion(tool_calls=[call("write_file", "w1", path="fetch.py", description="d", content="retry")]), Completion(text="implemented"))
+    assert cmd_spec(spec_rt, argparse.Namespace(spec_command="approve", id=saved[0].stem, note="")) == 0 and (ws / "fetch.py").read_text() == "retry"
+    assert cmd_spec(spec_rt, argparse.Namespace(spec_command="list")) == 0 and [s["title"] for s in spec_rt.store.recent()][0] == f"implement {saved[0].stem}"
+    spec_gs.close()
 
 
 def test_pressure_prune_recall_and_budgets(ws, gs):

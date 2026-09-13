@@ -85,6 +85,7 @@ AGENTS_DIR = "agents"
 COMMANDS_DIR = "commands"
 REPO_MAP_IGNORED_DIRS = frozenset({".git", ".cache", ".next", ".worktrees", ".superclaw", "build", "coverage", "dist", "node_modules",
                                    "vendor", ".venv", "venv", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "target"})
+SPECS_DIR = "specs"
 PLUGINS_DIR = "plugins"
 PLUGIN_MANIFEST = "plugin.json"
 PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
@@ -220,6 +221,8 @@ class Limits:
     recall_preview_chars: int = 120
 
     review_diff_tokens: int = 24_000
+    spec_slug_chars: int = 60
+    spec_collisions: int = 1000
     verify_timeout_s: int = 120
     verify_output_lines: int = 8
     verify_attempts: int = 1
