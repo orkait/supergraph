@@ -5,6 +5,7 @@ import pytest
 
 from supergraph import SuperGraph
 
+from superclaw import review
 from superclaw.attach import read as read_attachments
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
@@ -139,3 +140,19 @@ def test_bash(tmp_path):
     for bad_cwd, bad_name in ((repo, "bad/name"), (repo, ""), (plain, "gamma")):
         with pytest.raises(WorktreeError):
             prepare(bad_cwd, trees, bad_name or "x" * (LIMITS.worktree_name_chars + 1))
+    with pytest.raises(review.ReviewError):
+        review.prompt(review.uncommitted(repo))
+    (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    (repo / "notes.txt").write_text("todo\n")
+    subprocess.run(["git", "add", "calc.py"], cwd=repo, check=True, capture_output=True)
+    dirty = review.uncommitted(repo)
+    assert "+    return a - b" in dirty.patch and dirty.untracked == ["notes.txt"]
+    text = review.prompt(dirty, "focus on arithmetic")
+    assert text.startswith("Review the change") and "<focus>\nfocus on arithmetic\n</focus>" in text and "notes.txt" in text and 'scope="uncommitted changes against HEAD"' in text
+    subprocess.run("git -c user.email=t@t -c user.name=t commit -q -m add-calc".split(), cwd=repo, check=True, capture_output=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    assert "+    return a - b" in review.commit(repo, head).patch and review.commit(repo, head).label.endswith("add-calc")
+    subprocess.run(["git", "checkout", "-q", "-b", "feature"], cwd=repo, check=True, capture_output=True)
+    (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+    subprocess.run("git -c user.email=t@t -c user.name=t commit -q -am fix".split(), cwd=repo, check=True, capture_output=True)
+    assert "+    return a + b" in review.against(repo, "main").patch and review.against(repo, "feature").patch == ""
