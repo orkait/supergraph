@@ -7,6 +7,8 @@ from pathlib import Path
 
 DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
+EFFORTS = ("low", "medium", "high")
+EFFORT_OFF = "off"
 CREDENTIALS_FILE = "credentials.env"
 CREDENTIALS_MODE = 0o600
 TRANSCRIPT_TEMPLATE = "superclaw-transcript-{sid}.md"
@@ -239,6 +241,7 @@ LIMITS = Limits()
 class Settings:
     model: str
     mode: str
+    effort: str
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -266,6 +269,7 @@ class Settings:
         return cls(
             model=e.get("SUPERCLAW_MODEL", "").strip() or DEFAULT_MODEL,
             mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
+            effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
@@ -298,6 +302,9 @@ class Settings:
 
     def save_model(self, model: str) -> None:
         self._save({"SUPERCLAW_MODEL": model})
+
+    def save_effort(self, effort: str) -> None:
+        self._save({"SUPERCLAW_EFFORT": effort})
 
     def _save(self, values: dict[str, str]) -> None:
         merged = {**read_env_file(self.credentials), **values}

@@ -76,6 +76,8 @@ class StatusBar(Static):
         glyphs = self.app.glyphs
         text = Text(f"{glyphs.mode} ", style=ACCENT)
         text.append(mode)
+        if level >= 1 and self.app.rt.settings.effort:
+            text.append(f" {glyphs.dot} {self.app.rt.settings.effort}", style=MUTED)
         if level >= 1 and stats.window:
             text.append(f"    {glyphs.gauge} {compact(stats.used)}/{compact(stats.window)} {glyphs.dot} {stats.fill:.1%}", style=MUTED)
         if level >= 2 and stats.cost:

@@ -77,6 +77,20 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert LitellmProvider(chain).complete([user("hi")], []).text == "ok" and seen == ["bad/model", "good/model"]
     with pytest.raises(RuntimeError):
         LitellmProvider(chain[:1]).complete([user("hi")], [])
+    kw: dict = {}
+
+    def capture(**kwargs):
+        kw.update(kwargs)
+        return _resp("ok")
+
+    monkeypatch.setattr(mod, "_completion", capture)
+    one = [{"litellm_model": "m", "api_key": "k", "api_base": None}]
+    LitellmProvider(one, effort="high").complete([user("hi")], [])
+    assert kw["reasoning_effort"] == "high"
+    kw.clear()
+    LitellmProvider(one).complete([user("hi")], [])
+    assert "reasoning_effort" not in kw
+    assert Settings.from_env({"SUPERCLAW_EFFORT": "high"}).effort == "high" and Settings.from_env({"SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env({}).effort == ""
 
 
 def test_meter_cut_prune_and_compaction():
