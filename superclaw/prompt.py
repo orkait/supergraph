@@ -25,6 +25,7 @@ class PromptInputs:
     user_guidelines: Path | None = None
     extra_dirs: tuple[Path, ...] = ()
     agent: str = ""
+    repo_map: str = ""
     provider: str = ""
     model: str = ""
     request_kind: Kind | None = None
@@ -211,6 +212,9 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     if user:
         sections.append(user)
     sections.append(environment_block(inputs.cwd, inputs.extra_dirs))
+    if inputs.repo_map.strip():
+        sections.append("<repo_map>\nA deterministic map of the workspace at launch: counts, the files that usually matter, and paths. "
+                        "It is a table of contents, not file contents; read a file before reasoning about it.\n" + inputs.repo_map.strip() + "\n</repo_map>")
     project = project_guidelines(inputs.cwd, find_git_root(inputs.cwd))
     if project:
         sections.append(project)

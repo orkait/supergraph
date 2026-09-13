@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from superclaw.app import Runtime
+from superclaw.app import Runtime, repo_map_text
 from superclaw.catalog import keyed_providers
 from superclaw.prompt import (
     PromptInputs,
@@ -52,6 +52,7 @@ def context_report(rt: Runtime, prompt: str = "") -> ContextReport:
         "user guidelines": approx_tokens(user_guidelines(inputs.user_guidelines)),
         "project guidelines": approx_tokens(project_guidelines(inputs.cwd, find_git_root(inputs.cwd))),
         "skills index": approx_tokens(skills_block(skills)),
+        "repo map": approx_tokens(repo_map_text(rt)),
         "memory recall": approx_tokens(inputs.memory),
         "tool schemas": sum(approx_tokens(json.dumps(t)) + LIMITS.message_overhead_tokens for t in eager),
         "history": sum(approx_tokens(m.content) for m in rt.store.replay(latest)) if latest else 0,
