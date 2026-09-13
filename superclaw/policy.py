@@ -250,6 +250,7 @@ class Policy:
         self.mode = mode
         self.sandboxed = sandboxed
         self.allow_tools = allow_tools
+        self.base_allow_tools = allow_tools
         self.deny_tools = deny_tools
         self.request_kind = Kind.CHANGE
         self._session_grants: set[str] = set()
@@ -258,6 +259,10 @@ class Policy:
     @property
     def roots(self) -> tuple[Path, ...]:
         return (self.workspace, *self.extra_dirs)
+
+    def scope_to(self, tools: frozenset[str]) -> None:
+        base = self.base_allow_tools
+        self.allow_tools = (base & tools) if (base and tools) else (tools or base)
 
     @property
     def session_grants(self) -> list[str]:

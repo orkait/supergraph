@@ -122,6 +122,14 @@ def _tools(app: SuperclawApp, arg: str) -> None:
         app.note(f"{mark} {tool.name:<{app.limits.tool_name_width}} {tool.safety.side_effect.value} {app.glyphs.dot} {kind}")
 
 
+def _agent(app: SuperclawApp, arg: str) -> None:
+    app.use_agent(arg.strip())
+
+
+def _attach(app: SuperclawApp, arg: str) -> None:
+    app.attach(arg.strip())
+
+
 def _mcp(app: SuperclawApp, arg: str) -> None:
     bridge = app.rt.mcp
     for tool in bridge.tools if bridge else []:
@@ -185,6 +193,8 @@ COMMANDS = (
     Command("/rename", "/rename <title>", "name this session", _rename),
     Command("/export", "/export", "write the transcript to a markdown file", _export),
     Command("/tools", "/tools", "list the tools and their side effects", _tools),
+    Command("/agent", "/agent [name|none]", "show or switch the agent profile", _agent),
+    Command("/attach", "/attach <path>", "attach a file or image to your next message", _attach),
     Command("/mcp", "/mcp", "list the MCP servers and the tools they expose", _mcp),
     Command("/permissions", "/permissions", "show the mode and remembered grants", _permissions),
     Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
