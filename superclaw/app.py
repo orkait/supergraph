@@ -146,7 +146,7 @@ def build_runtime(
     extra_dirs: tuple[Path, ...] = (),
     mcp_config: list[Path] | None = None,
 ) -> Runtime:
-    provider = connect_provider(settings.model, settings.effort)
+    provider = connect_provider(settings.model, settings.effort, settings.fallback_models)
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     settings.db_path.mkdir(parents=True, exist_ok=True)
@@ -165,8 +165,8 @@ def build_runtime(
     )
 
 
-def connect_provider(model: str, effort: str = "") -> Provider | None:
-    chain = build_provider_chain([model], free_first=False)
+def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = ()) -> Provider | None:
+    chain = build_provider_chain([model, *fallbacks], free_first=False)
     return LitellmProvider(chain, effort=effort) if chain else None
 
 
@@ -179,7 +179,7 @@ def switch_model(rt: Runtime, model: str) -> None:
     rt.settings.save_model(model)
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
-    rt.provider = connect_provider(model, rt.settings.effort)
+    rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models)
 
 
 def apply_effort(rt: Runtime, effort: str) -> None:
