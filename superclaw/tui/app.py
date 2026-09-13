@@ -326,7 +326,7 @@ class SuperclawApp(App[None]):
     def show_tool_result(self, name: str, args: dict[str, Any]) -> None:
         card = ToolCard("local", name, args)
         self.add(card)
-        res = self.rt.registry.run(name, args, ToolContext(workspace=self.rt.workspace, session_id=self.session_id))
+        res = self.rt.registry.run(name, args, ToolContext(workspace=self.rt.workspace, session_id=self.session_id, extra_dirs=self.rt.extra_dirs))
         card.finish(res.ok, res.output, {}, res.artifact.ref if res.artifact else "")
 
     def on_input_changed(self, event: Input.Changed) -> None:

@@ -23,6 +23,7 @@ class PromptInputs:
     skills: list[Skill] = field(default_factory=list)
     memory: str = ""
     user_guidelines: Path | None = None
+    extra_dirs: tuple[Path, ...] = ()
     provider: str = ""
     model: str = ""
     request_kind: Kind | None = None
@@ -174,11 +175,13 @@ def skills_block(skills: list[Skill]) -> str:
     )
 
 
-def environment_block(cwd: Path) -> str:
+def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = ()) -> str:
     lines = [f"Working directory: {cwd}", f"Operating system: {platform.system().lower()}"]
     branch = _git_branch(Path(cwd))
     if branch:
         lines.append(f"Git branch: {branch}")
+    if extra_dirs:
+        lines.append("Additional directories you may read and write: " + ", ".join(str(d) for d in extra_dirs))
     return "<environment>\n" + "\n".join(lines) + "\n</environment>"
 
 
@@ -197,7 +200,7 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     user = user_guidelines(inputs.user_guidelines)
     if user:
         sections.append(user)
-    sections.append(environment_block(inputs.cwd))
+    sections.append(environment_block(inputs.cwd, inputs.extra_dirs))
     project = project_guidelines(inputs.cwd, find_git_root(inputs.cwd))
     if project:
         sections.append(project)

@@ -34,6 +34,10 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     expected = {"ask": Action.PROMPT, "auto": Action.ALLOW, "plan": Action.DENY, "unsafe": Action.ALLOW}
     assert by_mode(reg, tmp_path, "write_file", {"path": "a", "content": ""}) == expected and by_mode(reg, tmp_path, "bash", {"command": "ls"}) == expected
     assert set(by_mode(reg, tmp_path, "read_file", {"path": "../x"}).values()) == {Action.DENY}
+    shared = tmp_path.parent / "shared"
+    write = reg.get("write_file")
+    assert Policy(tmp_path, Mode.AUTO, sandboxed=True).evaluate(write, {"path": str(shared / "a")}).action == Action.DENY
+    assert Policy(tmp_path, Mode.AUTO, sandboxed=True, extra_dirs=(shared,)).evaluate(write, {"path": str(shared / "a")}).action == Action.ALLOW
     assert by_mode(reg, tmp_path, "web_fetch", {"url": "https://x"})["auto"] == Action.PROMPT
     destructive = by_mode(reg, tmp_path, "bash", {"command": "rm -rf build"})
     assert (destructive["auto"], destructive["unsafe"]) == (Action.PROMPT, Action.ALLOW)

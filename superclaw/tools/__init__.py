@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from superclaw.redaction import redact
 from superclaw.runtime import approx_tokens
@@ -150,25 +150,40 @@ class FileTracker:
 class ToolContext:
     workspace: Path
     session_id: str = ""
+    extra_dirs: tuple[Path, ...] = ()
     state: dict[str, Any] = field(default_factory=dict)
     files: FileTracker = field(default_factory=FileTracker)
+
+    @property
+    def roots(self) -> tuple[Path, ...]:
+        return (self.workspace, *self.extra_dirs)
 
 
 class PathEscapes(ValueError):
     pass
 
 
-def jail(workspace: Path, path: str) -> Path:
-    root = Path(workspace).resolve()
+def roots_of(roots: Path | str | Sequence[Path]) -> list[Path]:
+    one = isinstance(roots, (str, Path))
+    return [Path(roots).resolve()] if one else [Path(r).resolve() for r in roots]
+
+
+def jail(roots: Path | str | Sequence[Path], path: str) -> Path:
+    allowed = roots_of(roots)
     candidate = Path(path)
-    target = (candidate if candidate.is_absolute() else root / candidate).resolve()
-    if target != root and root not in target.parents:
+    target = (candidate if candidate.is_absolute() else allowed[0] / candidate).resolve()
+    if not any(target == root or root in target.parents for root in allowed):
         raise PathEscapes(f"{path!r} escapes the workspace")
     return target
 
 
-def relative(workspace: Path, target: Path) -> str:
-    return target.relative_to(Path(workspace).resolve()).as_posix()
+def relative(roots: Path | str | Sequence[Path], target: Path) -> str:
+    for root in roots_of(roots):
+        if target == root:
+            return "."
+        if root in target.parents:
+            return target.relative_to(root).as_posix()
+    return str(target)
 
 
 class Tool:

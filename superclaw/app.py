@@ -50,6 +50,7 @@ class Runtime:
     workspace: Path
     model: str
     settings: Settings = field(default_factory=Settings.from_env)
+    extra_dirs: tuple[Path, ...] = ()
     max_turns: int = 12
     token_budget: int = 0
     intent_gate: bool = False
@@ -95,8 +96,9 @@ def kernel_resolver(observations: ObservationStore, gs: Any) -> Callable[[str, d
     return resolve
 
 
-def build_kernel(workspace: Path, backend: Backend | None, observations: ObservationStore, gs: Any) -> Kernel:
-    return Kernel(workspace, backend, kernel_resolver(observations, gs))
+def build_kernel(workspace: Path, backend: Backend | None, observations: ObservationStore, gs: Any,
+                 extra_dirs: tuple[Path, ...] = ()) -> Kernel:
+    return Kernel(workspace, backend, kernel_resolver(observations, gs), extra_dirs)
 
 
 def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> Dispatcher | None:
@@ -130,6 +132,7 @@ def build_runtime(
     require_provider: bool = True,
     allow_tools: frozenset[str] = frozenset(),
     deny_tools: frozenset[str] = frozenset(),
+    extra_dirs: tuple[Path, ...] = (),
 ) -> Runtime:
     provider = connect_provider(settings.model, settings.effort)
     if provider is None and require_provider:
@@ -139,11 +142,11 @@ def build_runtime(
     memory = Memory(gs)
     backend = detect()
     observations = ObservationStore(gs)
-    kernel = build_kernel(workspace, backend, observations, gs)
+    kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
     return Runtime(
         gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, observations, workspace, backend, settings, kernel),
-        policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools), provider=provider,
-        workspace=workspace, model=settings.model, settings=settings, max_turns=max_turns,
+        policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs),
+        provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel,
     )
 
@@ -175,7 +178,7 @@ def apply_effort(rt: Runtime, effort: str) -> None:
 def system_prompt_for(rt: Runtime, prompt: str) -> str:
     return build_system_prompt(PromptInputs(
         cwd=rt.workspace, mode=rt.mode, skills=load_skills(rt.settings.skill_roots(rt.workspace)),
-        memory=rt.memory.recall(prompt), user_guidelines=rt.settings.user_guidelines,
+        memory=rt.memory.recall(prompt), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
     ))
 
@@ -217,7 +220,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
     if previous and previous.get("hash") != prompt_hash(system_prompt) and cb.on_event:
         cb.on_event({"type": "prompt_drift", "previous": previous.get("hash"), "current": prompt_hash(system_prompt)})
     result = run(prompt, rt.provider, Options(
-        registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
+        registry=rt.registry, policy=rt.policy, workspace=rt.workspace, extra_dirs=rt.extra_dirs,
         system_prompt=system_prompt, history=rt.store.replay(sid),
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
         context_window=rt.context_window, model_info=rt.model_info,

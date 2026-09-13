@@ -50,7 +50,7 @@ class Bash(Tool):
         return Category.TEST if _TEST_RUNNER.search(str(args.get("command") or "")) else Category.PROCESS
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        cwd = jail(ctx.workspace, args.get("cwd") or ".")
+        cwd = jail(ctx.roots, args.get("cwd") or ".")
         if not cwd.is_dir():
             return Result.error(f"Error: cwd is not a directory: {args.get('cwd')}")
         timeout = min(int(args.get("timeout_ms") or LIMITS.shell_timeout_ms), LIMITS.shell_max_timeout_ms) / _MS_PER_SECOND
@@ -58,7 +58,7 @@ class Bash(Tool):
         argv = ["bash", "-c", args["command"]]
         if self.backend is not None and not approval.get("escalated"):
             extra = args.get("additional_permissions") or {}
-            grant = Grant(paths=list(extra.get("paths") or []), network=bool(approval.get("network")))
+            grant = Grant(paths=[*(extra.get("paths") or []), *(str(d) for d in ctx.extra_dirs)], network=bool(approval.get("network")))
             argv = self.backend.wrap(argv, cwd, ctx.workspace.resolve(), grant)
         env = {**os.environ, "TERM": "dumb", "NO_COLOR": "1", "PAGER": "cat", "GIT_PAGER": "cat", "GIT_TERMINAL_PROMPT": "0"}
         proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

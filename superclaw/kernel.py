@@ -84,17 +84,19 @@ for line in sys.stdin:
 
 
 class Kernel:
-    def __init__(self, workspace: Path, backend: Backend | None, resolve: Callable[[str, dict[str, Any]], Any]) -> None:
+    def __init__(self, workspace: Path, backend: Backend | None, resolve: Callable[[str, dict[str, Any]], Any],
+                 extra_dirs: tuple[Path, ...] = ()) -> None:
         self.workspace = workspace.resolve()
         self.backend = backend
         self.resolve = resolve
+        self.extra_dirs = tuple(Path(d).resolve() for d in extra_dirs)
         self._proc: subprocess.Popen[str] | None = None
 
     def _start(self) -> subprocess.Popen[str]:
         source = CHILD.replace("__TIMEOUT__", str(LIMITS.shell_max_timeout_ms // _MS_PER_SECOND)).replace("__TRACE__", str(LIMITS.kernel_trace_depth))
         argv = [sys.executable, "-u", "-c", source]
         if self.backend is not None:
-            argv = self.backend.wrap(argv, self.workspace, self.workspace, Grant())
+            argv = self.backend.wrap(argv, self.workspace, self.workspace, Grant(paths=[str(d) for d in self.extra_dirs]))
         env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "NO_COLOR": "1"}
         self._proc = subprocess.Popen(argv, cwd=self.workspace, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                       stderr=subprocess.DEVNULL, text=True, start_new_session=True)

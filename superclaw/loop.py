@@ -50,6 +50,7 @@ class Options:
     registry: Registry
     policy: Policy
     workspace: Path
+    extra_dirs: tuple[Path, ...] = ()
     system_prompt: str = ""
     history: list[Message] = field(default_factory=list)
     max_turns: int = LIMITS.max_turns
@@ -105,7 +106,8 @@ class _Run:
         self.saved_tokens = 0
         self.kept_out_tokens = 0
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
-        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan, SPAWN_KEY: self.spawn})
+        self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, extra_dirs=options.extra_dirs,
+                               state={"plan": plan, SPAWN_KEY: self.spawn})
 
     def emit(self, event: dict[str, Any]) -> None:
         if self.o.on_event:
