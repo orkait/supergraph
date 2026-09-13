@@ -1,11 +1,13 @@
+import json
 import os
 import subprocess
+import sys
 
 import pytest
 
 from supergraph import SuperGraph
 
-from superclaw import review
+from superclaw import checks, review
 from superclaw.attach import read as read_attachments
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
@@ -156,3 +158,22 @@ def test_bash(tmp_path):
     (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     subprocess.run("git -c user.email=t@t -c user.name=t commit -q -am fix".split(), cwd=repo, check=True, capture_output=True)
     assert "+    return a + b" in review.against(repo, "main").patch and review.against(repo, "feature").patch == ""
+    project = tmp_path / "project"
+    (project / "tests").mkdir(parents=True)
+    (project / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (project / "go.mod").write_text("module x\n")
+    (project / "Cargo.toml").write_text("[package]\n")
+    (project / "pnpm-lock.yaml").write_text("")
+    (project / "package.json").write_text(json.dumps({"scripts": {"test": "vitest", "lint": "eslint .", "typecheck": "tsc"}}))
+    found = checks.detect(project)
+    assert [c.id for c in found] == ["go.test", "pnpm.typecheck", "pnpm.test", "pnpm.lint", "python.pytest", "cargo.test"]
+    assert checks.detect(tmp_path / "plain") == [] and found[1].command == ["pnpm", "run", "typecheck"]
+    fake = [checks.Check("a.pass", "A", [sys.executable, "-c", "print('fine')"], "test"),
+            checks.Check("b.fail", "B", [sys.executable, "-c", "import sys; print('boom line'); sys.exit(3)"], "test"),
+            checks.Check("c.slow", "C", [sys.executable, "-c", "import time; time.sleep(5)"], "test"),
+            checks.Check("d.missing", "D", ["no-such-binary-xyz"], "test")]
+    report = checks.run(project, fake, timeout_s=1)
+    assert [r.status for r in report.results] == ["passed", "failed", "timed_out", "error"] and not report.ok and report.results[1].exit_code == 3
+    assert report.results[1].tail == ["boom line"] and checks.run(project, fake, only=("a.pass",)).ok
+    assert checks.lines(report)[0].startswith("[pass] A:") and "    boom line" in checks.lines(report) and checks.as_json(report)["results"][2]["status"] == "timed_out"
+    assert 'check id="b.fail"' in checks.remediation_prompt(report) and "do not weaken" in checks.remediation_prompt(report)

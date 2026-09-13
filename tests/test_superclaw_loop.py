@@ -9,9 +9,13 @@ import pytest
 
 from supergraph import SuperGraph
 
+import argparse
+
+from superclaw import checks
 from superclaw.acp import serve as acp_serve
 from superclaw.agents import Agent
 from superclaw.app import Runtime, build_registry
+from superclaw.cli import cmd_verify
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
@@ -172,6 +176,23 @@ def test_guards_gates_and_verifier(ws):
     )
     res = run("fix the bug and prove it", provider, options(ws, verify=True, require_completion_signal=True))
     assert res.final_answer == "Ran them; all green." and sum("verifier:" in m.content for m in res.messages if m.role == "user") == 1
+    (ws / "pyproject.toml").write_text("[project]\nname='w'\n")
+    (ws / "tests").mkdir()
+    fix_gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
+    fixer = Scripted(Completion(tool_calls=[call("write_file", "f1", path="ok", description="d", content="1")]), Completion(text="created ok"))
+    fix_rt = Runtime(gs=fix_gs, store=SessionStore(fix_gs), memory=Memory(fix_gs), registry=build_registry(Memory(fix_gs), ObservationStore(fix_gs), ws),
+                     policy=Policy(ws, Mode.AUTO, sandboxed=True), provider=fixer, workspace=ws, model="fake/m",
+                     settings=Settings.from_env({"XDG_CONFIG_HOME": str(ws / "cfg"), "XDG_CACHE_HOME": str(ws / "cache")}))
+    gate = checks.Check("gate", "Gate", [sys.executable, "-c", "import pathlib, sys; sys.exit(0 if pathlib.Path('ok').exists() else 1)"], "test")
+    monkeypatch_detect = lambda root: [gate]  # noqa: E731
+    checks.detect, original_detect = monkeypatch_detect, checks.detect
+    try:
+        assert cmd_verify(fix_rt, argparse.Namespace(only="", timeout_s=0, attempts=1, json=False)) == 1 and not (ws / "ok").exists()
+        assert cmd_verify(fix_rt, argparse.Namespace(only="", timeout_s=0, attempts=2, json=False)) == 0 and (ws / "ok").read_text() == "1"
+        assert [s["title"] for s in fix_rt.store.recent()] == ["verify attempt 1"]
+    finally:
+        checks.detect = original_detect
+        fix_gs.close()
 
 
 def test_pressure_prune_recall_and_budgets(ws, gs):
