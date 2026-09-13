@@ -163,6 +163,8 @@ class SuperclawApp(App[None]):
         self._title = ""
         self.pending = Attachments()
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
+        self.streaming: Static | None = None
+        self.stream_text = ""
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -590,7 +592,14 @@ class SuperclawApp(App[None]):
 
     def render_event(self, event: dict[str, Any]) -> None:
         kind, child = event["type"], bool(event.get("child"))
-        if kind == "text" and not child:
+        if kind == "text_delta" and not child:
+            self.stream_text += event["text"]
+            if self.streaming is None:
+                self.streaming = Static("", markup=False)
+                self.add(self.streaming)
+            self.streaming.update(self.stream_text)
+        elif kind == "text" and not child:
+            self.drop_stream()
             self.add(Markdown(event["text"]))
         elif kind in ("tool_call", "tool_result"):
             self.render_tool(event, child)
@@ -617,8 +626,14 @@ class SuperclawApp(App[None]):
             card.finish(event["ok"], event["output"], event.get("display") or {}, event.get("ref", ""))
         working.start(PHASE_THINKING)
 
+    def drop_stream(self) -> None:
+        if self.streaming is not None:
+            self.streaming.remove()
+        self.streaming, self.stream_text = None, ""
+
     def finish(self, result: Result | None, error: str = "") -> None:
         self.running = False
+        self.drop_stream()
         self.query_one(WorkingLine).stop()
         self.query_one("#hints").remove_class("hidden")
         elapsed = self.stats.timer.elapsed()

@@ -292,6 +292,7 @@ class Settings:
     fallback_models: tuple[str, ...]
     mode: str
     effort: str
+    stream: bool
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -325,6 +326,7 @@ class Settings:
             fallback_models=split_models(e.get("SUPERCLAW_FALLBACK_MODELS", "")),
             mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
             effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
+            stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),

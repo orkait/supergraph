@@ -151,7 +151,7 @@ def build_runtime(
     agent: Agent | None = None,
     open_store: bool = True,
 ) -> Runtime:
-    provider = connect_provider(settings.model, settings.effort, settings.fallback_models)
+    provider = connect_provider(settings.model, settings.effort, settings.fallback_models, settings.stream)
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     backend = detect()
@@ -175,9 +175,9 @@ def build_runtime(
     )
 
 
-def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = ()) -> Provider | None:
+def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = (), stream: bool = True) -> Provider | None:
     chain = build_provider_chain([model, *fallbacks], free_first=False)
-    return LitellmProvider(chain, effort=effort) if chain else None
+    return LitellmProvider(chain, effort=effort, stream=stream) if chain else None
 
 
 def switch_model(rt: Runtime, model: str) -> None:
@@ -189,7 +189,7 @@ def switch_model(rt: Runtime, model: str) -> None:
     rt.settings.save_model(model)
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
-    rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models)
+    rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models, rt.settings.stream)
 
 
 def apply_effort(rt: Runtime, effort: str) -> None:
