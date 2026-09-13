@@ -201,6 +201,11 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             app.render_event({"type": "tool_result", "id": "t9", "ok": True, "output": "", "display": {}, "ref": ""})
             assert working.label == "cancelling"
             app.cancel_flag.clear()
+            app.stats.used, app.stats.cost = 5100, 0.0026
+            prompt.value = ""
+            await pilot.press(*"/clear", "enter")
+            await pilot.pause(0.05)
+            assert app.session_id != sid and app.stats.used == 0 and app.stats.cost == 0 and app.query_one("#welcome").display and not app.query_one("#transcript").display
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]

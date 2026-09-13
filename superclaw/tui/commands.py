@@ -172,10 +172,6 @@ def _effort(app: SuperclawApp, arg: str) -> None:
     app.set_effort(arg.strip())
 
 
-def _clear(app: SuperclawApp, arg: str) -> None:
-    app.clear_transcript()
-
-
 def _help(app: SuperclawApp, arg: str) -> None:
     for command in (*COMMANDS, *app.user_commands):
         app.note(f"{command.usage:<24} {command.help}")
@@ -194,7 +190,7 @@ COMMANDS = (
     Command("/mode", "/mode ask|auto|plan|unsafe", "switch the permission mode", _mode),
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
-    Command("/new", "/new", "start a fresh session", _new),
+    Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions [query]", "list recent sessions, or search their events", _sessions),
     Command("/fork", "/fork [id|latest]", "copy a session into a new one and continue it", _fork),
@@ -211,7 +207,6 @@ COMMANDS = (
     Command("/permissions", "/permissions", "show the mode and remembered grants", _permissions),
     Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
-    Command("/clear", "/clear", "clear the transcript view", _clear),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
     Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),

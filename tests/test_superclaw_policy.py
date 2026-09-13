@@ -144,6 +144,7 @@ def test_command_classes_and_prefix_rules(tmp_path):
     left: list[str] = []
     stub = SimpleNamespace(exit=lambda: left.append("exit"), note=lambda text, error=False: left.append(text))
     assert [c.name for c in matching("/qu")] == ["/exit"] and [c.name for c in matching("/exi")] == ["/exit"] and "/quit" in matching("/exi")[0].usage
+    assert [c.name for c in matching("/cle")] == ["/new"] and [c.name for c in matching("/rese")] == ["/new"] and "empty context" in matching("/cle")[0].help
     dispatch(stub, "/quit")
     dispatch(stub, "/exit")
     dispatch(stub, "/nope")
