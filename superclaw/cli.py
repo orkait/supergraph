@@ -14,7 +14,7 @@ from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw.report import context_report
+from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings
 from superclaw.skills import load_skills
@@ -22,6 +22,7 @@ from superclaw.skills import load_skills
 SCHEMA_VERSION = 1
 _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
+_EVENT_TYPE_WIDTH = 12
 
 
 def _tool_set(value: str) -> frozenset[str]:
@@ -71,8 +72,19 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
 
 
 def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
+    if args.query:
+        hits = rt.store.search(args.query)
+        for hit in hits:
+            print(f"{hit['id']}  #{hit['seq']:<4d} {hit['type']:<{_EVENT_TYPE_WIDTH}} {hit['text']}")
+        return 0 if hits else 1
     for s in rt.store.recent():
         print(f"{s['id']}  {s['event_count']:4d} events  {s['model']}  {s['cwd']}")
+    return 0
+
+
+def cmd_doctor(rt: Runtime, args: argparse.Namespace) -> int:
+    for line in doctor_lines(rt, "run `superclaw setup`"):
+        print(line)
     return 0
 
 
@@ -129,7 +141,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ex.add_argument("--output-format", choices=["text", "json", "stream-json"], default="text")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
-    sub.add_parser("sessions", help="list sessions")
+    sess = sub.add_parser("sessions", help="list sessions, or search their events")
+    sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
+    sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
@@ -182,11 +196,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(settings, args)
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
-                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None,
+                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command not in (None, "doctor"),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools))
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
+    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills,
+               "context": cmd_context, "doctor": cmd_doctor}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
     except KeyError as e:

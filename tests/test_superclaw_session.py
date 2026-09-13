@@ -32,6 +32,9 @@ def test_sessions_fork_replay_and_namespace(gs):
     store.append(b, "message", {"role": "user", "content": "more"})
     assert store.get(b)["parent"] == a and len(store.events(a)) == 7 and len(store.events(b)) == 8 and store.latest() == b
     assert gs.execute("COUNT NODES").count == 0 and gs.execute("COUNT NODES", namespace=NAMESPACE).count > 0
+    hits = store.search("kept")
+    assert hits and {h["id"] for h in hits} <= {a, b} and all(h["type"] == "message" for h in hits)
+    assert any("kept" in h["text"] for h in hits) and store.search("zzzznomatch") == []
     store.append(a, "usage", {"input_tokens": 100, "output_tokens": 20, "cost_usd": 0.5})
     store.append(a, "usage", {"input_tokens": 30, "output_tokens": 10, "cost_usd": 0.25})
     assert store.usage(a) == {"calls": 2, "tokens": 160, "cost_usd": 0.75} and store.usage(b) == {"calls": 0, "tokens": 0, "cost_usd": 0.0}

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from superclaw.catalog import describe, keyed_providers
 from superclaw.policy import Mode
-from superclaw.runtime import compact
 
 if TYPE_CHECKING:
     from superclaw.tui.app import SuperclawApp
@@ -43,6 +41,13 @@ def _resume(app: SuperclawApp, arg: str) -> None:
 
 
 def _sessions(app: SuperclawApp, arg: str) -> None:
+    if arg:
+        hits = app.rt.store.search(arg)
+        if not hits:
+            app.note(f"no session event matches {arg!r}", error=True)
+        for hit in hits:
+            app.note(f"{hit['id']}  #{hit['seq']} {hit['type']}  {hit['text']}")
+        return
     for s in app.rt.store.recent()[: app.limits.recent_sessions_shown]:
         app.note(f"{s['id']}  {s['event_count']} events  {s['cwd']}")
 
@@ -125,13 +130,10 @@ def _permissions(app: SuperclawApp, arg: str) -> None:
 
 
 def _doctor(app: SuperclawApp, arg: str) -> None:
-    dot, env = app.glyphs.dot, os.environ
-    glyphs = "ascii" if app.glyphs.border == "ascii" else "unicode"
-    app.note(f"terminal {env.get('TERM_PROGRAM') or env.get('TERM') or 'unknown'} {dot} vte {env.get('VTE_VERSION') or 'n/a'} {dot} glyphs {glyphs}")
-    app.note(f"sandbox {'on' if app.rt.policy.sandboxed else 'off'} {dot} mode {app.rt.mode.value} {dot} effort {app.rt.settings.effort or 'off'}")
-    catalog = "catalog" if app.rt.model_info.known else "fallback"
-    app.note(f"model {app.rt.model} {dot} window {compact(app.rt.context_window)} {dot} {catalog}")
-    app.note("providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or "none; /setup"))
+    from superclaw.report import doctor_lines
+
+    for line in doctor_lines(app.rt, "/setup"):
+        app.note(line)
 
 
 def _effort(app: SuperclawApp, arg: str) -> None:
@@ -162,7 +164,7 @@ COMMANDS = (
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/new", "/new", "start a fresh session", _new),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
-    Command("/sessions", "/sessions", "list recent sessions", _sessions),
+    Command("/sessions", "/sessions [query]", "list recent sessions, or search their events", _sessions),
     Command("/fork", "/fork [id|latest]", "copy a session into a new one and continue it", _fork),
     Command("/usage", "/usage", "tokens and cost spent in this session", _usage),
     Command("/context", "/context [prompt]", "what the next request costs", _context),
