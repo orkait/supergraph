@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from superclaw.policy import Mode
+
+if TYPE_CHECKING:
+    from superclaw.tui.app import SuperclawApp
+
+
+@dataclass(frozen=True)
+class Command:
+    name: str
+    usage: str
+    help: str
+    run: Callable[[SuperclawApp, str], None]
+
+
+def _mode(app: SuperclawApp, arg: str) -> None:
+    if arg not in Mode._value2member_map_:
+        app.note(f"usage: /mode {'|'.join(m.value for m in Mode)}", error=True)
+        return
+    app.rt.mode = Mode(arg)
+    app.refresh_status()
+    app.note(f"mode {arg}")
+
+
+def _new(app: SuperclawApp, arg: str) -> None:
+    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model))
+
+
+def _resume(app: SuperclawApp, arg: str) -> None:
+    sid = app.rt.store.latest() if arg in ("", "latest") else arg
+    if not sid or app.rt.store.get(sid) is None:
+        app.note(f"no session {arg or 'latest'!r}", error=True)
+        return
+    app.open_session(sid)
+
+
+def _sessions(app: SuperclawApp, arg: str) -> None:
+    for s in app.rt.store.recent()[: app.limits.recent_sessions_shown]:
+        app.note(f"{s['id']}  {s['event_count']} events  {s['cwd']}")
+
+
+def _context(app: SuperclawApp, arg: str) -> None:
+    from superclaw.report import context_report
+
+    report = context_report(app.rt, arg)
+    for name, tokens in [*report.categories.items(), ("free", report.free)]:
+        app.note(f"{name:<18}{tokens:>9,}  {report.percent(tokens):5.1f}%")
+
+
+def _recall(app: SuperclawApp, arg: str) -> None:
+    if not arg:
+        app.note("usage: /recall <§id> | <query>", error=True)
+        return
+    args = {"ref": arg} if arg.lstrip("§").isalnum() and len(arg.lstrip("§")) >= app.limits.ref_hex_chars else {"query": arg}
+    app.show_tool_result("recall", args)
+
+
+def _clear(app: SuperclawApp, arg: str) -> None:
+    app.clear_transcript()
+
+
+def _help(app: SuperclawApp, arg: str) -> None:
+    for command in COMMANDS:
+        app.note(f"{command.usage:<24} {command.help}")
+    app.note("esc cancels the run · ctrl+c quits · click a card to expand it")
+
+
+def _quit(app: SuperclawApp, arg: str) -> None:
+    app.exit()
+
+
+COMMANDS = (
+    Command("/mode", "/mode ask|auto|plan|unsafe", "switch the permission mode", _mode),
+    Command("/new", "/new", "start a fresh session", _new),
+    Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
+    Command("/sessions", "/sessions", "list recent sessions", _sessions),
+    Command("/context", "/context [prompt]", "what the next request costs, by category", _context),
+    Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
+    Command("/clear", "/clear", "clear the transcript view", _clear),
+    Command("/help", "/help", "commands and keys", _help),
+    Command("/quit", "/quit", "exit", _quit),
+)
+
+
+def matching(prefix: str) -> list[Command]:
+    head = prefix.split()[0] if prefix.strip() else "/"
+    return [c for c in COMMANDS if c.name.startswith(head)]
+
+
+def dispatch(app: SuperclawApp, text: str) -> None:
+    name, _, arg = text.strip().partition(" ")
+    for command in COMMANDS:
+        if command.name == name:
+            command.run(app, arg.strip())
+            return
+    app.note(f"unknown command {name}; /help lists them", error=True)

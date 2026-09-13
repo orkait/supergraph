@@ -121,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Path(args.cwd).resolve()
     if not workspace.is_dir():
         sys.exit(f"superclaw: not a directory: {workspace}")
+    if args.command is None and not sys.stdin.isatty():
+        sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
     settings = replace(defaults, model=args.model, mode=args.mode, context_window=args.context_window,
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     try:

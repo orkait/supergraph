@@ -112,6 +112,16 @@ class Limits:
     preview_args_chars: int = 160
     preview_error_chars: int = 200
     dialog_args_chars: int = 1200
+    card_body_lines: int = 12
+    card_arg_chars: int = 80
+    gauge_cells: int = 8
+    spinner_interval_s: float = 0.09
+    timer_interval_s: float = 0.25
+    command_matches_shown: int = 6
+    tui_tier_narrow: int = 58
+    tui_tier_medium: int = 80
+    tui_tier_full: int = 100
+    welcome_max_gap: int = 8
 
 
 LIMITS = Limits()

@@ -69,6 +69,7 @@ class Options:
     summarize: Callable[[str], str] | None = None
     hooks: Dispatcher | None = None
     depth: int = 0
+    cancelled: Callable[[], bool] | None = None
 
 
 @dataclass
@@ -352,6 +353,9 @@ class _Run:
             if not call.name:
                 self.append(Message(role="tool", content=DROPPED_TOOL_CALL_NOTICE, tool_call_id=call.id, is_error=True))
                 continue
+            if self.o.cancelled and self.o.cancelled():
+                self.abort_rest(calls[index:])
+                return self.stopped()
             if repeated := self.guards.observe_identical(call.name, call.arguments):
                 followups.append(repeated)
             outcome, hint = self.run_call(call)
@@ -373,6 +377,12 @@ class _Run:
                    "cache_read_tokens": usage.cache_read_tokens, "run_total": self.tokens_used,
                    "cost_usd": round(cost, LIMITS.usd_decimals), "run_cost_usd": round(self.cost_usd, LIMITS.usd_decimals),
                    "context_used": usage.input_tokens, "context_window": self.o.context_window})
+
+    def stopped(self) -> Result | None:
+        if self.o.cancelled and self.o.cancelled():
+            self.emit({"type": "cancelled", "turns": self.turns})
+            return self.result("Stopped by the user.", incomplete=True, incomplete_reason="cancelled", stop_reason="cancelled")
+        return None
 
     def budget_spent(self) -> Result | None:
         o = self.o
@@ -407,7 +417,7 @@ class _Run:
                 self.append(Message(role="user", content=f"[hook] {line}"))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1
-            if spent := self.budget_spent():
+            if spent := self.budget_spent() or self.stopped():
                 return spent
             exposed = o.registry.definitions(o.policy.visible, self.loaded)
             self.maybe_compact(exposed)
