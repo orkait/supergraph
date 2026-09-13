@@ -45,6 +45,9 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Runs as a named profile | an agent profile (`<name>.md` with frontmatter) carries a prompt, a tool allowlist and a model. `--agent` and `/agent` apply it to the session, `delegate(agent=…)` applies it to a child. A profile can only narrow: its tools intersect with `--allow-tools` and it has no way to set the permission mode |
 | Takes attachments | `exec -f PATH` and `/attach` inline a text file under the same budget `read_file` uses, or send an image as an image. Attachments resolve through the same jail, so reaching outside the workspace needs `--add-dir` |
 | Answers in a shape | `exec --output-schema FILE` hands the model a JSON Schema and checks the final answer against it; a mismatch names the failing path and exits 2, so a caller can pipe `exec` into `jq` |
+| Reviews a change | `superclaw review` runs a read-only review of the uncommitted changes, a branch or a commit, forced into plan mode, and prints findings with `file:line`, a severity and a verdict |
+| Ships team commands | `<name>.md` under `.superclaw/commands` becomes `/<name>` in the TUI and in `exec`, with `$ARGUMENTS` and `$1`..`$9` expansion, so a repository can check in its own workflows |
+| Streams | text arrives as it is generated and the TUI shows the reply growing; tool calls are merged from their deltas, a `<think>` block never leaks token by token, and `stream-json` carries `text_delta` events |
 | Asks | `ask_user` with options and a recommended default |
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
 | Fits the window | pressure is measured against the model's real window minus a 16,384-token reserve, anchored on the provider's reported usage rather than a local estimate. Under pressure the harness first prunes older tool results (over 8,192 chars) to a head and tail with no model call, and only if that is not enough summarises everything before the last 20,000 tokens, never cutting between a tool call and its result. The summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary. Prunes and compactions are session events, so a resumed session replays the same shortened context |
@@ -85,6 +88,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Store path | `SUPERCLAW_DB_PATH`, `--db` | `~/.local/share/superclaw/brain` |
 | Model | `SUPERCLAW_MODEL`, `--model`, `/model` in the TUI | `openrouter/deepseek/deepseek-v4-flash`; ids are `provider/slug` for `openrouter`, `groq`, `cerebras`, `ollama` (cloud), `aistudio`, `nvidia_nim`, `opencode` (OpenCode Zen). `/model` and `superclaw models` list what each connected provider serves (prices shown as `$input/output` per million tokens): the provider's live `/models` endpoint (public for OpenRouter and NVIDIA, keyed elsewhere) cached for a day under `~/.cache/superclaw/models`, merged with the bundled catalog for context windows and prices, with embedding, audio, image and moderation models filtered out. A model only the live list knows still gets its window and price from that list |
 | Fallback models | `SUPERCLAW_FALLBACK_MODELS`, `--fallback-model a,b` | none; tried in order when the main model errors, and every turn starts again at the main model |
+| Streaming | `SUPERCLAW_STREAM=0` turns it off | on; text is forwarded as it arrives, tool-call deltas are merged by index, and anything inside a `<think>` block is withheld until the block closes. The final `text` event, the transcript and `exec` text and json output are unchanged; `stream-json` gains `text_delta` events |
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
 | Reasoning effort | `SUPERCLAW_EFFORT`, `/effort low\|medium\|high\|off` in the TUI | off; when set it is sent as `reasoning_effort` on every call and shown in the status bar. litellm drops the parameter for models that do not support it, so it is a no-op there rather than an error |
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `0` = resolved from the bundled model catalog (1,000,000 for the default model); `128000` when the model is unknown |
@@ -100,6 +104,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Worktree | `-w/--worktree [NAME]`, `--worktree-dir` | off; creates or reuses `<data dir>/worktrees/superclaw-worktree-<repo>-<hash>/<name>` on branch `superclaw/<name>`, default name `task-<utc timestamp>` |
 | MCP servers | `~/.config/superclaw/mcp.json`, plus `<workspace>/.superclaw/mcp.json` with `--trust-workspace` | none; `{"mcpServers": {"docs": {"command": "…", "args": [], "env": {}}}}`, the shape claude and cursor already use. stdio only; a `url` entry is reported as an unsupported transport. `superclaw mcp` and `/mcp` list what connected and what was skipped |
 | Agent profiles | `--agent NAME`, `/agent` in the TUI | none; `<workspace>/.superclaw/agents/<name>.md` then `~/.config/superclaw/agents/<name>.md`, frontmatter `name` `description` `tools` `model` over a prompt body. `superclaw agents` lists them |
+| User commands | `/<name> args` in the TUI, `superclaw exec "/<name> args"` | none; `<workspace>/.superclaw/commands/<name>.md` then `~/.config/superclaw/commands/<name>.md`, frontmatter `description` `agent` `model` over a template. `superclaw commands` lists them |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
 | Personal guidelines | `~/.config/superclaw/SUPERCLAW.md` | none |
 | Project guidelines | `AGENTS.md`, `SUPERCLAW.md` or `.superclaw/AGENTS.md`, walked from the git root to the cwd | none |
@@ -127,6 +132,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/mode ask\|auto\|plan\|unsafe` | switch the permission mode for the session |
 | `/model [list\|id]` | no argument opens the picker: recent models first, then one group per connected provider, type to filter, enter picks. `list` prints the same rows. An id switches at once, fuzzy when unique (`/model v4-pro`), and a model on a provider without a key opens setup for that provider. The choice is saved as `SUPERCLAW_MODEL` |
 | `/effort low\|medium\|high\|off` | set the model's reasoning effort for the session, saved as `SUPERCLAW_EFFORT` and shown in the status bar |
+| `/<name> [args]` | a user command from `.superclaw/commands`: the template expands (`$ARGUMENTS`, `$1`..`$9` shell-split, `$$`) and runs as a prompt; history keeps the typed line. Builtins win on a name collision |
 | `/agent [name\|none]` | no argument lists the profiles and marks the active one; a name applies its prompt and narrows the tools; `none` clears it and restores the allowlist the command line asked for |
 | `/attach <path>` | queue a file or image for your next message; the typed prompt is what lands in history, the attachment rides along with the request |
 | `/mcp` | the MCP tools that connected, the servers that were skipped and why, and any config problem |
@@ -163,14 +169,18 @@ superclaw exec --output-schema review.json "review the diff"      # final answer
 superclaw --agent reviewer exec "review the last commit"          # run under a profile
 superclaw -w exec "risky refactor"                                # in a throwaway worktree on superclaw/task-<ts>
 superclaw --add-dir ../shared exec "port the helper across"       # a second writable root
+superclaw exec "/pr 42"                                            # a user command from .superclaw/commands
+superclaw review --base main "focus on error handling"            # read-only review: findings with file:line and a verdict
+superclaw review --commit HEAD                                     # or --uncommitted (default)
+superclaw export -o session.json && superclaw import session.json # move a session between stores or machines
 echo "prompt on stdin" | superclaw exec -
 ```
 
-Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `budget` `final` `run_end`, each tagged with `schemaVersion` and `runId`. `usage` carries `input_tokens` `output_tokens` `cache_read_tokens` `cost_usd` `run_cost_usd` `context_used` `context_window` `saved_tokens` `kept_out_tokens`; `run_end` carries `savedTokens` and `keptOutTokens`. Child events carry `child: <session id>`.
+Stream events: `run_start` `usage` `text_delta` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `budget` `final` `run_end`, each tagged with `schemaVersion` and `runId`. `text_delta` carries each fragment as it arrives; `text` still carries the whole turn. `usage` carries `input_tokens` `output_tokens` `cache_read_tokens` `cost_usd` `run_cost_usd` `context_used` `context_window` `saved_tokens` `kept_out_tokens`; `run_end` carries `savedTokens` and `keptOutTokens`. Child events carry `child: <session id>`.
 
 `superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window. `superclaw models [--provider name] [--refresh]` prints every model each connected provider serves, one row per model with the context window, tool support, price per million tokens and whether the row came from the live list or the bundled catalog; `--refresh` ignores the day-old cache. `superclaw usage` prints per-session call, token and cost totals. `superclaw sessions [query]` lists recent sessions, or searches their stored events by meaning and exits 1 when nothing matches. `--fork <id|latest>` copies a session into a new one and continues from it, alongside `--resume`.
 
-`superclaw doctor`, `mcp`, `agents` and `skills` are read-only and never open the store, so they still answer while a session holds it. The commands that do need it (`exec`, `sessions`, `usage`, `context`, the TUI) report the lock and point at `--db <path>` rather than raising.
+`superclaw export [id|latest] [-o FILE]` writes a session and its events as versioned JSON; `superclaw import FILE|-` creates a new session that replays them, with `parent` pointing at the source id and `cwd` rewritten to this workspace, so the copy can be resumed, forked and searched like any other. `superclaw doctor`, `mcp`, `agents`, `skills` and `commands` are read-only and never open the store, so they still answer while a session holds it. The commands that do need it (`exec`, `sessions`, `usage`, `context`, the TUI) report the lock and point at `--db <path>` rather than raising.
 
 </details>
 
@@ -210,6 +220,33 @@ You review code. Report findings with file:line. Never edit files.
 </details>
 
 <details>
+<summary>User commands</summary>
+
+```
+<workspace>/.superclaw/commands/pr.md      # project, checked in and shared
+~/.config/superclaw/commands/pr.md         # personal
+```
+
+```markdown
+---
+description: Open a PR for the current branch.
+agent: reviewer
+---
+Open a pull request titled "$1". Summary: $ARGUMENTS
+```
+
+`/pr "fix build" touches three files` expands the template and runs it as a prompt: `$ARGUMENTS` is the raw argument string, `$1`..`$9` are shell-split positionals (so a quoted argument stays whole), `$$` is a literal dollar, and a template with no placeholder gets the arguments appended. `agent:` and `model:` route the run the way `/agent` and `/model` do. Names are `[a-z0-9-]` only and builtins win, so a stray file cannot shadow `/mode`. `superclaw commands` lists them; `superclaw exec "/pr 42"` works headless.
+
+</details>
+
+<details>
+<summary>Review</summary>
+
+`superclaw review` picks a diff (`--uncommitted` by default, `--base BRANCH`, or `--commit SHA`), runs the reviewer prompt in plan mode so the model can read any file for context but never edit, and prints findings as `file:line`, `blocker` / `should-fix` / `nit`, problem, fix, then a `Verdict:` line. The diff goes through the same diff-aware budget the tool boundary uses, the prompt says when it was cut, and untracked files are named rather than inlined. An optional argument focuses the reviewer; an empty change exits with `nothing to review`.
+
+</details>
+
+<details>
 <summary>MCP servers</summary>
 
 ```json
@@ -239,7 +276,6 @@ You review code. Report findings with file:line. Never edit files.
 |---|---|
 | Linux-only sandbox | `bubblewrap` covers `bash` and the `python` kernel; without it both degrade to a prompt in `auto`. File tools rely on the path jail, which resolves symlinks but has a check-to-use window. No macOS Seatbelt yet, and network approval is all-or-nothing rather than a domain allowlist |
 | Kernel checkpoints are picklable-only | the kernel namespace is checkpointed into the substrate after every run and restored on `--resume`, but values that cannot be pickled (lambdas, open handles, live modules) are dropped; a kernel timeout resets the live namespace and the next run restores the last checkpoint |
-| No streaming | completions are collected whole, so text appears per turn rather than per token |
 | MCP is stdio only | no HTTP or SSE transport, no OAuth, and resources and prompts are not consumed - tools only. A `url` entry is reported, not connected |
 | One process per store | supergraph takes an exclusive lock per path, so a second live session needs `--db <path>`. The read-only commands sidestep it by not opening the store at all |
 | Images do not survive resume | an attached image rides the live run; the session event records only how many there were, because base64 in the event document would land in the same FTS index `REMEMBER` and `superclaw sessions <query>` search |
