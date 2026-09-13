@@ -9,6 +9,7 @@ DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
 CREDENTIALS_FILE = "credentials.env"
 CREDENTIALS_MODE = 0o600
+TRANSCRIPT_TEMPLATE = "superclaw-transcript-{sid}.md"
 ASCII_ENV = "SUPERCLAW_ASCII"
 OFF_VALUES = ("", "0", "false", "off")
 LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
@@ -214,6 +215,7 @@ class Limits:
     models_cache_ttl_s: int = 86_400
     model_id_width: int = 44
     model_list_shown: int = 40
+    tool_name_width: int = 16
     preview_args_chars: int = 160
     preview_error_chars: int = 200
     dialog_args_chars: int = 1200

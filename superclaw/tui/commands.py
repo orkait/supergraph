@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from superclaw.catalog import describe, keyed_providers
 from superclaw.policy import Mode
+from superclaw.runtime import compact
 
 if TYPE_CHECKING:
     from superclaw.tui.app import SuperclawApp
@@ -76,6 +78,47 @@ def _model(app: SuperclawApp, arg: str) -> None:
         app.switch_model(arg)
 
 
+def _compact(app: SuperclawApp, arg: str) -> None:
+    app.do_compact()
+
+
+def _retry(app: SuperclawApp, arg: str) -> None:
+    app.retry()
+
+
+def _rename(app: SuperclawApp, arg: str) -> None:
+    app.rename(arg.strip())
+
+
+def _export(app: SuperclawApp, arg: str) -> None:
+    app.export()
+
+
+def _tools(app: SuperclawApp, arg: str) -> None:
+    visible = app.rt.policy.visible
+    for tool in app.rt.registry.tools():
+        mark = " " if visible(tool) else app.glyphs.failed
+        kind = "lazy" if tool.deferred else "eager"
+        app.note(f"{mark} {tool.name:<{app.limits.tool_name_width}} {tool.safety.side_effect.value} {app.glyphs.dot} {kind}")
+
+
+def _permissions(app: SuperclawApp, arg: str) -> None:
+    dot = app.glyphs.dot
+    app.note(f"mode {app.rt.mode.value}")
+    app.note("session grants: " + (f" {dot} ".join(app.rt.policy.session_grants) or "none"))
+    app.note("remembered prefixes: " + (f" {dot} ".join(" ".join(p) for p in app.rt.policy.prefix_grants) or "none"))
+
+
+def _doctor(app: SuperclawApp, arg: str) -> None:
+    dot, env = app.glyphs.dot, os.environ
+    glyphs = "ascii" if app.glyphs.border == "ascii" else "unicode"
+    app.note(f"terminal {env.get('TERM_PROGRAM') or env.get('TERM') or 'unknown'} {dot} vte {env.get('VTE_VERSION') or 'n/a'} {dot} glyphs {glyphs}")
+    app.note(f"sandbox {'on' if app.rt.policy.sandboxed else 'off'} {dot} mode {app.rt.mode.value}")
+    catalog = "catalog" if app.rt.model_info.known else "fallback"
+    app.note(f"model {app.rt.model} {dot} window {compact(app.rt.context_window)} {dot} {catalog}")
+    app.note("providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or "none; /setup"))
+
+
 def _clear(app: SuperclawApp, arg: str) -> None:
     app.clear_transcript()
 
@@ -101,6 +144,13 @@ COMMANDS = (
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions", "list recent sessions", _sessions),
     Command("/context", "/context [prompt]", "what the next request costs", _context),
+    Command("/compact", "/compact", "summarize older turns to free the window now", _compact),
+    Command("/retry", "/retry", "run the last prompt again", _retry),
+    Command("/rename", "/rename <title>", "name this session", _rename),
+    Command("/export", "/export", "write the transcript to a markdown file", _export),
+    Command("/tools", "/tools", "list the tools and their side effects", _tools),
+    Command("/permissions", "/permissions", "show the mode and remembered grants", _permissions),
+    Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
     Command("/clear", "/clear", "clear the transcript view", _clear),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
