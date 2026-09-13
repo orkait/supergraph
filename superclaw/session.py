@@ -108,7 +108,15 @@ class SessionStore:
                 items = ev["payload"].get("items", [])
         return items
 
+    def rename(self, sid: str, title: str) -> None:
+        if self.get(sid) is None:
+            raise KeyError(f"unknown session {sid}")
+        self._x(f'UPDATE NODE {_lit("session:" + sid)} SET title = {_lit(title)}')
+
     def replay(self, sid: str) -> list[Message]:
+        return [m for _, m in self.timeline(sid)]
+
+    def timeline(self, sid: str) -> list[tuple[int, Message]]:
         timeline: list[tuple[int, Message]] = []
         for ev in self.events(sid):
             seq, p = ev["seq"], ev["payload"]
@@ -129,4 +137,4 @@ class SessionStore:
                 through = int(p.get("through_seq", 0))
                 kept = [(s, m) for s, m in timeline if s > through]
                 timeline = [(seq, Message(role="user", content=f"{SUMMARY_LABEL}\n{p.get('summary', '')}")), *kept]
-        return [m for _, m in timeline]
+        return timeline

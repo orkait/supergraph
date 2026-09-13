@@ -250,6 +250,14 @@ class Policy:
         self._session_grants: set[str] = set()
         self._prefix_grants: list[list[str]] = []
 
+    @property
+    def session_grants(self) -> list[str]:
+        return sorted(self._session_grants)
+
+    @property
+    def prefix_grants(self) -> list[list[str]]:
+        return [list(p) for p in self._prefix_grants]
+
     def grant_session(self, tool_name: str) -> None:
         self._session_grants.add(tool_name)
 

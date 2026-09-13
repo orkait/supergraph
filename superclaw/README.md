@@ -118,6 +118,13 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
 | `/context [prompt]` | what the next request costs, by category |
 | `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |
+| `/compact` | summarize older turns into one message now, freeing the window before the next run; a session event, so it survives resume |
+| `/retry` | run the last prompt again |
+| `/rename <title>` | name the session; the title shows in the title bar and `/sessions` |
+| `/export` | write the transcript to `superclaw-transcript-<id>.md` in the workspace |
+| `/tools` | list every tool, its side effect, and whether it is hidden in the current mode |
+| `/permissions` | show the mode, the session tool grants and the remembered command prefixes |
+| `/doctor` | terminal, sandbox, model and connected-provider health, read-only |
 | `/setup` | connect a provider key and model without leaving the TUI |
 | `/clear`, `/help`, `/quit` | housekeeping |
 

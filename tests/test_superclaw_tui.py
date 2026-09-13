@@ -94,6 +94,16 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             assert card.tool == "write_file" and card.ok and "+hi" in str(card.query_one(".body").content)
             assert app.query_one("#transcript").display and not app.query_one("#welcome").display
             assert "done in" in str(app.query(".note").last().content) and app.stats.timer.calls == 1
+            await pilot.press(*"/rename my work", "enter")
+            await pilot.pause(0.05)
+            assert rt.store.get(sid)["title"] == "my work" and "my work" in str(app.query_one("#title").content)
+            await pilot.press(*"/tools", "enter")
+            await pilot.pause(0.05)
+            assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))
+            await pilot.press(*"/export", "enter")
+            await pilot.pause(0.05)
+            assert (rt.workspace / f"superclaw-transcript-{sid}.md").read_text().startswith("# superclaw transcript")
+            assert "write it" in app.history and app.hist_index == len(app.history)
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]

@@ -21,8 +21,10 @@ from superclaw.loop import Result
 from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
-from superclaw.runtime import clip, compact
-from superclaw.settings import LIMITS, Glyphs, Provider
+from superclaw.runtime import Message, clip, compact
+from superclaw.compaction import SUMMARY_INSTRUCTIONS
+from superclaw.compaction import compact as compact_context
+from superclaw.settings import LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching
@@ -46,7 +48,8 @@ EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --
 HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+c quit")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
-BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model")
+PHASE_COMPACTING = "compacting"
+BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model", "/compact", "/retry")
 
 
 def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
@@ -153,6 +156,7 @@ class SuperclawApp(App[None]):
         self.history: list[str] = []
         self.hist_index = 0
         self.hist_draft = ""
+        self._title = ""
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -178,7 +182,14 @@ class SuperclawApp(App[None]):
         if self.rt.provider is None:
             self.open_setup()
 
+    def load_meta(self) -> None:
+        self._title = (self.rt.store.get(self.session_id) or {}).get("title", "")
+
+    def session_label(self) -> str:
+        return self._title or self.session_id
+
     def load_history(self) -> None:
+        self.load_meta()
         prompts, expect = [], False
         for event in self.rt.store.events(self.session_id):
             if event["type"] == "prompt":
@@ -273,7 +284,7 @@ class SuperclawApp(App[None]):
 
     def refresh_status(self) -> None:
         width = self.size.width
-        self.query_one("#title", TitleBar).show(self.short_cwd(width), _git_branch(self.rt.workspace), self.session_id, width)
+        self.query_one("#title", TitleBar).show(self.short_cwd(width), _git_branch(self.rt.workspace), self.session_label(), width)
         self.query_one("#composer", Horizontal).border_subtitle = self.rt.model if tier(width) >= 1 else ""
         self.query_one("#status", StatusBar).show(self.rt.mode.value, self.stats, width)
 
@@ -404,6 +415,74 @@ class SuperclawApp(App[None]):
             self.note(f"{name} waits for the run to finish; esc cancels it", error=True)
         else:
             dispatch(self, text)
+
+    def retry(self) -> None:
+        if self.running:
+            self.note("a run is in progress; esc cancels it", error=True)
+        elif not self.history:
+            self.note("no earlier prompt to retry", error=True)
+        elif self.rt.provider is None:
+            self.open_setup()
+        else:
+            text = self.history[-1]
+            self.add(Static(f"{self.glyphs.prompt} {text}", classes="user"))
+            self.begin_run(text)
+
+    def rename(self, title: str) -> None:
+        if not title:
+            self.note("usage: /rename <title>", error=True)
+            return
+        self.rt.store.rename(self.session_id, title)
+        self._title = title
+        self.refresh_status()
+        self.note(f"renamed to {title!r}")
+
+    def export(self) -> None:
+        path = self.rt.workspace / TRANSCRIPT_TEMPLATE.format(sid=self.session_id)
+        lines = [f"# superclaw transcript {self.session_id}", ""]
+        for message in self.rt.store.replay(self.session_id):
+            if not (message.content or message.tool_calls):
+                continue
+            lines += [f"## {message.role}", "", message.content or ""]
+            lines += [f"- tool `{c.name}` {c.arguments}" for c in message.tool_calls]
+            lines.append("")
+        path.write_text("\n".join(lines))
+        self.note(f"transcript written to {path}")
+
+    def do_compact(self) -> None:
+        if self.running:
+            self.note("a run is in progress; esc cancels it", error=True)
+        elif self.rt.provider is None:
+            self.open_setup()
+        else:
+            self.running = True
+            self.query_one("#hints").add_class("hidden")
+            self.query_one(WorkingLine).start(PHASE_COMPACTING)
+            self.compact_worker()
+
+    @work(thread=True, exclusive=True)
+    def compact_worker(self) -> None:
+        pairs = self.rt.store.timeline(self.session_id)
+
+        def summarize(brief: str) -> str:
+            return self.rt.provider.complete([Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=brief)], []).text
+
+        try:
+            result = compact_context([m for _, m in pairs], summarize=summarize)
+        except Exception as e:
+            self.call_from_thread(self.finish_compact, f"compact failed: {clip(str(e), LIMITS.preview_error_chars)}", True)
+            return
+        if not result.compacted:
+            self.call_from_thread(self.finish_compact, "context is already small", False)
+            return
+        self.rt.store.append(self.session_id, "compaction", {"summary": result.summary, "through_seq": pairs[result.removed - 1][0]})
+        self.call_from_thread(self.finish_compact, f"compacted {result.removed} messages into a summary", False)
+
+    def finish_compact(self, text: str, error: bool) -> None:
+        self.running = False
+        self.query_one(WorkingLine).stop()
+        self.query_one("#hints").remove_class("hidden")
+        self.note(text, error=error)
 
     def begin_run(self, text: str) -> None:
         self.remember(text)
