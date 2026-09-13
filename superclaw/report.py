@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 
 from superclaw.app import Runtime
+from superclaw.catalog import keyed_providers
 from superclaw.prompt import (
     PromptInputs,
     confirmation_policy,
@@ -14,8 +16,8 @@ from superclaw.prompt import (
     skills_block,
     user_guidelines,
 )
-from superclaw.runtime import approx_tokens
-from superclaw.settings import LIMITS
+from superclaw.runtime import approx_tokens, compact
+from superclaw.settings import ASCII, EFFORT_OFF, LIMITS
 from superclaw.skills import load_skills
 
 _PERCENT = 100
@@ -54,3 +56,15 @@ def context_report(rt: Runtime, prompt: str = "") -> ContextReport:
         "history": sum(approx_tokens(m.content) for m in rt.store.replay(latest)) if latest else 0,
     }
     return ContextReport(window=rt.context_window, categories=categories)
+
+
+def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
+    dot, env, glyphs = rt.settings.glyphs.dot, os.environ, rt.settings.glyphs
+    return [
+        f"terminal {env.get('TERM_PROGRAM') or env.get('TERM') or 'unknown'} {dot} vte {env.get('VTE_VERSION') or 'n/a'} "
+        f"{dot} glyphs {'ascii' if glyphs.border == ASCII.border else 'unicode'}",
+        f"sandbox {'on' if rt.policy.sandboxed else 'off'} {dot} mode {rt.mode.value} {dot} effort {rt.settings.effort or EFFORT_OFF}",
+        f"model {rt.model} {dot} window {compact(rt.context_window)} {dot} {'catalog' if rt.model_info.known else 'fallback'}",
+        f"store {rt.settings.db_path} {dot} workspace {rt.workspace}",
+        "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),
+    ]

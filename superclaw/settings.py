@@ -240,6 +240,8 @@ class Limits:
     event_seq_digits: int = 6
     session_list_limit: int = 1000
     session_events_limit: int = 100_000
+    session_search_limit: int = 10
+    session_search_preview_chars: int = 120
     recent_sessions_shown: int = 20
     recent_models_shown: int = 5
     models_fetch_timeout_s: float = 15.0

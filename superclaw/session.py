@@ -65,6 +65,20 @@ class SessionStore:
         rows = self.recent()
         return rows[0]["id"] if rows else None
 
+    def search(self, query: str, limit: int = LIMITS.session_search_limit) -> list[dict[str, Any]]:
+        try:
+            rows = self._x(f'REMEMBER {_lit(query)} LIMIT {int(limit)} WHERE kind = "event"').data or []
+        except SuperGraphError:
+            return []
+        hits = []
+        for r in rows:
+            doc = (self._x(f'NODE {_lit(r["id"])} WITH DOCUMENT').data or {}).get("_document") or "{}"
+            payload = json.loads(doc)
+            text = payload.get("content") or payload.get("output") or payload.get("summary") or doc
+            hits.append({"id": r["sid"], "seq": r["seq"], "type": r["etype"],
+                         "text": " ".join(text.split())[:LIMITS.session_search_preview_chars]})
+        return hits
+
     def append(self, sid: str, etype: str, payload: dict[str, Any]) -> int:
         meta = self.get(sid)
         if meta is None:

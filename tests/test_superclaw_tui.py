@@ -12,6 +12,7 @@ from superclaw.app import Runtime, build_registry
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
+from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
 from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
@@ -52,6 +53,10 @@ async def _wait_for(pilot, predicate, timeout=5.0):
 def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, monkeypatch):
     for provider in PROVIDERS:
         monkeypatch.delenv(provider.env, raising=False)
+    monkeypatch.setattr("superclaw.report.keyed_providers", lambda: [])
+    lines = doctor_lines(rt, "/setup")
+    assert lines[1].startswith("sandbox ") and f"model {rt.model}" in lines[2]
+    assert str(rt.settings.db_path) in lines[3] and lines[4].endswith("none; /setup")
     monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)
