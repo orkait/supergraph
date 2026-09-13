@@ -67,6 +67,7 @@ PROVIDERS = (
              "https://generativelanguage.googleapis.com/v1beta/models", key_in_query=True),
     Provider("nvidia_nim", "NVIDIA_NIM_API_KEY", "nvidia_nim/meta/llama-3.3-70b-instruct", "https://build.nvidia.com", "nvidia_nim",
              "https://integrate.api.nvidia.com/v1/models", public=True),
+    Provider("opencode", "OPENCODE_API_KEY", "opencode/deepseek-v4-flash", "https://opencode.ai/auth", "opencode", "https://opencode.ai/zen/v1/models"),
 )
 CATALOG_CHAT_MODE = "chat"
 NONCODING_TERMS = ("audio", "dall-e", "deep-research", "embed", "image", "imagen", "moderation", "realtime", "rerank", "sora", "speech",

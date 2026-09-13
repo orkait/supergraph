@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
+OPENCODE_ZEN_BASE = "https://opencode.ai/zen/v1"
 
 DEFAULT_ALIASES: dict[str, str] = {
     "gpt-4": "groq/llama-3.3-70b-versatile",
@@ -53,6 +54,10 @@ def resolve_model(model_id: str, aliases: dict[str, str] | None = None) -> dict:
         slug = model_id[len("ollama/"):]
         return {"litellm_model": f"openai/{slug}", "api_base": OLLAMA_CLOUD_BASE,
                 "api_key": os.getenv("OLLAMA_API_KEY", "ollama")}
+    if model_id.startswith("opencode/"):
+        slug = model_id[len("opencode/"):]
+        return {"litellm_model": f"openai/{slug}", "api_base": OPENCODE_ZEN_BASE,
+                "api_key": os.getenv("OPENCODE_API_KEY", "")}
     if model_id.startswith("openrouter/"):
         return {"litellm_model": model_id, "api_base": None,
                 "api_key": os.getenv("OPENROUTER_API_KEY", "")}
