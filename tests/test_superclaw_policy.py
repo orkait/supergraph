@@ -1,7 +1,7 @@
 import pytest
 
 from superclaw.cli import _tool_set, build_parser
-from superclaw.clips import Clips
+from superclaw.clips import Clips, chip_bounds
 from superclaw.policy import Action, Mode, Policy, classify_command, next_mode, validate_prefix
 from superclaw.schema import SchemaError
 from superclaw.schema import extract as schema_extract
@@ -134,5 +134,7 @@ def test_command_classes_and_prefix_rules(tmp_path):
     dropped = clips.select("only [Image #1] now, and [Image #9] typed by hand, and [Image #1] again")
     assert dropped.images == ["data:image/png;base64,AAA"] and dropped.prompt.count("(attached as an image)") == 1 and "l1" not in dropped.prompt
     assert clips.select("no markers at all").images == [] and clips.select("no markers at all").prompt == "no markers at all"
+    assert chip_bounds("see [Image #2] now", 13, 14) == (4, 14) and chip_bounds("see [Image #2] now", 8, 8) == (14, 14) and chip_bounds("see [Image #2] now", 15, 16) == (15, 16)
+    assert chip_bounds("a [Pasted text #1 +4 lines] b", 0, 5) == (0, 27) and chip_bounds("[Image #1]", 0, 0) == (0, 0) and chip_bounds("[Image #1]", 10, 10) == (10, 10)
     clips.clear()
     assert len(clips) == 0 and clips.select("[Image #1]").images == [] and clips.add("Image").marker == "[Image #3]"
