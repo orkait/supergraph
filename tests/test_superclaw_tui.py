@@ -40,7 +40,7 @@ def rt(tmp_path):
     memory = Memory(gs)
     rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), tmp_path),
                  policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model",
-                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_CACHE_HOME": str(tmp_path / "cache"), "LANG": "C.UTF-8"}))
+                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_CACHE_HOME": str(tmp_path / "cache"), "XDG_DATA_HOME": str(tmp_path / "data"), "LANG": "C.UTF-8"}))
     yield rt
     gs.close()
 
@@ -155,6 +155,18 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             app.paste_clipboard()
             await pilot.pause(0.1)
             assert prompt.value.endswith("[Image #2] from the clipboard")
+            prompt.value = "see [Image #2] now"
+            prompt.cursor_position = 14
+            await pilot.press("backspace")
+            assert prompt.value == "see  now" and prompt.cursor_position == 4
+            prompt.value = "a [Pasted text #1 +4 lines] b"
+            prompt.cursor_position = 10
+            await pilot.press("ctrl+w", "x")
+            assert prompt.value == "a x b"
+            prompt.value = "[File #1]"
+            prompt.cursor_position = 3
+            await pilot.press("y")
+            assert prompt.value == "[File #1]y"
             picked = app.clips.select("keep [Image #2] and [Pasted text #1 +4 lines], the rest was deleted")
             assert len(picked.images) == 1 and "line four" in picked.prompt and "out.txt" not in picked.prompt and picked.prompt.startswith("keep [Image #2]")
             assert "write it" in app.history and app.hist_index == len(app.history)

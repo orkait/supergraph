@@ -6,6 +6,16 @@ from dataclasses import dataclass, field
 MARKER = re.compile(r"\[(Image|File|Pasted text) #(\d+)(?: \+\d+ lines)?\]")
 
 
+def chip_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    for match in MARKER.finditer(text):
+        if start == end:
+            if match.start() < start < match.end():
+                return match.end(), match.end()
+        elif match.start() < end and match.end() > start:
+            start, end = min(start, match.start()), max(end, match.end())
+    return start, end
+
+
 @dataclass(frozen=True)
 class Clip:
     label: str
