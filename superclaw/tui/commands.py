@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from superclaw.catalog import describe, keyed_providers
 from superclaw.policy import Mode
+from superclaw.usercommands import UserCommand, load_commands
 
 if TYPE_CHECKING:
     from superclaw.tui.app import SuperclawApp
@@ -165,7 +167,7 @@ def _clear(app: SuperclawApp, arg: str) -> None:
 
 
 def _help(app: SuperclawApp, arg: str) -> None:
-    for command in COMMANDS:
+    for command in (*COMMANDS, *app.user_commands):
         app.note(f"{command.usage:<24} {command.help}")
     app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", "click a card to expand it")))
 
@@ -206,14 +208,21 @@ COMMANDS = (
 )
 
 
-def matching(prefix: str) -> list[Command]:
+def user_entries(roots: list[Path]) -> list[Command]:
+    def runner(command: UserCommand) -> Callable[[SuperclawApp, str], None]:
+        return lambda app, arg: app.run_user_command(command, arg)
+
+    return [Command(f"/{c.name}", f"/{c.name} [args]", c.description, runner(c)) for c in load_commands(roots)]
+
+
+def matching(prefix: str, extra: list[Command] = []) -> list[Command]:
     head = prefix.split()[0] if prefix.strip() else "/"
-    return [c for c in COMMANDS if c.name.startswith(head)]
+    return [c for c in (*COMMANDS, *extra) if c.name.startswith(head)]
 
 
-def dispatch(app: SuperclawApp, text: str) -> None:
+def dispatch(app: SuperclawApp, text: str, extra: list[Command] = []) -> None:
     name, _, arg = text.strip().partition(" ")
-    for command in COMMANDS:
+    for command in (*COMMANDS, *extra):
         if command.name == name:
             command.run(app, arg.strip())
             return

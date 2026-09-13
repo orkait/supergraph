@@ -9,6 +9,8 @@ from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, pro
 from superclaw.runtime import approx_tokens
 from superclaw.settings import LIMITS
 from superclaw.skills import Skill, load_skills
+from superclaw.usercommands import expand, load_commands
+from superclaw.usercommands import find as find_command
 
 
 def test_prompt_assembly_guidelines_and_skills(tmp_path):
@@ -48,3 +50,14 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path):
     with_agent = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", agent=loaded[0].prompt))
     assert "<agent>" in with_agent and "Only review." in with_agent and "never widens" in with_agent
     assert "<agent>" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p"))
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    (commands / "pr.md").write_text("---\ndescription: Open a PR.\nagent: reviewer\n---\nOpen a PR titled $1 for $ARGUMENTS; cost $$5")
+    (commands / "Bad Name.md").write_text("ignored")
+    (commands / "plain.md").write_text("Just do it.")
+    loaded = load_commands([commands, tmp_path / "missing"])
+    assert [c.name for c in loaded] == ["plain", "pr"] and loaded[1].agent == "reviewer" and loaded[0].description == "User command: /plain"
+    assert expand(loaded[1].template, "42 fix the build") == "Open a PR titled 42 for 42 fix the build; cost $5"
+    assert expand("$1 then $2 then $3", "a b") == "a then b then " and expand("Just do it.", "now") == "Just do it.\n\nnow" and expand("x", "") == "x"
+    assert expand("title $1", '"fix build" now') == "title fix build" and expand("$1", "it's") == "it's"
+    assert find_command("PR", [commands]).name == "pr" and find_command("nope", [commands]) is None

@@ -137,6 +137,23 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    commands = tmp_path / ".superclaw" / "commands"
+    commands.mkdir(parents=True)
+    (commands / "pr.md").write_text("---\ndescription: Open a PR.\n---\nOpen a PR for issue $1.")
+    rt.provider = Scripted(Completion(text="opened"))
+    slash_app = SuperclawApp(rt, sid)
+
+    async def slash():
+        async with slash_app.run_test(size=(100, 30)) as pilot:
+            await pilot.press(*"/pr")
+            await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
+            assert "Open a PR." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
+            await pilot.press(*" 42", "enter")
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 1)
+            assert slash_app.history[-1] == "/pr 42"
+
+    asyncio.run(slash())
+    assert [e["payload"]["content"] for e in rt.store.events(sid) if e["type"] == "message" and e["payload"]["role"] == "user"][-1] == "Open a PR for issue 42."
     drawn = {ch for path in Path(SuperclawApp.__module__.replace(".", "/")).parent.glob("*.py") for ch in path.read_text() if not ch.isascii()}
     allowed = {ch for value in vars(UNICODE).values() if isinstance(value, str) for ch in value} | set("".join(WORDMARK_ART)) | {"§"}
     assert drawn <= allowed and choose_glyphs({"LANG": "C"}) is ASCII and choose_glyphs({"LANG": "C.UTF-8", "SUPERCLAW_ASCII": "1"}) is ASCII

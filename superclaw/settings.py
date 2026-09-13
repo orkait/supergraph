@@ -82,6 +82,7 @@ WORKTREES_DIR = "worktrees"
 MCP_FILE = "mcp.json"
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
+COMMANDS_DIR = "commands"
 
 
 @dataclass(frozen=True)
@@ -393,4 +394,10 @@ class Settings:
         roots = [self.config_dir / AGENTS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / AGENTS_DIR)
+        return roots
+
+    def command_roots(self, workspace: Path | None = None) -> list[Path]:
+        roots = [self.config_dir / COMMANDS_DIR]
+        if workspace is not None:
+            roots.insert(0, Path(workspace) / WORKSPACE_DIR / COMMANDS_DIR)
         return roots
