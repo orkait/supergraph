@@ -43,7 +43,7 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "shift+tab mode", "esc cancel", "ctrl+c quit", "click a card to expand")
+HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+c quit")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model")
@@ -133,8 +133,8 @@ class SuperclawApp(App[None]):
     BINDINGS = [
         ("ctrl+c", "interrupt", "Cancel / quit"),
         ("escape", "cancel", "Cancel"),
-        Binding("down", "palette_move(1)", "Next command", show=False, priority=True),
-        Binding("up", "palette_move(-1)", "Previous command", show=False, priority=True),
+        Binding("down", "history(1)", "Newer / next command", show=False, priority=True),
+        Binding("up", "history(-1)", "Older / previous command", show=False, priority=True),
         Binding("tab", "palette_complete", "Complete command", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
     ]
@@ -150,6 +150,9 @@ class SuperclawApp(App[None]):
         self.cancel_flag = threading.Event()
         self.running = False
         self.closing = False
+        self.history: list[str] = []
+        self.hist_index = 0
+        self.hist_draft = ""
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -169,10 +172,44 @@ class SuperclawApp(App[None]):
     def on_mount(self) -> None:
         self.query_one("#transcript").display = False
         self.refresh_status()
+        self.load_history()
         self.set_interval(LIMITS.spinner_interval_s, self.tick)
         self.query_one("#prompt", Input).focus()
         if self.rt.provider is None:
             self.open_setup()
+
+    def load_history(self) -> None:
+        prompts, expect = [], False
+        for event in self.rt.store.events(self.session_id):
+            if event["type"] == "prompt":
+                expect = True
+            elif expect and event["type"] == "message" and event["payload"].get("role") == "user":
+                prompts.append(event["payload"].get("content", ""))
+                expect = False
+        self.history = [p for p in prompts if p.strip()]
+        self.reset_history()
+
+    def reset_history(self) -> None:
+        self.hist_index = len(self.history)
+        self.hist_draft = ""
+
+    def remember(self, text: str) -> None:
+        if text and (not self.history or self.history[-1] != text):
+            self.history.append(text)
+        self.reset_history()
+
+    def action_history(self, step: int) -> None:
+        if self.palette_open():
+            self.action_palette_move(step)
+            return
+        prompt = self.query_one("#prompt", Input)
+        if not self.history or (self.hist_index == len(self.history) and step > 0):
+            return
+        if self.hist_index == len(self.history):
+            self.hist_draft = prompt.value
+        self.hist_index = max(0, min(len(self.history), self.hist_index + step))
+        prompt.value = self.hist_draft if self.hist_index == len(self.history) else self.history[self.hist_index]
+        prompt.cursor_position = len(prompt.value)
 
     def open_setup(self, provider: Provider | None = None) -> None:
         self.push_screen(SetupScreen(self.rt, provider), self.after_setup)
@@ -271,6 +308,7 @@ class SuperclawApp(App[None]):
     def open_session(self, sid: str) -> None:
         self.session_id = sid
         self.clear_transcript()
+        self.load_history()
         self.stats = RunStats(window=self.rt.context_window)
         self.refresh_status()
 
@@ -298,6 +336,10 @@ class SuperclawApp(App[None]):
         return not self.query_one("#palette", OptionList).has_class("hidden")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if len(self.screen_stack) > 1:
+            return action not in ("history", "palette_move", "palette_complete")
+        if action == "history":
+            return True
         return self.palette_open() if action.startswith("palette_") else True
 
     def action_cycle_mode(self) -> None:
@@ -364,6 +406,7 @@ class SuperclawApp(App[None]):
             dispatch(self, text)
 
     def begin_run(self, text: str) -> None:
+        self.remember(text)
         self.running = True
         self.cancel_flag.clear()
         self.stats.timer.start()
