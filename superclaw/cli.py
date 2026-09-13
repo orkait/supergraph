@@ -19,7 +19,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import plugins, repomap, review, update
+from superclaw import checks, plugins, repomap, review, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -120,6 +120,29 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     else:
         print(res.final_answer)
     return exit_code
+
+
+def cmd_verify(rt: Runtime, args: argparse.Namespace) -> int:
+    found = checks.detect(rt.workspace)
+    only = tuple(_tool_set(args.only))
+    if not found or (only and not any(c.id in only for c in found)):
+        print("superclaw: no verification checks detected" + (f" matching {args.only}" if only else "") + "; supported: go.mod, package.json scripts, pytest, Cargo.toml", file=sys.stderr)
+        return 1
+    attempts = max(1, min(args.attempts, LIMITS.verify_max_attempts))
+    report = checks.run(rt.workspace, found, only, args.timeout_s or LIMITS.verify_timeout_s)
+    used = 1
+    while not report.ok and used < attempts:
+        print(f"superclaw: attempt {used} failed {len(report.failed)} check(s); asking the agent to fix it", file=sys.stderr)
+        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"verify attempt {used}")
+        run_once(rt, checks.remediation_prompt(report), sid, Callbacks(on_event=lambda event: None))
+        report = checks.run(rt.workspace, found, only, args.timeout_s or LIMITS.verify_timeout_s)
+        used += 1
+    if args.json:
+        print(json.dumps({**checks.as_json(report), "attempts": used}, indent=2))
+    else:
+        for line in checks.lines(report):
+            print(line)
+    return 0 if report.ok else 1
 
 
 def cmd_acp(rt: Runtime, args: argparse.Namespace) -> int:
@@ -291,6 +314,12 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
                     help="JSON Schema the final answer must match; a mismatch exits 2")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
+    vf = sub.add_parser("verify", help="detect and run the workspace's checks (go test, package.json scripts, pytest, cargo test)")
+    vf.add_argument("--only", default="", metavar="IDS", help="run only these check ids, comma or space separated")
+    vf.add_argument("--timeout-s", type=int, default=0, help=f"per-check timeout (default {LIMITS.verify_timeout_s})")
+    vf.add_argument("--attempts", type=int, default=LIMITS.verify_attempts,
+                    help=f"after a failure, let the agent fix it and rerun, up to this many attempts (max {LIMITS.verify_max_attempts})")
+    vf.add_argument("--json", action="store_true")
     sub.add_parser("acp", help="serve the Agent Client Protocol over stdio so an editor can drive superclaw")
     rv = sub.add_parser("review", help="review a change read-only and print findings with file:line and a verdict")
     rv.add_argument("prompt", nargs="?", default="", help="extra focus for the reviewer, or - to read it from stdin")
@@ -447,15 +476,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
-                           require_provider=args.command not in (None, *STORELESS),
-                           open_store=args.command not in STORELESS,
+                           require_provider=args.command not in (None, *STORELESS) and not (args.command == "verify" and args.attempts <= 1),
+                           open_store=args.command not in STORELESS and not (args.command == "verify" and args.attempts <= 1),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
                            mcp_config=mcp_paths(settings, workspace, args.trust_workspace), agent=agent)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "acp": cmd_acp, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+    handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:

@@ -80,6 +80,8 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     flags = build_parser(Settings.from_env({})).parse_args(["-w", "--add-dir", "/tmp", "exec", "x"])
     assert flags.worktree == "" and flags.add_dir == ["/tmp"]
     assert build_parser(Settings.from_env({})).parse_args(["--worktree", "alpha", "exec", "x"]).worktree == "alpha"
+    verifying = build_parser(Settings.from_env({})).parse_args(["verify", "--only", "python.pytest", "--attempts", "3"])
+    assert verifying.only == "python.pytest" and verifying.attempts == 3 and build_parser(Settings.from_env({})).parse_args(["verify"]).attempts == 1
     reviewed = build_parser(Settings.from_env({})).parse_args(["review", "--base", "main", "focus on tests"])
     assert reviewed.base == "main" and reviewed.prompt == "focus on tests" and not reviewed.uncommitted
     with pytest.raises(SystemExit):

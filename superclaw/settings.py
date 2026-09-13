@@ -220,6 +220,10 @@ class Limits:
     recall_preview_chars: int = 120
 
     review_diff_tokens: int = 24_000
+    verify_timeout_s: int = 120
+    verify_output_lines: int = 8
+    verify_attempts: int = 1
+    verify_max_attempts: int = 5
     repo_map_files: int = 2000
     repo_map_depth: int = 6
     repo_map_bytes: int = 6000
