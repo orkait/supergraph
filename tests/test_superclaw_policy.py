@@ -7,6 +7,11 @@ from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import problems as schema_problems
 from superclaw.settings import Settings
+from superclaw.update import Install, Plan
+from superclaw.update import apply as apply_update
+from superclaw.update import describe as describe_update
+from superclaw.update import detect as detect_install
+from superclaw.update import plan as plan_update
 from superclaw.tools import Permission, Registry, Safety, SideEffect, Tool
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
@@ -81,7 +86,7 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
         build_parser(Settings.from_env({})).parse_args(["review", "--base", "main", "--commit", "abc"])
 
 
-def test_command_classes_and_prefix_rules():
+def test_command_classes_and_prefix_rules(tmp_path):
     assert all("destructive" in classify_command(c).categories for c in ("rm -rf build", "sudo apt update", "git push --force", "docker system prune", "ls && rm -rf /tmp/x"))
     assert all("network" in classify_command(c).categories for c in ("curl https://x", "git pull", "pip install x", "npm i x", "gh pr create"))
     assert all("interactive" in classify_command(c).categories for c in ("vim a.py", "less log", "python", "git rebase -i HEAD~3"))
@@ -102,3 +107,13 @@ def test_command_classes_and_prefix_rules():
     with pytest.raises(SchemaError):
         schema_extract("sorry, no JSON here")
     assert "Your final message must be one JSON value" in schema_instruction(shape)
+    editable = detect_install('{"url": "file:///src/supergraph", "dir_info": {"editable": true}}', "0.7.0")
+    assert (editable.method, editable.source) == ("editable", "/src/supergraph")
+    assert detect_install("", "0.7.0", executable="/home/u/.local/share/uv/tools/supergraphdb/bin/python3").method == "uv-tool"
+    assert detect_install("not json", "0.7.0", executable="/usr/bin/python3").method == "pip"
+    wheel = plan_update(Install("uv-tool", "0.7.0"), fetch=False)
+    assert wheel.command == ["uv", "tool", "upgrade", "supergraphdb"] and not wheel.available and "could not reach" in describe_update(wheel)[1]
+    newer = Plan(Install("pip", "0.7.0"), "0.7.0", "0.8.0", wheel.command)
+    assert newer.available and "0.7.0 -> 0.8.0" in describe_update(newer)[1] and apply_update(wheel) == 0
+    assert "cannot tell" in describe_update(plan_update(Install("unknown", "0.7.0"), fetch=False))[1]
+    assert "no upstream branch" in describe_update(plan_update(Install("editable", "0.7.0", str(tmp_path)), fetch=False))[1]

@@ -19,7 +19,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import review
+from superclaw import review, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -313,6 +313,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("commands", help="list the user slash commands from .superclaw/commands and the config dir")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
+    upd = sub.add_parser("update", help="check for a newer superclaw, and install it with --apply")
+    upd.add_argument("--apply", action="store_true", help="run the install command for this install method")
     setup = sub.add_parser("setup", help="store a provider key and default model")
     setup.add_argument("--provider", choices=[p.name for p in PROVIDERS], default=PROVIDERS[0].name)
     setup.add_argument("--key", default="", help="the API key; prompted when omitted")
@@ -331,6 +333,18 @@ def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
             mark = "*" if model.id == settings.model else " "
             print(f"{mark} {model.id:<{LIMITS.model_id_width}} {describe(model, ' ')}")
     return 0
+
+
+def cmd_update(settings: Settings, args: argparse.Namespace) -> int:
+    found = update.plan(update.detect())
+    for line in update.describe(found):
+        print(line, file=sys.stderr if args.apply else sys.stdout)
+    if not args.apply:
+        return 0
+    code = update.apply(found)
+    if code == 0 and found.available:
+        print("superclaw: updated; restart any running session to pick it up", file=sys.stderr)
+    return code
 
 
 def cmd_setup(settings: Settings, args: argparse.Namespace) -> int:
@@ -371,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_setup(settings, args)
     if args.command == "models":
         return cmd_models(settings, args)
+    if args.command == "update":
+        return cmd_update(settings, args)
     if args.worktree is not None:
         try:
             tree = prepare_worktree(workspace, Path(args.worktree_dir) if args.worktree_dir else settings.worktrees_dir, args.worktree)
