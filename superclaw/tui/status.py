@@ -92,16 +92,22 @@ class WorkingLine(Static):
         super().__init__(id="working", classes="hidden")
         self.phase = 0
         self.label = ""
+        self.detail = ""
 
-    def start(self, label: str) -> None:
-        self.label = label
+    def start(self, label: str, detail: str = "") -> None:
+        self.label, self.detail = label, detail
         self.remove_class("hidden")
 
     def stop(self) -> None:
         self.add_class("hidden")
 
-    def tick(self, elapsed: float, calls: int) -> None:
+    def tick(self, elapsed: float, calls: int, tokens: int) -> None:
         glyphs = self.app.glyphs
         self.phase = (self.phase + 1) % len(glyphs.spinner)
-        detail = f"  {elapsed:.0f}s" + (f" {glyphs.dot} {calls} tools" if calls else "")
-        self.update(Text(f"{glyphs.spinner[self.phase]} {self.label}", style=ACCENT) + Text(detail, style=MUTED))
+        parts = [f"{elapsed:.0f}s", *([f"{calls} tools"] if calls else []), *([f"{compact(tokens)} tokens"] if tokens else [])]
+        row = Text(f"{glyphs.spinner[self.phase]} {self.label}", style=ACCENT)
+        if self.detail:
+            row.append(f"  {self.detail}", style=MUTED)
+        row.append(f"  {f' {glyphs.dot} '.join(parts)}", style=MUTED)
+        row.truncate(max(1, self.content_size.width or self.app.size.width), overflow="ellipsis")
+        self.update(row)

@@ -97,8 +97,12 @@ class Memory:
         found = [(r["id"], *self._doc(r["id"])) for r in self._search(query, limit)]
         return [(node_id, text, stated_at) for node_id, text, stated_at in found if text]
 
+    @staticmethod
+    def render(hits: list[tuple[str, str, int]]) -> str:
+        return "\n".join(f"- ({_age(stated_at)}) {text}" if stated_at else f"- {text}" for _, text, stated_at in hits)
+
     def recall(self, query: str, limit: int = LIMITS.memory_recall_limit) -> str:
-        return "\n".join(f"- ({_age(stated_at)}) {text}" if stated_at else f"- {text}" for _, text, stated_at in self.hits(query, limit))
+        return self.render(self.hits(query, limit))
 
     def search_tool(self) -> Tool:
         return _MemorySearch(self)

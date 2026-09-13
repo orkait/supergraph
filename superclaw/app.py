@@ -23,7 +23,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.repomap import render, scan
-from superclaw.runtime import Provider
+from superclaw.runtime import Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
@@ -205,13 +205,33 @@ def repo_map_text(rt: Runtime) -> str:
     return render(scan(rt.workspace)) if rt.settings.repo_map else ""
 
 
-def system_prompt_for(rt: Runtime, prompt: str) -> str:
-    return build_system_prompt(PromptInputs(
-        cwd=rt.workspace, mode=rt.mode, skills=load_skills(rt.settings.skill_roots(rt.workspace)),
-        memory=rt.memory.recall(prompt), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
-        agent=rt.agent.prompt if rt.agent else "", repo_map=repo_map_text(rt),
+@dataclass
+class Context:
+    system_prompt: str
+    memories: int
+    skills: int
+    repo_files: int
+
+    def event(self, history: int) -> dict[str, Any]:
+        return {"type": "context", "memories": self.memories, "skills": self.skills, "repo_files": self.repo_files,
+                "history": history, "prompt_tokens": approx_tokens(self.system_prompt)}
+
+
+def context_for(rt: Runtime, prompt: str) -> Context:
+    hits = rt.memory.hits(prompt)
+    skills = load_skills(rt.settings.skill_roots(rt.workspace))
+    found = scan(rt.workspace) if rt.settings.repo_map else None
+    system_prompt = build_system_prompt(PromptInputs(
+        cwd=rt.workspace, mode=rt.mode, skills=skills,
+        memory=rt.memory.render(hits), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
+        agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
     ))
+    return Context(system_prompt, len(hits), len(skills), len(found.files) if found else 0)
+
+
+def system_prompt_for(rt: Runtime, prompt: str) -> str:
+    return context_for(rt, prompt).system_prompt
 
 
 def resolve_session(rt: Runtime, resume: str | None, fork: str | None = None) -> str:
@@ -244,7 +264,11 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         rt.policy.request_kind = classify(rt.provider, prompt)
         if cb.on_event:
             cb.on_event({"type": "intent", "kind": rt.policy.request_kind.value})
-    system_prompt = system_prompt_for(rt, prompt)
+    context = context_for(rt, prompt)
+    system_prompt = context.system_prompt
+    history = rt.store.replay(sid)
+    if cb.on_event:
+        cb.on_event(context.event(len(history)))
     if rt.kernel and not rt.kernel.alive and rt.registry.observations:
         rt.kernel.restore(rt.registry.observations.load_kernel(sid))
     previous = rt.store.last_prompt(sid)
@@ -252,7 +276,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         cb.on_event({"type": "prompt_drift", "previous": previous.get("hash"), "current": prompt_hash(system_prompt)})
     result = run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace, extra_dirs=rt.extra_dirs, images=images or [],
-        system_prompt=system_prompt, history=rt.store.replay(sid),
+        system_prompt=system_prompt, history=history,
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
         context_window=rt.context_window, model_info=rt.model_info,
         agents={a.name: a for a in load_agents(rt.settings.agent_roots(rt.workspace))},

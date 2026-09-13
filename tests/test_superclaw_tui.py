@@ -11,7 +11,7 @@ from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
 
 from superclaw import catalog
-from superclaw.app import Runtime, build_registry, build_runtime
+from superclaw.app import Callbacks, Runtime, build_registry, build_runtime, run_once
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
@@ -20,10 +20,11 @@ from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
 from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
 from superclaw.tui import PermissionScreen, SuperclawApp
-from superclaw.tui.app import WORDMARK_ART, describe
+from superclaw.tui.app import WORDMARK_ART, context_overview, describe
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
+from superclaw.tui.status import WorkingLine
 
 
 class Scripted:
@@ -102,14 +103,25 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await _wait_for(pilot, lambda: app.query_one("#palette").option_count > 0)
             await pilot.press("backspace", *"write it", "enter")
             await _wait_for(pilot, lambda: isinstance(app.screen, PermissionScreen))
-            assert app.stats.timer.paused_at and app.running
+            working = app.query_one(WorkingLine)
+            assert app.stats.timer.paused_at and app.running and working.label == "waiting for you" and working.detail == "write_file  out.txt"
             await pilot.press("a")
             await _wait_for(pilot, lambda: len(app.query(Markdown)) == 1 and not app.running)
-            assert (tmp_path / "out.txt").read_text() == "hi"
+            assert (tmp_path / "out.txt").read_text() == "hi" and working.has_class("hidden")
             card = app.query_one(ToolCard)
-            assert card.tool == "write_file" and card.ok and "+hi" in str(card.query_one(".body").content)
+            assert card.tool == "write_file" and card.ok and "+hi" in str(card.query_one(".body").content) and str(card.query_one(".head").content).endswith("s")
             assert app.query_one("#transcript").display and not app.query_one("#welcome").display
             assert "done in" in str(app.query(".note").last().content) and app.stats.timer.calls == 1
+            app.show_tool_result("read_file", {"path": "out.txt"})
+            await pilot.pause(0.05)
+            local = app.query(ToolCard).last()
+            assert " line" in str(local.query_one(".head").content) and str(local.query_one(".body").content) == "" and "ctrl+o" in str(local.query_one(".more").content)
+            await pilot.press("ctrl+o")
+            await pilot.pause(0.05)
+            assert app.verbose and "hi" in str(local.query_one(".body").content) and "full tool output" in str(app.query(".note").last().content)
+            await pilot.press("ctrl+o")
+            await pilot.pause(0.05)
+            assert not app.verbose and str(local.query_one(".body").content) == ""
             await pilot.press(*"/rename my work", "enter")
             await pilot.pause(0.05)
             assert rt.store.get(sid)["title"] == "my work" and "my work" in str(app.query_one("#title").content)
@@ -170,9 +182,34 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             picked = app.clips.select("keep [Image #2] and [Pasted text #1 +4 lines], the rest was deleted")
             assert len(picked.images) == 1 and "line four" in picked.prompt and "out.txt" not in picked.prompt and picked.prompt.startswith("keep [Image #2]")
             assert "write it" in app.history and app.hist_index == len(app.history)
+            app.render_event({"type": "context", "memories": 2, "skills": 3, "repo_files": 4, "history": 5, "prompt_tokens": 6})
+            assert working.label == "thinking" and working.detail == "2 memories · 3 skills · repo map 4 files · 5 earlier messages"
+            app.render_event({"type": "tool_call", "id": "t9", "name": "bash", "args": {"command": "pytest -q\necho done"}})
+            assert working.label == "bash" and working.detail == "pytest -q"
+            app.render_event({"type": "permission_request", "tool": "bash", "args": {"command": "pytest -q"}, "reason": "r", "risk": "low", "categories": [], "prefix": []})
+            assert working.label == "waiting for you" and working.detail == "bash  pytest -q"
+            app.render_event({"type": "permission_decision", "tool": "bash", "decision": "allow"})
+            assert working.label == "bash" and "permission bash: allow" in str(app.query(".note").last().content)
+            app.render_event({"type": "tool_result", "id": "t9", "ok": True, "output": "3 passed\n", "display": {}, "ref": ""})
+            await pilot.pause(0.05)
+            assert working.label == "thinking" and working.detail == "" and "1 line" in str(app.query(ToolCard).last().query_one(".head").content)
+            app.render_event({"type": "text_delta", "text": "he"})
+            assert working.label == "writing"
+            app.cancel_flag.set()
+            app.phase("cancelling")
+            app.render_event({"type": "context", "memories": 0, "skills": 0, "repo_files": 0, "history": 0, "prompt_tokens": 1})
+            app.render_event({"type": "tool_result", "id": "t9", "ok": True, "output": "", "display": {}, "ref": ""})
+            assert working.label == "cancelling"
+            app.cancel_flag.clear()
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    rt.memory.note("The user's name is Kai.")
+    rt.provider, events = Scripted(Completion(text="you are Kai")), []
+    run_once(rt, "what is my name", sid, Callbacks(on_event=events.append))
+    assert events[0]["type"] == "context" and events[0]["memories"] == 1 and events[0]["history"] == 4 and events[0]["prompt_tokens"] > 0 and {"skills", "repo_files"} <= set(events[0])
+    assert context_overview({"type": "context", "memories": 0, "skills": 0, "repo_files": 0, "history": 0, "prompt_tokens": 1}, UNICODE) == "fresh context"
+    assert context_overview({"type": "context", "memories": 1, "skills": 1, "repo_files": 1, "history": 1, "prompt_tokens": 1}, UNICODE) == "1 memory · 1 skill · repo map 1 file · 1 earlier message"
     commands = tmp_path / ".superclaw" / "commands"
     commands.mkdir(parents=True)
     (commands / "pr.md").write_text("---\ndescription: Open a PR.\n---\nOpen a PR for issue $1.")

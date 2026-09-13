@@ -24,14 +24,14 @@ from superclaw.loop import Result
 from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
-from superclaw.runtime import Message, clip, compact
+from superclaw.runtime import Message, clip, compact, count
 from superclaw.compaction import SUMMARY_INSTRUCTIONS
 from superclaw.compaction import compact as compact_context
 from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw import clipboard
 from superclaw.clips import Clip, Clips
-from superclaw.tui.cards import ToolCard
+from superclaw.tui.cards import ToolCard, target_of
 from superclaw.tui.commands import EXIT_WORDS, dispatch, matching, user_entries
 from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
@@ -52,11 +52,21 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "esc cancel", "ctrl+c quit")
+HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "ctrl+o unfold output", "esc cancel", "ctrl+c quit")
+PHASE_RECALLING = "recalling"
 PHASE_THINKING = "thinking"
+PHASE_WRITING = "writing"
+PHASE_WAITING = "waiting for you"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
+FRESH_CONTEXT = "fresh context"
 BUSY_COMMANDS = ("/new", "/resume", "/fork", "/clear", "/model", "/compact", "/retry", "/agent")
+
+
+def context_overview(event: dict[str, Any], glyphs: Glyphs) -> str:
+    parts = [count(event["memories"], "memory", "memories") if event["memories"] else "", count(event["skills"], "skill") if event["skills"] else "",
+             f"repo map {count(event['repo_files'], 'file')}" if event["repo_files"] else "", count(event["history"], "earlier message") if event["history"] else ""]
+    return f" {glyphs.dot} ".join(p for p in parts if p) or FRESH_CONTEXT
 
 
 def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
@@ -149,6 +159,7 @@ class SuperclawApp(App[None]):
         Binding("up", "history(-1)", "Older / previous command", show=False, priority=True),
         Binding("tab", "palette_complete", "Complete command", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
+        Binding("ctrl+o", "toggle_verbose", "Unfold tool output", show=False, priority=True),
     ]
     limits = LIMITS
 
@@ -170,6 +181,8 @@ class SuperclawApp(App[None]):
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
         self.streaming: Static | None = None
         self.stream_text = ""
+        self.verbose = False
+        self.current_tool = ("", "")
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -306,7 +319,17 @@ class SuperclawApp(App[None]):
 
     def tick(self) -> None:
         if self.running:
-            self.query_one(WorkingLine).tick(self.stats.timer.elapsed(), self.stats.timer.calls)
+            self.query_one(WorkingLine).tick(self.stats.timer.elapsed(), self.stats.timer.calls, self.stats.tokens)
+
+    def phase(self, label: str, detail: str = "") -> None:
+        if label == PHASE_CANCELLING or not self.cancel_flag.is_set():
+            self.query_one(WorkingLine).start(label, detail)
+
+    def action_toggle_verbose(self) -> None:
+        self.verbose = not self.verbose
+        for card in self.query(ToolCard):
+            card.render_body()
+        self.note("showing full tool output; ctrl+o folds it again" if self.verbose else "tool output folded; click a card or ctrl+o to unfold")
 
     def transcript(self) -> VerticalScroll:
         view = self.query_one("#transcript", VerticalScroll)
@@ -600,7 +623,7 @@ class SuperclawApp(App[None]):
         self.cancel_flag.clear()
         self.stats.timer.start()
         self.query_one("#hints").add_class("hidden")
-        self.query_one(WorkingLine).start(PHASE_THINKING)
+        self.query_one(WorkingLine).start(PHASE_RECALLING)
         self.query_one("#prompt", Input).placeholder = "esc to cancel"
         self.run_prompt(text, picked.images)
 
@@ -611,7 +634,7 @@ class SuperclawApp(App[None]):
             self.query_one("#prompt", Input).value = ""
         elif self.running:
             self.cancel_flag.set()
-            self.query_one(WorkingLine).start(PHASE_CANCELLING)
+            self.phase(PHASE_CANCELLING)
 
     def action_interrupt(self) -> None:
         if self.running and not self.cancel_flag.is_set():
@@ -638,12 +661,20 @@ class SuperclawApp(App[None]):
             if self.streaming is None:
                 self.streaming = Static("", markup=False)
                 self.add(self.streaming)
+                self.phase(PHASE_WRITING)
             self.streaming.update(self.stream_text)
         elif kind == "text" and not child:
             self.drop_stream()
             self.add(Markdown(event["text"]))
         elif kind in ("tool_call", "tool_result"):
             self.render_tool(event, child)
+        elif kind == "context" and not child:
+            self.phase(PHASE_THINKING, context_overview(event, self.glyphs))
+        elif kind == "permission_request" and not child:
+            self.phase(PHASE_WAITING, f"{event['tool']}  {target_of(event['tool'], event['args'])}")
+        elif kind == "permission_decision" and not child:
+            self.phase(*self.current_tool)
+            self.note(describe(event, self.glyphs))
         elif kind == "usage" and not child:
             self.stats.used, self.stats.window = event["context_used"], event["context_window"]
             self.stats.tokens, self.stats.cost = event["run_total"], event["run_cost_usd"]
@@ -654,18 +685,18 @@ class SuperclawApp(App[None]):
 
     def render_tool(self, event: dict[str, Any], child: bool) -> None:
         key = f"{event.get('child', '')}:{event['id']}"
-        working = self.query_one(WorkingLine)
         if event["type"] == "tool_call":
             card = ToolCard(event["id"], event["name"], event["args"], child=child)
             self.cards[key] = card
             self.add(card)
             self.stats.timer.calls += 1
-            working.start(event["name"])
+            self.current_tool = (event["name"], card.target)
+            self.phase(*self.current_tool)
             return
         card = self.cards.pop(key, None)
         if card:
             card.finish(event["ok"], event["output"], event.get("display") or {}, event.get("ref", ""))
-        working.start(PHASE_THINKING)
+        self.phase(PHASE_THINKING)
 
     def drop_stream(self) -> None:
         if self.streaming is not None:
