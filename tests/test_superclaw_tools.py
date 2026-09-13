@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 import pytest
 
@@ -11,6 +12,7 @@ from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, S
 from superclaw.tools.budget import Category
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
+from superclaw.worktree import WorktreeError, prepare
 
 
 class Leaky(Tool):
@@ -118,3 +120,16 @@ def test_bash(tmp_path):
         assert not tool.run({"command": "curl -sm2 https://example.com"}, ctx).ok
         ctx.state["approval"] = {"escalated": True, "network": False}
         assert tool.run({"command": "test -w /tmp && echo host"}, ctx).output == "host"
+    repo, trees, plain = tmp_path / "repo", tmp_path / "trees", tmp_path / "plain"
+    repo.mkdir()
+    plain.mkdir()
+    for cmd in ("git init -q -b main", "git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init"):
+        subprocess.run(cmd.split(), cwd=repo, check=True, capture_output=True)
+    first = prepare(repo, trees, "alpha")
+    assert first.path.is_dir() and first.branch == "superclaw/alpha" and not first.reused and first.repo_root == repo.resolve()
+    again = prepare(repo, trees, "alpha")
+    assert again.reused and again.path == first.path and (first.path / ".git").exists()
+    assert prepare(first.path, trees, "beta").path.parent == first.path.parent
+    for bad_cwd, bad_name in ((repo, "bad/name"), (repo, ""), (plain, "gamma")):
+        with pytest.raises(WorktreeError):
+            prepare(bad_cwd, trees, bad_name or "x" * (LIMITS.worktree_name_chars + 1))

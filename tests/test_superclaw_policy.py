@@ -60,6 +60,9 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     assert [next_mode(m) for m in (Mode.ASK, Mode.AUTO, Mode.PLAN, Mode.UNSAFE)] == [Mode.AUTO, Mode.PLAN, Mode.ASK, Mode.ASK]
     parsed = build_parser(Settings.from_env({})).parse_args(["--dangerously-skip-permissions", "exec", "x"])
     assert parsed.dangerously_skip_permissions and (Mode.UNSAFE.value if parsed.dangerously_skip_permissions else parsed.mode) == "unsafe"
+    flags = build_parser(Settings.from_env({})).parse_args(["-w", "--add-dir", "/tmp", "exec", "x"])
+    assert flags.worktree == "" and flags.add_dir == ["/tmp"]
+    assert build_parser(Settings.from_env({})).parse_args(["--worktree", "alpha", "exec", "x"]).worktree == "alpha"
 
 
 def test_command_classes_and_prefix_rules():
