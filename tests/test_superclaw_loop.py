@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from superclaw.app import build_registry
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
 from superclaw.loop import Options, run
+from superclaw.mcp import connect_all, load_config
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
@@ -17,7 +19,7 @@ from superclaw.policy import Action, Mode, Policy
 from superclaw.runtime import Completion, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS
-from superclaw.tools import Registry, ToolContext
+from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.shell import Bash
@@ -34,6 +36,29 @@ class Scripted:
         if isinstance(item, Exception):
             raise item
         return item
+
+
+MCP_SERVER = '''
+import json, sys
+
+TOOL = {"name": "echo-it", "description": "Echo text back.",
+        "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}
+for line in sys.stdin:
+    message = json.loads(line)
+    method, message_id = message.get("method"), message.get("id")
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05", "serverInfo": {"name": "fake"}}
+    elif method == "tools/list":
+        result = {"tools": [TOOL]}
+    elif method == "tools/call":
+        args = message["params"].get("arguments") or {}
+        result = {"content": [{"type": "text", "text": args.get("text", "")}, {"type": "image", "data": "x"}],
+                  "isError": bool(args.get("fail"))}
+    else:
+        continue
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message_id, "result": result}) + "\\n")
+    sys.stdout.flush()
+'''
 
 
 def call(name, cid="c1", **args):
@@ -151,3 +176,23 @@ def test_intent_hooks_and_deferral(ws, gs):
     provider = Scripted(Completion(tool_calls=[call("tool_search", query="plan")]), Completion(text="ok"))
     run("go", provider, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="S"))
     assert "update_plan" not in provider.requests[0][1] and "update_plan" in provider.requests[1][1]
+    server = ws / "fake_mcp.py"
+    server.write_text(MCP_SERVER)
+    mcp_config = ws / "mcp.json"
+    mcp_config.write_text(json.dumps({"mcpServers": {
+        "fake": {"command": sys.executable, "args": [str(server)]},
+        "off": {"command": "nope", "disabled": True},
+        "broken": {"command": "definitely-not-a-binary"},
+        "remote": {"url": "https://example.com"},
+    }}))
+    config = load_config([mcp_config])
+    assert [s.name for s in config.servers] == ["broken", "fake"] and any("stdio" in p for p in config.problems)
+    bridge = connect_all(config, Registry())
+    assert [t.name for t in bridge.tools] == ["mcp_fake_echo_it"] and [s.name for s in bridge.skipped] == ["broken"]
+    remote_tool = bridge.tools[0]
+    assert remote_tool.deferred and remote_tool.safety.side_effect is SideEffect.NETWORK
+    assert remote_tool.parameters["properties"]["text"]["type"] == "string" and remote_tool.summary() == "Echo text back"
+    echoed = remote_tool.run({"text": "pong"}, ToolContext(workspace=ws))
+    assert echoed.ok and echoed.output.startswith("pong") and "1 non-text block(s) dropped" in echoed.output
+    assert not remote_tool.run({"text": "boom", "fail": True}, ToolContext(workspace=ws)).ok
+    bridge.close()

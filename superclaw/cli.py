@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, resolve_session, run_once
+from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
@@ -84,6 +84,20 @@ def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(rt: Runtime, args: argparse.Namespace) -> int:
+    bridge = rt.mcp
+    for tool in bridge.tools if bridge else []:
+        print(f"{tool.server:<{_NAME_WIDTH}} {tool.name:<{LIMITS.model_id_width}} {tool.summary()}")
+    for skipped in bridge.skipped if bridge else []:
+        print(f"{skipped.name:<{_NAME_WIDTH}} skipped: {skipped.error}", file=sys.stderr)
+    for problem in bridge.problems if bridge else []:
+        print(f"config: {problem}", file=sys.stderr)
+    if bridge is None or not bridge.tools:
+        print(f"no MCP tools; add servers to {rt.settings.user_mcp}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_doctor(rt: Runtime, args: argparse.Namespace) -> int:
     for line in doctor_lines(rt, "run `superclaw setup`"):
         print(line)
@@ -151,6 +165,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
+    sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose")
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
@@ -214,12 +229,14 @@ def main(argv: list[str] | None = None) -> int:
         workspace = tree.path
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
-                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command not in (None, "doctor"),
-                           allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs)
+                           hooks=build_hooks(settings, workspace, args.trust_workspace),
+                           require_provider=args.command not in (None, "doctor", "mcp"),
+                           allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
+                           mcp_config=mcp_paths(settings, workspace, args.trust_workspace))
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills,
-               "context": cmd_context, "doctor": cmd_doctor}.get(args.command, cmd_tui)
+               "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
     except KeyError as e:

@@ -15,6 +15,7 @@ from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.kernel import READ_VERBS, Kernel, Python
 from superclaw.loop import Options, Result, run
+from superclaw.mcp import Bridge, connect_all, load_config
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
@@ -24,7 +25,7 @@ from superclaw.provider import LitellmProvider
 from superclaw.runtime import Provider
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
-from superclaw.settings import PROVIDERS, Settings
+from superclaw.settings import MCP_FILE, PROVIDERS, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
@@ -56,6 +57,7 @@ class Runtime:
     intent_gate: bool = False
     hooks: Dispatcher | None = None
     kernel: Kernel | None = None
+    mcp: Bridge | None = None
 
     @property
     def model_info(self) -> ModelInfo:
@@ -74,6 +76,8 @@ class Runtime:
         self.policy.mode = value
 
     def close(self) -> None:
+        if self.mcp:
+            self.mcp.close()
         if self.kernel:
             self.kernel.close()
         self.gs.close()
@@ -104,9 +108,16 @@ def build_kernel(workspace: Path, backend: Backend | None, observations: Observa
 def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> Dispatcher | None:
     paths = [settings.user_hooks]
     if trust_workspace:
-        paths.append(workspace / ".superclaw" / "hooks.json")
+        paths.append(workspace / WORKSPACE_DIR / "hooks.json")
     hooks = load_hooks(paths)
     return Dispatcher(hooks, workspace) if hooks else None
+
+
+def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> list[Path]:
+    paths = [settings.user_mcp]
+    if trust_workspace:
+        paths.append(workspace / WORKSPACE_DIR / MCP_FILE)
+    return paths
 
 
 def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,
@@ -133,6 +144,7 @@ def build_runtime(
     allow_tools: frozenset[str] = frozenset(),
     deny_tools: frozenset[str] = frozenset(),
     extra_dirs: tuple[Path, ...] = (),
+    mcp_config: list[Path] | None = None,
 ) -> Runtime:
     provider = connect_provider(settings.model, settings.effort)
     if provider is None and require_provider:
@@ -143,11 +155,13 @@ def build_runtime(
     backend = detect()
     observations = ObservationStore(gs)
     kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
+    registry = build_registry(memory, observations, workspace, backend, settings, kernel)
+    bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
     return Runtime(
-        gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, observations, workspace, backend, settings, kernel),
+        gs=gs, store=SessionStore(gs), memory=memory, registry=registry,
         policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs),
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
-        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel,
+        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge,
     )
 
 
