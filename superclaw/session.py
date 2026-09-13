@@ -8,11 +8,13 @@ from typing import Any
 
 from supergraph.core.errors import SuperGraphError
 
+from superclaw import __version__
 from superclaw.compaction import SUMMARY_LABEL
 from superclaw.runtime import Message, ToolCall
 from superclaw.settings import LIMITS
 
 NAMESPACE = "superclaw"
+EXPORT_SCHEMA_VERSION = 1
 
 
 def prompt_hash(text: str) -> str:
@@ -110,6 +112,22 @@ class SessionStore:
             self.append(new, ev["type"], ev["payload"])
         self._x(f'CREATE EDGE {_lit("session:" + new)} -> {_lit("session:" + sid)} kind = "forked_from"')
         return new
+
+    def export(self, sid: str) -> dict[str, Any]:
+        meta = self.get(sid)
+        if meta is None:
+            raise KeyError(f"unknown session {sid}")
+        return {"schemaVersion": EXPORT_SCHEMA_VERSION, "superclaw": __version__, "session": meta, "events": self.events(sid)}
+
+    def import_(self, doc: dict[str, Any], cwd: str = "") -> str:
+        if doc.get("schemaVersion") != EXPORT_SCHEMA_VERSION or not isinstance(doc.get("session"), dict):
+            raise ValueError(f"not a superclaw session export (schemaVersion {EXPORT_SCHEMA_VERSION} expected)")
+        meta, events = doc["session"], doc.get("events") or []
+        sid = self.create(cwd=cwd or str(meta.get("cwd", "")), model=str(meta.get("model", "")),
+                          title=str(meta.get("title", "")), parent=str(meta.get("id", "")))
+        for event in sorted(events, key=lambda e: int(e.get("seq", 0))):
+            self.append(sid, str(event["type"]), dict(event.get("payload") or {}))
+        return sid
 
     def last_prompt(self, sid: str) -> dict[str, Any] | None:
         prompts = [ev["payload"] for ev in self.events(sid) if ev["type"] == "prompt"]
