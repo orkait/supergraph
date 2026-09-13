@@ -300,9 +300,9 @@ class _Run:
 
     def child_policy(self, agent: Agent) -> Policy:
         parent = self.o.policy
-        tools = (parent.allow_tools & agent.tools) if parent.allow_tools else agent.tools
-        policy = Policy(parent.workspace, parent.mode, sandboxed=parent.sandboxed, allow_tools=tools,
+        policy = Policy(parent.workspace, parent.mode, sandboxed=parent.sandboxed, allow_tools=parent.allow_tools,
                         deny_tools=parent.deny_tools, extra_dirs=parent.extra_dirs)
+        policy.scope_to(agent.tools)
         policy.request_kind = parent.request_kind
         for name in parent.session_grants:
             policy.grant_session(name)

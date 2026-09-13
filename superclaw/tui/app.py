@@ -15,7 +15,10 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 
 from superclaw import __version__
+from superclaw.agents import load_agents
 from superclaw.app import Callbacks, NoProviderKey, Runtime, apply_effort, run_once, switch_model
+from superclaw.attach import Attachments
+from superclaw.attach import read as read_attachments
 from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
 from superclaw.loop import Result
 from superclaw.policy import next_mode
@@ -49,7 +52,7 @@ HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
-BUSY_COMMANDS = ("/new", "/resume", "/fork", "/clear", "/model", "/compact", "/retry")
+BUSY_COMMANDS = ("/new", "/resume", "/fork", "/clear", "/model", "/compact", "/retry", "/agent")
 
 
 def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
@@ -157,6 +160,7 @@ class SuperclawApp(App[None]):
         self.hist_index = 0
         self.hist_draft = ""
         self._title = ""
+        self.pending = Attachments()
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -493,15 +497,52 @@ class SuperclawApp(App[None]):
         self.query_one("#hints").remove_class("hidden")
         self.note(text, error=error)
 
+    def attach(self, raw: str) -> None:
+        if not raw:
+            self.note("usage: /attach <path>", error=True)
+            return
+        found = read_attachments([raw], (self.rt.workspace, *self.rt.extra_dirs))
+        for problem in found.problems:
+            self.note(f"attachment {problem}", error=True)
+        if not found.text:
+            return
+        self.pending.text = f"{self.pending.text}\n\n{found.text}".strip()
+        self.pending.images += found.images
+        self.note(f"attached {raw}{' as an image' if found.images else ''}; it goes with your next message")
+
+    def use_agent(self, name: str) -> None:
+        profiles = load_agents(self.rt.settings.agent_roots(self.rt.workspace))
+        if not name:
+            for profile in profiles:
+                mark = self.glyphs.prompt if self.rt.agent and profile.name == self.rt.agent.name else " "
+                self.note(f"{mark} {profile.name}: {profile.description}")
+            self.note("usage: /agent <name>|none" + ("" if profiles else f"; no profiles in {self.rt.settings.agent_roots()[0]}"))
+            return
+        if name == "none":
+            self.rt.agent = None
+            self.rt.policy.scope_to(frozenset())
+            self.note("agent cleared")
+            return
+        found = next((p for p in profiles if p.name == name), None)
+        if found is None:
+            self.note(f"unknown agent {name!r}; available: {', '.join(p.name for p in profiles) or 'none'}", error=True)
+            return
+        self.rt.agent = found
+        self.rt.policy.scope_to(found.tools)
+        self.note(f"agent {found.name} {self.glyphs.dot} {', '.join(sorted(found.tools)) or 'all tools'}")
+
     def begin_run(self, text: str) -> None:
         self.remember(text)
+        pending, self.pending = self.pending, Attachments()
+        if pending.text:
+            text = f"{text}\n\n{pending.text}"
         self.running = True
         self.cancel_flag.clear()
         self.stats.timer.start()
         self.query_one("#hints").add_class("hidden")
         self.query_one(WorkingLine).start(PHASE_THINKING)
         self.query_one("#prompt", Input).placeholder = "esc to cancel"
-        self.run_prompt(text)
+        self.run_prompt(text, pending.images)
 
     def action_cancel(self) -> None:
         palette = self.query_one("#palette", OptionList)
@@ -520,11 +561,11 @@ class SuperclawApp(App[None]):
             self.exit()
 
     @work(thread=True, exclusive=True)
-    def run_prompt(self, text: str) -> None:
+    def run_prompt(self, text: str, images: list[str]) -> None:
         callbacks = Callbacks(on_event=lambda event: self.call_from_thread(self.render_event, event),
                               on_permission=self.ask_permission, on_ask_user=self.ask_questions)
         try:
-            result = run_once(self.rt, text, self.session_id, callbacks, cancelled=self.cancel_flag.is_set)
+            result = run_once(self.rt, text, self.session_id, callbacks, cancelled=self.cancel_flag.is_set, images=images)
         except Exception as e:
             self.call_from_thread(self.finish, None, clip(str(e), LIMITS.preview_error_chars))
             return

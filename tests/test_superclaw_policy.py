@@ -61,6 +61,14 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     names = {d["function"]["name"] for d in reg.definitions(Policy(tmp_path, Mode.AUTO, deny_tools=frozenset({"bash", "web_fetch"})).visible)}
     assert "bash" not in names and "web_fetch" not in names and "read_file" in names
     assert _tool_set("read_file, grep bash") == frozenset({"read_file", "grep", "bash"}) and _tool_set("") == frozenset()
+    scoped = Policy(tmp_path, Mode.AUTO, allow_tools=frozenset({"read_file", "grep"}))
+    scoped.scope_to(frozenset({"grep", "bash"}))
+    assert scoped.allow_tools == frozenset({"grep"})
+    scoped.scope_to(frozenset())
+    assert scoped.allow_tools == frozenset({"read_file", "grep"})
+    wide = Policy(tmp_path, Mode.AUTO)
+    wide.scope_to(frozenset({"grep"}))
+    assert wide.allow_tools == frozenset({"grep"})
     assert [next_mode(m) for m in (Mode.ASK, Mode.AUTO, Mode.PLAN, Mode.UNSAFE)] == [Mode.AUTO, Mode.PLAN, Mode.ASK, Mode.ASK]
     parsed = build_parser(Settings.from_env({})).parse_args(["--dangerously-skip-permissions", "exec", "x"])
     assert parsed.dangerously_skip_permissions and (Mode.UNSAFE.value if parsed.dangerously_skip_permissions else parsed.mode) == "unsafe"

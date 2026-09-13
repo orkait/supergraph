@@ -165,11 +165,11 @@ def build_runtime(
         kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
         registry = build_registry(memory, observations, workspace, backend, settings, kernel)
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
-    if agent and agent.tools:
-        allow_tools = (allow_tools & agent.tools) if allow_tools else agent.tools
+    policy = Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs)
+    if agent:
+        policy.scope_to(agent.tools)
     return Runtime(
-        gs=gs, store=SessionStore(gs) if gs is not None else None, memory=memory, registry=registry,
-        policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs),
+        gs=gs, store=SessionStore(gs) if gs is not None else None, memory=memory, registry=registry, policy=policy,
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
     )
