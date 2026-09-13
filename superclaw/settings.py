@@ -24,6 +24,8 @@ ENGINES = (ENGINE_GOOGLE, ENGINE_DUCKDUCKGO)
 GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
 DUCKDUCKGO_SEARCH_URL = "https://html.duckduckgo.com/html/"
 DUCKDUCKGO_LOCALE = "us-en"
+YTDLP_BIN = "yt-dlp"
+AUDIO_FORMAT = "mp3"
 LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
 UTF8_MARK = "utf"
 
@@ -297,6 +299,9 @@ class Limits:
     web_fetch_timeout_s: float = 30.0
     web_fetch_redirects: int = 5
     web_fetch_sniff_chars: int = 512
+    download_bytes_max: int = 256 * 1024 * 1024
+    download_timeout_s: float = 600.0
+    download_chunk_bytes: int = 64 * 1024
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
