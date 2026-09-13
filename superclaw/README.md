@@ -99,14 +99,24 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 <details>
 <summary>TUI commands</summary>
 
+`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
+
+| Surface | What it shows |
+|---|---|
+| Transcript | `❯` user lines, assistant markdown, one card per tool call: status glyph (`◐` running, `✓`, `✗`), tool name, target (path, pattern, command, task), then the body - a unified diff for `edit_file`/`write_file`, output lines for everything else, `§id` when stored. Bodies fold at 12 lines; click to expand. Child (`delegate`) calls are indented |
+| Working line | spinner, current phase (`thinking`, or the tool name), elapsed seconds excluding time spent in a permission prompt, tool count |
+| Status bar | `● mode`, context gauge `▰▰▱▱ 12% of 1,000,000`, run cost, model, session; segments drop as the terminal narrows (tiers at 58, 80 and 100 columns) |
+| Command palette | typing `/` lists matching commands with usage and help; enter picks one |
+
 | Command | Effect |
 |---|---|
 | `/mode ask\|auto\|plan\|unsafe` | switch the permission mode for the session |
-| `/new` | start a fresh session |
-| `/sessions` | list recent sessions |
-| `/quit` | exit |
+| `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
+| `/context [prompt]` | what the next request costs, by category |
+| `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |
+| `/clear`, `/help`, `/quit` | housekeeping |
 
-Permission prompts answer to `a` (once), `s` (for the session) or `d` (deny).
+Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`), `ctrl+c` quits. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix) or `d` (deny).
 
 </details>
 

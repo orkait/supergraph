@@ -167,7 +167,8 @@ class Callbacks:
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
 
 
-def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = None, *, require_completion: bool = False, verify: bool = False) -> Result:
+def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = None, *, require_completion: bool = False, verify: bool = False,
+             cancelled: Callable[[], bool] | None = None) -> Result:
     cb = callbacks or Callbacks()
     if rt.intent_gate:
         rt.policy.request_kind = classify(rt.provider, prompt)
@@ -184,5 +185,5 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         context_window=rt.context_window, model_info=rt.model_info,
         require_completion_signal=require_completion, verify=verify,
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
-        session=rt.store, session_id=sid, hooks=rt.hooks,
+        session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled,
     ))

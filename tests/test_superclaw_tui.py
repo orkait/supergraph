@@ -13,6 +13,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
 from superclaw.tui import PermissionScreen, SuperclawApp
+from superclaw.tui.cards import ToolCard
 
 
 class Scripted:
@@ -51,12 +52,19 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path):
 
     async def drive():
         async with app.run_test(size=(100, 30)) as pilot:
-            await pilot.press(*"write it", "enter")
+            assert app.query_one("#welcome").display and not app.query_one("#transcript").display
+            await pilot.press("/")
+            await _wait_for(pilot, lambda: app.query_one("#palette").option_count > 0)
+            await pilot.press("backspace", *"write it", "enter")
             await _wait_for(pilot, lambda: isinstance(app.screen, PermissionScreen))
+            assert app.stats.timer.paused_at and app.running
             await pilot.press("a")
-            await _wait_for(pilot, lambda: len(app.query(Markdown)) == 1)
+            await _wait_for(pilot, lambda: len(app.query(Markdown)) == 1 and not app.running)
             assert (tmp_path / "out.txt").read_text() == "hi"
-            assert not app.query_one("#prompt").disabled
+            card = app.query_one(ToolCard)
+            assert card.tool == "write_file" and card.status == "✓" and "+hi" in str(card.query_one(".body").content)
+            assert app.query_one("#transcript").display and not app.query_one("#welcome").display
+            assert "done in" in str(app.query(".note").last().content) and app.stats.timer.calls == 1
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
