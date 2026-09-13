@@ -20,7 +20,7 @@ from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
 from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
 from superclaw.tui import PermissionScreen, SuperclawApp
-from superclaw.tui.app import WORDMARK_ART
+from superclaw.tui.app import WORDMARK_ART, describe
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
@@ -198,3 +198,5 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     drawn = {ch for path in Path(SuperclawApp.__module__.replace(".", "/")).parent.glob("*.py") for ch in path.read_text() if not ch.isascii()}
     allowed = {ch for value in vars(UNICODE).values() if isinstance(value, str) for ch in value} | set("".join(WORDMARK_ART)) | {"§"}
     assert drawn <= allowed and choose_glyphs({"LANG": "C"}) is ASCII and choose_glyphs({"LANG": "C.UTF-8", "SUPERCLAW_ASCII": "1"}) is ASCII
+    drift = describe({"type": "prompt_drift", "previous": "fdfc90c91635c220", "current": "f7d6fdb31b7e0552"}, UNICODE)
+    assert drift == "system prompt changed since this session last ran; the prompt event holds the new one" and describe({"type": "budget", "left": 3}, UNICODE) == "budget: left=3"

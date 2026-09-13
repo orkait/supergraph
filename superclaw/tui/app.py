@@ -69,7 +69,9 @@ def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
         return f"compacted {event['removed']} messages into a summary"
     if kind == "permission_decision":
         return f"permission {event['tool']}: {event['decision']}"
-    if kind in ("budget", "cancelled", "prompt_drift", "intent", "verdict"):
+    if kind == "prompt_drift":
+        return "system prompt changed since this session last ran; the prompt event holds the new one"
+    if kind in ("budget", "cancelled", "intent", "verdict"):
         return f"{kind}: " + ", ".join(f"{k}={v}" for k, v in event.items() if k not in ("type", "child"))
     return ""
 
