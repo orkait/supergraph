@@ -179,7 +179,7 @@ def _clear(app: SuperclawApp, arg: str) -> None:
 def _help(app: SuperclawApp, arg: str) -> None:
     for command in (*COMMANDS, *app.user_commands):
         app.note(f"{command.usage:<24} {command.help}")
-    app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", "click a card to expand it")))
+    app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", f"so does a bare {', '.join(EXIT_WORDS)}", "click a card to expand it")))
 
 
 def _setup(app: SuperclawApp, arg: str) -> None:
@@ -214,7 +214,7 @@ COMMANDS = (
     Command("/clear", "/clear", "clear the transcript view", _clear),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
-    Command("/exit", "/exit, /quit", "leave superclaw; a bare exit, quit or :q does the same", _quit, aliases=("/quit",)),
+    Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),
 )
 
 
