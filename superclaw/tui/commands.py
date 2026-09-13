@@ -19,6 +19,16 @@ class Command:
     usage: str
     help: str
     run: Callable[[SuperclawApp, str], None]
+    aliases: tuple[str, ...] = ()
+
+    def answers_to(self, name: str) -> bool:
+        return name == self.name or name in self.aliases
+
+    def offers(self, head: str) -> bool:
+        return any(n.startswith(head) for n in (self.name, *self.aliases))
+
+
+EXIT_WORDS = ("exit", "quit", ":q", ":q!", ":wq", ":wq!")
 
 
 def _mode(app: SuperclawApp, arg: str) -> None:
@@ -169,7 +179,7 @@ def _clear(app: SuperclawApp, arg: str) -> None:
 def _help(app: SuperclawApp, arg: str) -> None:
     for command in (*COMMANDS, *app.user_commands):
         app.note(f"{command.usage:<24} {command.help}")
-    app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", "click a card to expand it")))
+    app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", f"so does a bare {', '.join(EXIT_WORDS)}", "click a card to expand it")))
 
 
 def _setup(app: SuperclawApp, arg: str) -> None:
@@ -204,7 +214,7 @@ COMMANDS = (
     Command("/clear", "/clear", "clear the transcript view", _clear),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
-    Command("/quit", "/quit", "exit", _quit),
+    Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),
 )
 
 
@@ -217,13 +227,13 @@ def user_entries(roots: list[Path]) -> list[Command]:
 
 def matching(prefix: str, extra: list[Command] = []) -> list[Command]:
     head = prefix.split()[0] if prefix.strip() else "/"
-    return [c for c in (*COMMANDS, *extra) if c.name.startswith(head)]
+    return [c for c in (*COMMANDS, *extra) if c.offers(head)]
 
 
 def dispatch(app: SuperclawApp, text: str, extra: list[Command] = []) -> None:
     name, _, arg = text.strip().partition(" ")
     for command in (*COMMANDS, *extra):
-        if command.name == name:
+        if command.answers_to(name):
             command.run(app, arg.strip())
             return
     app.note(f"unknown command {name}; /help lists them", error=True)

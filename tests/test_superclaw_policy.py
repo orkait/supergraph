@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from superclaw.cli import _tool_set, build_parser
@@ -16,6 +18,7 @@ from superclaw.update import plan as plan_update
 from superclaw.tools import Permission, Registry, Safety, SideEffect, Tool
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
+from superclaw.tui.commands import EXIT_WORDS, dispatch, matching
 
 
 class Fetch(Tool):
@@ -138,3 +141,10 @@ def test_command_classes_and_prefix_rules(tmp_path):
     assert chip_bounds("a [Pasted text #1 +4 lines] b", 0, 5) == (0, 27) and chip_bounds("[Image #1]", 0, 0) == (0, 0) and chip_bounds("[Image #1]", 10, 10) == (10, 10)
     clips.clear()
     assert len(clips) == 0 and clips.select("[Image #1]").images == [] and clips.add("Image").marker == "[Image #3]"
+    left: list[str] = []
+    stub = SimpleNamespace(exit=lambda: left.append("exit"), note=lambda text, error=False: left.append(text))
+    assert [c.name for c in matching("/qu")] == ["/exit"] and [c.name for c in matching("/exi")] == ["/exit"] and "/quit" in matching("/exi")[0].usage
+    dispatch(stub, "/quit")
+    dispatch(stub, "/exit")
+    dispatch(stub, "/nope")
+    assert left == ["exit", "exit", "unknown command /nope; /help lists them"] and EXIT_WORDS == ("exit", "quit", ":q", ":q!", ":wq", ":wq!")
