@@ -4,9 +4,17 @@ import re
 from typing import Any
 
 from superclaw.runtime import Completion, Message, ToolCall, Usage, to_wire
-from superclaw.settings import LIMITS
+from superclaw.settings import ERROR_HINTS, LIMITS
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def hint(message: str, tui: bool) -> str:
+    low = message.lower()
+    for entry in ERROR_HINTS:
+        if any(needle in low for needle in entry.needles):
+            return entry.tui if tui else entry.cli
+    return ""
 
 
 def _completion(**kwargs: Any) -> Any:

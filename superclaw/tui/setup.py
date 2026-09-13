@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, OptionList, Static
 
-from superclaw.app import Runtime, connect_provider
+from superclaw.app import Runtime, switch_model
+from superclaw.catalog import provider_of
 from superclaw.settings import PROVIDERS, Provider
+from superclaw.tui.models import ModelScreen
 
 
 class SetupScreen(ModalScreen[bool]):
     BINDINGS = [("escape", "later", "Later"), ("ctrl+c", "app.interrupt", "Quit")]
 
-    def __init__(self, rt: Runtime) -> None:
+    def __init__(self, rt: Runtime, provider: Provider | None = None) -> None:
         super().__init__()
         self.rt = rt
-        self.provider: Provider = next((p for p in PROVIDERS if rt.model.startswith(p.name + "/")), PROVIDERS[0])
+        self.provider: Provider = provider or provider_of(rt.model) or PROVIDERS[0]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label("Connect a provider", classes="title")
-            yield Static("No API key was found. Pick a provider, paste its key, and superclaw stores it in ~/.config/superclaw/credentials.env (mode 600).", classes="reason")
+            yield Static("Pick a provider and paste its key; superclaw stores it in ~/.config/superclaw/credentials.env (mode 600), then lists the models it serves.", classes="reason")
             yield OptionList(*(f"{p.name:<12} {p.console}" for p in PROVIDERS), id="providers")
             yield Input(placeholder=f"{self.provider.env}", password=True, id="key")
-            yield Input(value=self.rt.model, placeholder="model", id="model")
             with Horizontal(classes="buttons"):
                 yield Button("Connect", id="connect", variant="primary")
                 yield Button("Later (esc)", id="later")
@@ -38,7 +37,6 @@ class SetupScreen(ModalScreen[bool]):
         event.stop()
         self.provider = PROVIDERS[event.option_index]
         self.query_one("#key", Input).placeholder = self.provider.env
-        self.query_one("#model", Input).value = self.provider.default_model
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
@@ -56,14 +54,15 @@ class SetupScreen(ModalScreen[bool]):
 
     def connect(self) -> None:
         key = self.query_one("#key", Input).value.strip()
-        model = self.query_one("#model", Input).value.strip() or self.provider.default_model
         if not key:
             self.query_one("#key", Input).focus()
             return
-        self.rt.settings.save_credentials(self.provider, key, model)
-        self.rt.settings = replace(self.rt.settings, model=model)
-        self.rt.model = model
-        self.rt.provider = connect_provider(model)
+        current = self.rt.model if self.rt.model.startswith(self.provider.name + "/") else self.provider.default_model
+        self.rt.settings.save_credentials(self.provider, key, current)
+        self.app.push_screen(ModelScreen(self.rt, [self.provider], current, []), self.chosen)
+
+    def chosen(self, model: str | None) -> None:
+        switch_model(self.rt, model or (self.rt.model if provider_of(self.rt.model) is self.provider else self.provider.default_model))
         self.dismiss(self.rt.provider is not None)
 
     def action_later(self) -> None:

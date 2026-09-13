@@ -79,7 +79,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 |---|---|---|
 | Provider key | `superclaw setup [--provider openrouter\|groq\|cerebras\|ollama\|aistudio\|nvidia_nim]`, `/setup` in the TUI, or the provider's env var | saved to `~/.config/superclaw/credentials.env` (mode 600) together with `SUPERCLAW_MODEL`; the environment overrides the file. The TUI opens without a key and shows the setup screen; `exec` refuses to run without one |
 | Store path | `SUPERCLAW_DB_PATH`, `--db` | `~/.local/share/superclaw/brain` |
-| Model | `SUPERCLAW_MODEL`, `--model` | `openrouter/deepseek/deepseek-v4-flash` |
+| Model | `SUPERCLAW_MODEL`, `--model`, `/model` in the TUI | `openrouter/deepseek/deepseek-v4-flash`; ids are `provider/slug` for `openrouter`, `groq`, `cerebras`, `ollama` (cloud), `aistudio`, `nvidia_nim`. `/model` and `superclaw models` list what each connected provider serves (prices shown as `$input/output` per million tokens): the provider's live `/models` endpoint (public for OpenRouter and NVIDIA, keyed elsewhere) cached for a day under `~/.cache/superclaw/models`, merged with the bundled catalog for context windows and prices, with embedding, audio, image and moderation models filtered out. A model only the live list knows still gets its window and price from that list |
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `0` = resolved from the bundled model catalog (1,000,000 for the default model); `128000` when the model is unknown |
 | Turn limit | `--max-turns` | `12` |
@@ -102,7 +102,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 <details>
 <summary>TUI commands</summary>
 
-`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). Without a key it opens anyway and shows the provider setup screen. It draws with the glyph set from the configuration table, which any stock monospace font carries; `SUPERCLAW_ASCII=1` switches to plain ASCII. The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
+`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). Without a key it opens anyway and shows the provider setup screen: pick a provider, paste the key, then pick a model from the list that provider serves. It draws with the glyph set from the configuration table, which any stock monospace font carries; `SUPERCLAW_ASCII=1` switches to plain ASCII. The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
 
 | Surface | What it shows |
 |---|---|
@@ -114,13 +114,14 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | Command | Effect |
 |---|---|
 | `/mode ask\|auto\|plan\|unsafe` | switch the permission mode for the session |
+| `/model [list\|id]` | no argument opens the picker: recent models first, then one group per connected provider, type to filter, enter picks. `list` prints the same rows. An id switches at once, fuzzy when unique (`/model v4-pro`), and a model on a provider without a key opens setup for that provider. The choice is saved as `SUPERCLAW_MODEL` |
 | `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
 | `/context [prompt]` | what the next request costs, by category |
 | `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |
 | `/setup` | connect a provider key and model without leaving the TUI |
 | `/clear`, `/help`, `/quit` | housekeeping |
 
-Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure (bad key, network) ends the turn with a `run failed` line and leaves the shell open; `/setup` changes the key.
+Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure ends the turn with a `run failed` line plus one next step (a rejected key points at `/setup`, an unknown model at `/model`, a full window at `/new`, rate limits and unreachable hosts say so) and leaves the shell open; `superclaw exec` prints the same line with the command-line equivalents.
 
 </details>
 
@@ -139,7 +140,7 @@ echo "prompt on stdin" | superclaw exec -
 
 Stream events: `run_start` `usage` `text` `tool_call` `tool_result` `permission_request` `permission_decision` `compaction` `budget` `final` `run_end`, each tagged with `schemaVersion` and `runId`. `usage` carries `input_tokens` `output_tokens` `cache_read_tokens` `cost_usd` `run_cost_usd` `context_used` `context_window` `saved_tokens` `kept_out_tokens`; `run_end` carries `savedTokens` and `keptOutTokens`. Child events carry `child: <session id>`.
 
-`superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window.
+`superclaw context [prompt]` prints what the first request would cost by category (system prompt, guidelines, skills index, memory recall, tool schemas, history) against the resolved window. `superclaw models [--provider name] [--refresh]` prints every model each connected provider serves, one row per model with the context window, tool support, price per million tokens and whether the row came from the live list or the bundled catalog; `--refresh` ignores the day-old cache.
 
 </details>
 

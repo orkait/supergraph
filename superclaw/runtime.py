@@ -70,6 +70,18 @@ def clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+THOUSAND = 1000
+PER_MILLION = 1_000_000
+
+
+def compact(count: int) -> str:
+    if count >= PER_MILLION:
+        return f"{count / PER_MILLION:.1f}M"
+    if count >= THOUSAND:
+        return f"{count / THOUSAND:.1f}K"
+    return str(count)
+
+
 _ASCII_INK = re.compile(r"[!-~]")
 _NON_ASCII = re.compile(r"[^\x00-\x7f]")
 

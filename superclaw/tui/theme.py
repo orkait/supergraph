@@ -36,6 +36,7 @@ ModalScreen { align: center middle; }
 #dialog .buttons { height: auto; }
 #dialog Button { margin-right: 1; }
 #dialog #providers { height: auto; max-height: 8; margin-bottom: 1; }
+#dialog #models { height: auto; max-height: 18; margin-bottom: 1; text-wrap: nowrap; text-overflow: ellipsis; }
 #dialog Input { margin-bottom: 1; }
 """
 

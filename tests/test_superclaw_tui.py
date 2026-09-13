@@ -7,16 +7,18 @@ from textual.widgets import Markdown
 
 from supergraph import SuperGraph
 
+from superclaw import catalog
 from superclaw.app import Runtime, build_registry
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
-from superclaw.settings import ASCII, UNICODE, Settings, choose_glyphs
+from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART
 from superclaw.tui.cards import ToolCard
+from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
 
 
@@ -34,7 +36,7 @@ def rt(tmp_path):
     memory = Memory(gs)
     rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), tmp_path),
                  policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model",
-                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "LANG": "C.UTF-8"}))
+                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "XDG_CACHE_HOME": str(tmp_path / "cache"), "LANG": "C.UTF-8"}))
     yield rt
     gs.close()
 
@@ -48,7 +50,9 @@ async def _wait_for(pilot, predicate, timeout=5.0):
 
 
 def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, monkeypatch):
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    for provider in PROVIDERS:
+        monkeypatch.delenv(provider.env, raising=False)
+    monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)
 
@@ -56,9 +60,17 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
         async with setup_app.run_test(size=(100, 34)) as pilot:
             await _wait_for(pilot, lambda: isinstance(setup_app.screen, SetupScreen))
             await pilot.press(*"sk-or-v1-test", "enter")
-            await _wait_for(pilot, lambda: not isinstance(setup_app.screen, SetupScreen))
+            await _wait_for(pilot, lambda: isinstance(setup_app.screen, ModelScreen) and setup_app.screen.rows)
+            await pilot.press(*"v4-flash", "enter")
+            await _wait_for(pilot, lambda: not isinstance(setup_app.screen, (SetupScreen, ModelScreen)))
             assert rt.provider is not None and "OPENROUTER_API_KEY=sk-or-v1-test" in rt.settings.credentials.read_text()
-            assert oct(rt.settings.credentials.stat().st_mode)[-3:] == "600"
+            assert oct(rt.settings.credentials.stat().st_mode)[-3:] == "600" and rt.model.startswith("openrouter/deepseek/deepseek-v4-flash")
+            await pilot.press(*"/model groq/llama-3.3-70b-versatile", "enter")
+            await _wait_for(pilot, lambda: isinstance(setup_app.screen, SetupScreen))
+            assert setup_app.screen.provider.name == "groq" and rt.model.startswith("openrouter/")
+            await pilot.press("escape", *"/model list", "enter")
+            await pilot.pause(0.2)
+            assert any(str(n.content).startswith(rt.settings.glyphs.prompt) and rt.model in str(n.content) for n in setup_app.query(".note"))
 
     asyncio.run(connect())
     rt.provider = Scripted(

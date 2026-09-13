@@ -51,15 +51,49 @@ class Provider:
     env: str
     default_model: str
     console: str
+    prefix: str
+    models_url: str
+    public: bool = False
+    key_in_query: bool = False
 
 
 PROVIDERS = (
-    Provider("openrouter", "OPENROUTER_API_KEY", DEFAULT_MODEL, "https://openrouter.ai/keys"),
-    Provider("groq", "GROQ_API_KEY", "groq/llama-3.3-70b-versatile", "https://console.groq.com/keys"),
-    Provider("cerebras", "CEREBRAS_API_KEY", "cerebras/llama-3.3-70b", "https://cloud.cerebras.ai"),
-    Provider("ollama", "OLLAMA_API_KEY", "ollama/gpt-oss:120b", "https://ollama.com/settings/keys"),
-    Provider("aistudio", "GOOGLE_AISTUDIO_API_KEY", "aistudio/gemini-2.0-flash", "https://aistudio.google.com/apikey"),
-    Provider("nvidia_nim", "NVIDIA_NIM_API_KEY", "nvidia_nim/meta/llama-3.3-70b-instruct", "https://build.nvidia.com"),
+    Provider("openrouter", "OPENROUTER_API_KEY", DEFAULT_MODEL, "https://openrouter.ai/keys", "openrouter", "https://openrouter.ai/api/v1/models", public=True),
+    Provider("groq", "GROQ_API_KEY", "groq/llama-3.3-70b-versatile", "https://console.groq.com/keys", "groq", "https://api.groq.com/openai/v1/models"),
+    Provider("cerebras", "CEREBRAS_API_KEY", "cerebras/llama-3.3-70b", "https://cloud.cerebras.ai", "cerebras", "https://api.cerebras.ai/v1/models"),
+    Provider("ollama", "OLLAMA_API_KEY", "ollama/gpt-oss:120b", "https://ollama.com/settings/keys", "", "https://ollama.com/v1/models"),
+    Provider("aistudio", "GOOGLE_AISTUDIO_API_KEY", "aistudio/gemini-2.0-flash", "https://aistudio.google.com/apikey", "gemini",
+             "https://generativelanguage.googleapis.com/v1beta/models", key_in_query=True),
+    Provider("nvidia_nim", "NVIDIA_NIM_API_KEY", "nvidia_nim/meta/llama-3.3-70b-instruct", "https://build.nvidia.com", "nvidia_nim",
+             "https://integrate.api.nvidia.com/v1/models", public=True),
+)
+CATALOG_CHAT_MODE = "chat"
+NONCODING_TERMS = ("audio", "dall-e", "deep-research", "embed", "image", "imagen", "moderation", "realtime", "rerank", "sora", "speech",
+                   "transcribe", "translate", "tts", "veo", "whisper", "aqa", "guard", "safeguard")
+MODEL_SOURCE_LIVE = "live"
+MODEL_SOURCE_CATALOG = "catalog"
+MODELS_CACHE_DIR = "models"
+
+
+@dataclass(frozen=True)
+class ErrorHint:
+    needles: tuple[str, ...]
+    tui: str
+    cli: str
+
+
+ERROR_HINTS = (
+    ErrorHint(("invalid api key", "invalid_api_key", "unauthorized", "authentication", "api key", "401", "403"),
+              "key rejected; /setup stores a new one", "key rejected; run `superclaw setup`"),
+    ErrorHint(("rate limit", "rate_limit", "too many requests", "quota", "overloaded", "resource_exhausted", "429", "529"),
+              "rate limited; wait, or /model picks another", "rate limited; wait, or pass --model"),
+    ErrorHint(("context length", "context window", "maximum context", "too many tokens", "prompt is too long", "reduce the length"),
+              "context window full; /new starts fresh", "context window full; shorten the prompt or drop --resume"),
+    ErrorHint(("not a valid model", "model not found", "model_not_found", "does not exist", "unknown model", "no such model", "unsupported model",
+               "invalid model", "model is not"),
+              "model unavailable; /model lists what the provider serves", "model unavailable; `superclaw models` lists what the provider serves"),
+    ErrorHint(("connection", "timed out", "timeout", "no such host", "name resolution", "unreachable", "tls", "reset by peer", "dns"),
+              "provider unreachable; check the network", "provider unreachable; check the network"),
 )
 
 
@@ -174,6 +208,12 @@ class Limits:
     session_list_limit: int = 1000
     session_events_limit: int = 100_000
     recent_sessions_shown: int = 20
+    recent_models_shown: int = 5
+    models_fetch_timeout_s: float = 15.0
+    models_fetch_bytes: int = 8 * 1024 * 1024
+    models_cache_ttl_s: int = 86_400
+    model_id_width: int = 44
+    model_list_shown: int = 40
     preview_args_chars: int = 160
     preview_error_chars: int = 200
     dialog_args_chars: int = 1200
@@ -204,6 +244,7 @@ class Settings:
     db_path: Path
     skills_dir: Path | None
     glyphs: Glyphs
+    cache_dir: Path
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -211,6 +252,7 @@ class Settings:
         home = Path.home()
         data_dir = Path(e.get("XDG_DATA_HOME", "").strip() or home / ".local" / "share") / "superclaw"
         config_dir = Path(e.get("XDG_CONFIG_HOME", "").strip() or home / ".config") / "superclaw"
+        cache_dir = Path(e.get("XDG_CACHE_HOME", "").strip() or home / ".cache") / "superclaw"
         saved = read_env_file(config_dir / CREDENTIALS_FILE)
         if env is None:
             for key, value in saved.items():
@@ -229,6 +271,7 @@ class Settings:
             db_path=Path(db_override) if db_override else data_dir / "brain",
             skills_dir=Path(skills_override) if skills_override else None,
             glyphs=choose_glyphs(e),
+            cache_dir=cache_dir,
         )
 
     @property
@@ -243,18 +286,27 @@ class Settings:
     def credentials(self) -> Path:
         return self.config_dir / CREDENTIALS_FILE
 
+    @property
+    def models_cache(self) -> Path:
+        return self.cache_dir / MODELS_CACHE_DIR
+
     def save_credentials(self, provider: Provider, key: str, model: str) -> None:
-        values = {**read_env_file(self.credentials), provider.env: key, "SUPERCLAW_MODEL": model}
+        self._save({provider.env: key, "SUPERCLAW_MODEL": model})
+
+    def save_model(self, model: str) -> None:
+        self._save({"SUPERCLAW_MODEL": model})
+
+    def _save(self, values: dict[str, str]) -> None:
+        merged = {**read_env_file(self.credentials), **values}
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.credentials.write_text("".join(f"{k}={v}\n" for k, v in values.items()))
+        self.credentials.write_text("".join(f"{k}={v}\n" for k, v in merged.items()))
         self.credentials.chmod(CREDENTIALS_MODE)
-        os.environ[provider.env] = key
-        os.environ["SUPERCLAW_MODEL"] = model
+        os.environ.update(values)
 
     def model_info(self):
         from superclaw.models import lookup
 
-        return lookup(self.model)
+        return lookup(self.model, self.models_cache)
 
     def window(self) -> int:
         return self.context_window or self.model_info().context_window

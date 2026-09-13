@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
+from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
@@ -22,7 +24,7 @@ from superclaw.provider import LitellmProvider
 from superclaw.runtime import Provider
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
-from superclaw.settings import Settings
+from superclaw.settings import PROVIDERS, Settings
 from superclaw.skills import load_skills
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
@@ -147,6 +149,18 @@ def build_runtime(
 def connect_provider(model: str) -> Provider | None:
     chain = build_provider_chain([model], free_first=False)
     return LitellmProvider(chain) if chain else None
+
+
+def switch_model(rt: Runtime, model: str) -> None:
+    provider = provider_of(model)
+    if provider is None:
+        raise KeyError(f"unknown provider in {model!r}; providers: {', '.join(p.name for p in PROVIDERS)}")
+    if not os.environ.get(provider.env):
+        raise NoProviderKey(f"no {provider.env} for {provider.name}")
+    rt.settings.save_model(model)
+    rt.settings = replace(rt.settings, model=model)
+    rt.model = model
+    rt.provider = connect_provider(model)
 
 
 def system_prompt_for(rt: Runtime, prompt: str) -> str:
