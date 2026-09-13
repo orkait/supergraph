@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
@@ -255,10 +256,10 @@ def test_intent_hooks_and_deferral(ws, gs):
         "fake": {"command": sys.executable, "args": [str(server)]},
         "off": {"command": "nope", "disabled": True},
         "broken": {"command": "definitely-not-a-binary"},
-        "remote": {"url": "https://example.com"},
+        "remote": {"url": "https://example.com", "command": "also-local"},
     }}))
     config = load_config([mcp_config])
-    assert [s.name for s in config.servers] == ["broken", "fake"] and any("stdio" in p for p in config.problems)
+    assert [s.name for s in config.servers] == ["broken", "fake"] and any("stdio transport" in p for p in config.problems)
     bridge = connect_all(config, Registry())
     assert [t.name for t in bridge.tools] == ["mcp_fake_echo_it"] and [s.name for s in bridge.skipped] == ["broken"]
     remote_tool = bridge.tools[0]
@@ -268,3 +269,48 @@ def test_intent_hooks_and_deferral(ws, gs):
     assert echoed.ok and echoed.output.startswith("pong") and "1 non-text block(s) dropped" in echoed.output
     assert not remote_tool.run({"text": "boom", "fail": True}, ToolContext(workspace=ws)).ok
     bridge.close()
+    seen_sessions: list[str] = []
+
+    class FakeHttpMcp(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            message = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            method, message_id = message.get("method"), message.get("id")
+            if message_id is None:
+                self.send_response(202)
+                self.end_headers()
+                return
+            if method == "tools/call":
+                seen_sessions.append(self.headers.get("Mcp-Session-Id", ""))
+                text = (message["params"].get("arguments") or {}).get("text", "")
+                body = ("event: message\ndata: {\"jsonrpc\": \"2.0\", \"method\": \"notifications/progress\", \"params\": {}}\n\n"
+                        f"event: message\ndata: {json.dumps({'jsonrpc': '2.0', 'id': message_id, 'result': {'content': [{'type': 'text', 'text': 'http ' + text}]}})}\n\n")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+            else:
+                result = {"protocolVersion": "2024-11-05"} if method == "initialize" else {"tools": [{"name": "over-http", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}}}]}
+                body = json.dumps({"jsonrpc": "2.0", "id": message_id, "result": result})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                if method == "initialize":
+                    self.send_header("Mcp-Session-Id", "sess-42")
+            self.end_headers()
+            self.wfile.write(body.encode())
+
+    httpd = HTTPServer(("127.0.0.1", 0), FakeHttpMcp)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    web_config = ws / "mcp-http.json"
+    web_config.write_text(json.dumps({"mcpServers": {
+        "web": {"url": f"http://127.0.0.1:{httpd.server_port}/mcp", "headers": {"Authorization": "Bearer t"}},
+        "mixed": {"url": "http://x", "command": "y"},
+        "old": {"type": "sse", "url": "http://x"},
+    }}))
+    web = load_config([web_config])
+    assert [s.name for s in web.servers] == ["web"] and web.servers[0].transport == "http" and len(web.problems) == 2
+    web_bridge = connect_all(web, Registry())
+    assert [t.name for t in web_bridge.tools] == ["mcp_web_over_http"] and web_bridge.skipped == []
+    assert web_bridge.tools[0].run({"text": "ping"}, ToolContext(workspace=ws)).output == "http ping" and seen_sessions == ["sess-42"]
+    web_bridge.close()
+    httpd.shutdown()

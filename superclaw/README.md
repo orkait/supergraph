@@ -103,7 +103,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Intent gate | `--intent-gate` | off; one narrow model call classifies the request as `answer`, `diagnose`, `change` or `monitor`, and `answer` hides writes, shell and network while `diagnose` hides writes |
 | Extra roots | `--add-dir PATH` (repeatable) | none; a granted directory is readable, writable and bound into the sandbox for `bash` and the kernel, and stops counting as an out-of-workspace write |
 | Worktree | `-w/--worktree [NAME]`, `--worktree-dir` | off; creates or reuses `<data dir>/worktrees/superclaw-worktree-<repo>-<hash>/<name>` on branch `superclaw/<name>`, default name `task-<utc timestamp>` |
-| MCP servers | `~/.config/superclaw/mcp.json`, plus `<workspace>/.superclaw/mcp.json` with `--trust-workspace` | none; `{"mcpServers": {"docs": {"command": "…", "args": [], "env": {}}}}`, the shape claude and cursor already use. stdio only; a `url` entry is reported as an unsupported transport. `superclaw mcp` and `/mcp` list what connected and what was skipped |
+| MCP servers | `~/.config/superclaw/mcp.json`, plus `<workspace>/.superclaw/mcp.json` with `--trust-workspace` | none; `{"mcpServers": {"docs": {"command": "…", "args": [], "env": {}}, "hosted": {"url": "https://…", "headers": {}}}}`, the shape claude and cursor already use. stdio and streamable HTTP; the legacy SSE transport is refused. `superclaw mcp` and `/mcp` list what connected and what was skipped |
 | Agent profiles | `--agent NAME`, `/agent` in the TUI | none; `<workspace>/.superclaw/agents/<name>.md` then `~/.config/superclaw/agents/<name>.md`, frontmatter `name` `description` `tools` `model` over a prompt body. `superclaw agents` lists them |
 | User commands | `/<name> args` in the TUI, `superclaw exec "/<name> args"` | none; `<workspace>/.superclaw/commands/<name>.md` then `~/.config/superclaw/commands/<name>.md`, frontmatter `description` `agent` `model` over a template. `superclaw commands` lists them |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
@@ -270,13 +270,14 @@ Open a pull request titled "$1". Summary: $ARGUMENTS
 ```json
 {
   "mcpServers": {
-    "docs": { "command": "npx", "args": ["-y", "some-mcp-server"], "env": {"API_KEY": "..."} },
-    "off":  { "command": "other", "disabled": true }
+    "docs":   { "command": "npx", "args": ["-y", "some-mcp-server"], "env": {"API_KEY": "..."} },
+    "hosted": { "url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ..."} },
+    "off":    { "command": "other", "disabled": true }
   }
 }
 ```
 
-`~/.config/superclaw/mcp.json` always, `<workspace>/.superclaw/mcp.json` only with `--trust-workspace`, because an entry there is a command this process runs. Servers connect concurrently under one deadline, so startup costs the slowest server rather than the sum, and a server that fails to start, times out or collides on a tool name is skipped with a reason instead of taking the launch down. Tools arrive as `mcp_<server>_<tool>`, deferred behind `tool_search`, gated as network side effects. stdio only for now: an entry with a `url` is reported as an unsupported transport rather than ignored.
+`~/.config/superclaw/mcp.json` always, `<workspace>/.superclaw/mcp.json` only with `--trust-workspace`, because an entry there is a command this process runs. Servers connect concurrently under one deadline, so startup costs the slowest server rather than the sum, and a server that fails to start, times out or collides on a tool name is skipped with a reason instead of taking the launch down. Tools arrive as `mcp_<server>_<tool>`, deferred behind `tool_search`, gated as network side effects. A `command` entry is stdio; a `url` entry is streamable HTTP: JSON-RPC is POSTed with `Accept: application/json, text/event-stream`, the `Mcp-Session-Id` the server hands back on `initialize` is sent on every later request, and a response delivered as an SSE body is unwrapped to the message with the matching id. The legacy SSE transport (`"type": "sse"`) is refused with a reason, as is an entry that mixes the two shapes.
 
 </details>
 
@@ -294,7 +295,7 @@ Open a pull request titled "$1". Summary: $ARGUMENTS
 |---|---|
 | Linux-only sandbox | `bubblewrap` covers `bash` and the `python` kernel; without it both degrade to a prompt in `auto`. File tools rely on the path jail, which resolves symlinks but has a check-to-use window. No macOS Seatbelt yet, and network approval is all-or-nothing rather than a domain allowlist |
 | Kernel checkpoints are picklable-only | the kernel namespace is checkpointed into the substrate after every run and restored on `--resume`, but values that cannot be pickled (lambdas, open handles, live modules) are dropped; a kernel timeout resets the live namespace and the next run restores the last checkpoint |
-| MCP is stdio only | no HTTP or SSE transport, no OAuth, and resources and prompts are not consumed - tools only. A `url` entry is reported, not connected |
+| MCP is tools only | stdio and streamable HTTP transports, no legacy SSE stream, no OAuth (put a token in `headers`), and resources and prompts are not consumed |
 | One process per store | supergraph takes an exclusive lock per path, so a second live session needs `--db <path>`. The read-only commands sidestep it by not opening the store at all |
 | Images do not survive resume | an attached image rides the live run; the session event records only how many there were, because base64 in the event document would land in the same FTS index `REMEMBER` and `superclaw sessions <query>` search |
 | No LSP | extension point only |
