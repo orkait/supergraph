@@ -11,7 +11,7 @@ from supergraph import SuperGraph
 
 import argparse
 
-from superclaw import checks, spec
+from superclaw import checks, cron, spec
 from superclaw.acp import serve as acp_serve
 from superclaw.agents import Agent
 from superclaw.app import Runtime, build_registry
@@ -157,6 +157,37 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     assert recv()["error"]["code"] == -32602
     client_out.close()
     acp_gs.close()
+    clock = {"now": 1_800_000_000_000}
+    jobs = cron.CronStore(gs, now_ms=lambda: clock["now"])
+    nightly = jobs.add("nightly", "0 3 * * *", "summarise the day", model="m/x")
+    assert nightly.status == "active" and nightly.fire_count == 0 and nightly.next_run_ms > clock["now"] and jobs.get("nightly").prompt == "summarise the day"
+    for bad in (("Bad Id", "@daily", "p"), ("ok", "61 * * * *", "p"), ("ok", "@daily", "  "), ("nightly", "@daily", "p")):
+        with pytest.raises(cron.CronError):
+            jobs.add(*bad)
+    jobs.add("quarter", "*/15 * * * *", "check the queue")
+    assert [j.id for j in jobs.list()] == ["nightly", "quarter"] and jobs.due() == []
+    clock["now"] = jobs.get("quarter").next_run_ms
+    assert [j.id for j in jobs.due()] == ["quarter"] and jobs.set_status("quarter", "paused").paused and jobs.due() == []
+    assert not jobs.set_status("quarter", "active").paused and jobs.get("quarter").next_run_ms > clock["now"]
+    clock["now"] = jobs.get("quarter").next_run_ms
+    cron_gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
+    cron_rt = Runtime(gs=cron_gs, store=SessionStore(cron_gs), memory=Memory(cron_gs), registry=build_registry(Memory(cron_gs), ObservationStore(cron_gs), ws),
+                      policy=Policy(ws, Mode.AUTO, sandboxed=True), provider=Scripted(Completion(text="queue is empty"), Completion(text="again")), workspace=ws, model="fake/m",
+                      settings=Settings.from_env({"XDG_CONFIG_HOME": str(ws / "cfg"), "XDG_CACHE_HOME": str(ws / "cache")}))
+    events: list = []
+    assert cron.run(cron_rt, jobs, once=True, emit=events.append) == 1 and [e["type"] for e in events if e["type"].startswith("cron_")] == ["cron_fire"]
+    assert [e["type"] for e in events][-1] == "text"
+    fired = jobs.get("quarter")
+    assert fired.fire_count == 1 and fired.last_exit == 0 and fired.next_run_ms > clock["now"] and [s["title"] for s in cron_rt.store.recent()] == ["cron quarter"]
+    clock["now"] = fired.next_run_ms + 60_000
+    events.clear()
+    assert cron.run(cron_rt, jobs, ids=("quarter",), emit=events.append, sleep=lambda s: None, stop=lambda: True) == 0
+    assert events[0]["type"] == "cron_skipped" and jobs.get("quarter").fire_count == 1 and jobs.get("quarter").next_run_ms > clock["now"]
+    jobs.remove("nightly")
+    assert [j.id for j in jobs.list()] == ["quarter"]
+    with pytest.raises(cron.CronError):
+        jobs.remove("nightly")
+    cron_gs.close()
 
 
 def test_guards_gates_and_verifier(ws):

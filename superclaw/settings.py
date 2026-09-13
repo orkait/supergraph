@@ -221,6 +221,8 @@ class Limits:
     recall_preview_chars: int = 120
 
     review_diff_tokens: int = 24_000
+    cron_tick_s: float = 30.0
+    cron_id_chars: int = 40
     spec_slug_chars: int = 60
     spec_collisions: int = 1000
     verify_timeout_s: int = 120

@@ -8,6 +8,7 @@ import secrets
 import sys
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import checks, plugins, repomap, review, spec, update
+from superclaw import checks, cron, plugins, repomap, review, spec, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -128,6 +129,43 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     else:
         print(res.final_answer)
     return exit_code
+
+
+def cmd_cron(rt: Runtime, args: argparse.Namespace) -> int:
+    store = cron.CronStore(rt.gs)
+    try:
+        if args.cron_command == "add":
+            job = store.add(args.id, args.schedule, args.prompt if args.prompt != "-" else sys.stdin.read(), args.model)
+            print(f"added {job.id}: {job.expr!r}, next run {_when(job.next_run_ms)}")
+            return cron.fire(rt, store, job) if args.run_now else 0
+        if args.cron_command in ("pause", "resume"):
+            job = store.set_status(args.id, "paused" if args.cron_command == "pause" else "active")
+            print(f"{job.id} is {job.status}; next run {_when(job.next_run_ms)}")
+            return 0
+        if args.cron_command == "rm":
+            store.remove(args.id)
+            print(f"removed {args.id}")
+            return 0
+        if args.cron_command == "run":
+            def emit(event: dict[str, Any]) -> None:
+                if event["type"].startswith("cron_") or event["type"] == "error":
+                    print(f"superclaw: {event['type']} {event.get('job', '')} {event.get('reason') or event.get('message') or event.get('expr', '')}".rstrip(), file=sys.stderr)
+            fired = cron.run(rt, store, tuple(args.ids), once=args.once, catch_up=args.catch_up, emit=emit)
+            print(f"superclaw: fired {fired} job(s)", file=sys.stderr)
+            return 0
+    except cron.CronError as e:
+        sys.exit(f"superclaw: {e}")
+    jobs = store.list()
+    for job in jobs:
+        print(f"{job.id:<{_NAME_WIDTH}} {job.status:<8} {job.expr:<16} next {_when(job.next_run_ms)}  fired {job.fire_count}  {clip(job.prompt, LIMITS.preview_args_chars)}")
+    if not jobs:
+        print("no cron jobs; add one with `superclaw cron add <id> <cron-expr> --prompt \"...\"`", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _when(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ms else "never"
 
 
 def draft_spec(rt: Runtime, prompt: str, sid: str, emit: Callable[[dict[str, Any]], None]) -> Result:
@@ -356,6 +394,22 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
                     help="JSON Schema the final answer must match; a mismatch exits 2")
     ex.add_argument("--spec", action="store_true",
                     help="draft an implementation spec read-only, save it under .superclaw/specs and stop for review (exit 3); approve with `superclaw spec approve`")
+    cr = sub.add_parser("cron", help="schedule prompts: add, list, pause, resume, rm, and run the scheduler in the foreground")
+    cr_sub = cr.add_subparsers(dest="cron_command")
+    cr_add = cr_sub.add_parser("add", help="add a job")
+    cr_add.add_argument("id")
+    cr_add.add_argument("schedule", help='five-field cron expression, or @hourly, @daily, @weekly, @monthly')
+    cr_add.add_argument("--prompt", required=True, help="the prompt to run, or - for stdin")
+    cr_add.add_argument("--model", default="", help="model for this job (default: the session model)")
+    cr_add.add_argument("--run-now", action="store_true", help="fire it once immediately after adding")
+    cr_sub.add_parser("list", help="jobs with status, schedule and next run")
+    cr_sub.add_parser("pause", help="stop a job from firing").add_argument("id")
+    cr_sub.add_parser("resume", help="let a paused job fire again").add_argument("id")
+    cr_sub.add_parser("rm", help="delete a job").add_argument("id")
+    cr_run = cr_sub.add_parser("run", help="run due jobs; without --once, keep running in the foreground")
+    cr_run.add_argument("ids", nargs="*", help="only these jobs")
+    cr_run.add_argument("--once", action="store_true", help="fire every currently due job once and exit")
+    cr_run.add_argument("--catch-up", action="store_true", help="fire jobs that became due while no scheduler was running, instead of skipping to their next slot")
     sp = sub.add_parser("spec", help="list, show or approve saved implementation specs")
     sp_sub = sp.add_subparsers(dest="spec_command")
     sp_sub.add_parser("list", help="specs under .superclaw/specs")
@@ -528,7 +582,8 @@ def main(argv: list[str] | None = None) -> int:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
                            require_provider=args.command not in (None, *STORELESS) and not (args.command == "verify" and args.attempts <= 1)
-                           and not (args.command == "spec" and args.spec_command != "approve"),
+                           and not (args.command == "spec" and args.spec_command != "approve")
+                           and not (args.command == "cron" and args.cron_command not in ("run", "add")),
                            open_store=args.command not in STORELESS and not (args.command == "verify" and args.attempts <= 1)
                            and not (args.command == "spec" and args.spec_command != "approve"),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
@@ -537,7 +592,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+    handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "cron": cmd_cron, "review": cmd_review,
+               "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
