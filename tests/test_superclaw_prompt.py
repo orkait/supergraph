@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from superclaw.agents import load_agents
+from superclaw.agents import resolve as resolve_agent
 from superclaw.policy import Mode
 from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, project_guidelines, skills_block
 from superclaw.runtime import approx_tokens
@@ -32,3 +36,15 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path):
     userfile.write_text("PERSONAL")
     prompt = build_system_prompt(PromptInputs(cwd=root, mode=Mode.PLAN, memory="- user prefers tabs", model="m", provider="p", skills=skills, user_guidelines=userfile))
     assert "Plan mode is active" in prompt and "user prefers tabs" in prompt and "Git branch: main" in prompt and prompt.index("PERSONAL") < prompt.index("xxxx")
+    profiles = tmp_path / "agents"
+    profiles.mkdir()
+    (profiles / "reviewer.md").write_text("---\nname: reviewer\ndescription: Reviews diffs.\ntools: read_file, grep\nmodel: p/m\n---\nOnly review.")
+    (profiles / "notes.txt").write_text("ignored")
+    loaded = load_agents([profiles, tmp_path / "missing"])
+    assert [a.name for a in loaded] == ["reviewer"] and loaded[0].tools == frozenset({"read_file", "grep"}) and loaded[0].model == "p/m"
+    assert resolve_agent("reviewer", [profiles]).prompt == "Only review."
+    with pytest.raises(KeyError):
+        resolve_agent("nope", [profiles])
+    with_agent = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", agent=loaded[0].prompt))
+    assert "<agent>" in with_agent and "Only review." in with_agent and "never widens" in with_agent
+    assert "<agent>" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p"))

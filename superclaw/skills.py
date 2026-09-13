@@ -14,7 +14,7 @@ class Skill:
     path: str
 
 
-def _frontmatter(text: str) -> tuple[dict[str, str], str]:
+def frontmatter(text: str) -> tuple[dict[str, str], str]:
     text = text.replace("\r\n", "\n")
     if not text.startswith("---\n"):
         return {}, text
@@ -45,7 +45,7 @@ def _load_root(root: Path) -> list[Skill]:
             continue
         if real_root not in real.parents or not real.is_file():
             continue
-        fields, body = _frontmatter(real.read_text(errors="replace"))
+        fields, body = frontmatter(real.read_text(errors="replace"))
         out.append(Skill(
             name=fields.get("name") or entry.name,
             description=fields.get("description", ""),

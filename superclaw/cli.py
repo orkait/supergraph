@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once
+from superclaw.agents import load_agents
+from superclaw.agents import resolve as resolve_agent
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
@@ -118,6 +120,18 @@ def cmd_usage(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agents(rt: Runtime, args: argparse.Namespace) -> int:
+    found = load_agents(rt.settings.agent_roots(rt.workspace))
+    for agent in found:
+        tools = " ".join(sorted(agent.tools)) or "all tools"
+        print(f"{agent.name:<{_NAME_WIDTH}} {agent.description}")
+        print(f"{'':<{_NAME_WIDTH}} {agent.model or 'default model'}  {tools}  ({agent.path})")
+    if not found:
+        print(f"no agent profiles; add <name>.md to {rt.settings.agent_roots()[0]}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
     for s in load_skills(rt.settings.skill_roots(rt.workspace)):
         print(f"{s.name}: {s.description}")
@@ -151,7 +165,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
-    parser.add_argument("--model", default=defaults.model)
+    parser.add_argument("--model", default="", help=f"model for this session (default: {defaults.model})")
+    parser.add_argument("--agent", default="", metavar="NAME",
+                        help="agent profile from <config>/agents or <workspace>/.superclaw/agents; `agents` lists them")
     parser.add_argument("--fallback-model", default="", metavar="MODELS",
                         help="comma or space separated models to try, in order, when the main model fails")
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
@@ -179,6 +195,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose")
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
+    sub.add_parser("agents", help="list the agent profiles that --agent can select")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
     setup = sub.add_parser("setup", help="store a provider key and default model")
@@ -225,7 +242,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None and not sys.stdin.isatty():
         sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
     mode = Mode.UNSAFE.value if args.dangerously_skip_permissions else args.mode
-    settings = replace(defaults, model=args.model, mode=mode, context_window=args.context_window,
+    agent = None
+    if args.agent:
+        try:
+            agent = resolve_agent(args.agent, defaults.agent_roots(workspace))
+        except KeyError as e:
+            sys.exit(f"superclaw: {e.args[0]}")
+    settings = replace(defaults, model=args.model or (agent.model if agent else "") or defaults.model,
+                       mode=mode, context_window=args.context_window,
                        fallback_models=split_models(args.fallback_model) or defaults.fallback_models,
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     if args.command == "setup":
@@ -242,12 +266,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
-                           require_provider=args.command not in (None, "doctor", "mcp"),
+                           require_provider=args.command not in (None, "doctor", "mcp", "agents"),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
-                           mcp_config=mcp_paths(settings, workspace, args.trust_workspace))
+                           mcp_config=mcp_paths(settings, workspace, args.trust_workspace), agent=agent)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills,
+    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)

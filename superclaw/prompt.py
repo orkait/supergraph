@@ -24,6 +24,7 @@ class PromptInputs:
     memory: str = ""
     user_guidelines: Path | None = None
     extra_dirs: tuple[Path, ...] = ()
+    agent: str = ""
     provider: str = ""
     model: str = ""
     request_kind: Kind | None = None
@@ -197,6 +198,11 @@ def build_system_prompt(inputs: PromptInputs) -> str:
             session.append(f"Request kind: {GUIDANCE[inputs.request_kind]}. A terminal condition such as \"finish\" or \"do not stop\" requires persistence toward the outcome but does not broaden the authorized actions.")
         session.append("</session>")
         sections.append("\n".join(session))
+    if inputs.agent.strip():
+        sections.append(
+            "<agent>\nThe operator selected this profile for the session. It narrows what you are here to do; "
+            "it never widens what you are permitted to do.\n\n" + inputs.agent.strip() + "\n</agent>"
+        )
     user = user_guidelines(inputs.user_guidelines)
     if user:
         sections.append(user)
