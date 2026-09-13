@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
+from superclaw.agents import Agent
 from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, cut_point, prune_tool_results
 from superclaw.delegate import SPAWN_KEY
 from superclaw.hooks import Dispatcher
@@ -27,6 +28,7 @@ from superclaw.guards import (
 from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
+from superclaw.prompt import agent_block
 from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS
@@ -66,6 +68,7 @@ class Options:
     on_event: Callable[[dict[str, Any]], None] | None = None
     on_permission: Callable[[dict[str, Any]], str] | None = None
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
+    agents: dict[str, Agent] = field(default_factory=dict)
     session: SessionStore | None = None
     session_id: str = ""
     summarize: Callable[[str], str] | None = None
@@ -295,6 +298,18 @@ class _Run:
                 return self.nudge(text, verdict.reason, continue_nudge(f"verifier: {verdict.reason}. Next: {verdict.next_action}"))
         return self.result(text)
 
+    def child_policy(self, agent: Agent) -> Policy:
+        parent = self.o.policy
+        tools = (parent.allow_tools & agent.tools) if parent.allow_tools else agent.tools
+        policy = Policy(parent.workspace, parent.mode, sandboxed=parent.sandboxed, allow_tools=tools,
+                        deny_tools=parent.deny_tools, extra_dirs=parent.extra_dirs)
+        policy.request_kind = parent.request_kind
+        for name in parent.session_grants:
+            policy.grant_session(name)
+        for prefix in parent.prefix_grants:
+            policy.grant_prefix(prefix)
+        return policy
+
     def spawn(self, args: dict[str, Any]) -> ToolResult:
         o = self.o
         if o.depth >= LIMITS.delegate_depth:
@@ -302,14 +317,22 @@ class _Run:
         task = str(args.get("task") or "").strip()
         if not task:
             return ToolResult.error("Error: task must not be empty")
+        wanted = str(args.get("agent") or "").strip()
+        agent = o.agents.get(wanted) if wanted else None
+        if wanted and agent is None:
+            return ToolResult.error(f"Error: unknown agent {wanted!r}; available: {', '.join(sorted(o.agents)) or 'none'}")
+        profile: dict[str, Any] = {} if agent is None else {
+            "system_prompt": f"{o.system_prompt}\n\n{agent_block(agent.prompt)}",
+            "policy": self.child_policy(agent),
+        }
         sid = o.session.create(cwd=str(o.workspace), model="", title=task, parent=o.session_id) if o.session else ""
         child_options = replace(
-            o, history=[], session_id=sid, depth=o.depth + 1, on_ask_user=None, verify=False, require_completion_signal=True,
+            o, **profile, history=[], session_id=sid, depth=o.depth + 1, on_ask_user=None, verify=False, require_completion_signal=True,
             max_turns=min(int(args.get("max_turns") or LIMITS.delegate_max_turns), LIMITS.delegate_max_turns),
             token_budget=max(int(args.get("budget_tokens") or LIMITS.delegate_budget_tokens), LIMITS.delegate_min_budget_tokens),
             on_event=(lambda event: o.on_event({**event, "child": sid})) if o.on_event else None,
         )
-        self.emit({"type": "delegate", "child": sid, "task": task, "depth": o.depth + 1})
+        self.emit({"type": "delegate", "child": sid, "task": task, "depth": o.depth + 1, "agent": wanted})
         child = _Run(self.provider, child_options)
         res = child.run(self.handoff(task, args))
         self.tokens_used += child.tokens_used
@@ -319,7 +342,8 @@ class _Run:
         self.changed.update(child.changed)
         status = f"incomplete ({res.incomplete_reason})" if res.incomplete else "done"
         answer = clip(res.final_answer, LIMITS.delegate_answer_tokens * LIMITS.chars_per_token)
-        head = f"[delegate {sid or 'child'}] {status}, {res.turns} turns, {child.tokens_used:,} tokens, ${child.cost_usd:.4f}"
+        label = f"{sid or 'child'} as {wanted}" if wanted else (sid or "child")
+        head = f"[delegate {label}] {status}, {res.turns} turns, {child.tokens_used:,} tokens, ${child.cost_usd:.4f}"
         if child.changed:
             head += "\nchanged: " + ", ".join(sorted(child.changed))
         if child.refs:

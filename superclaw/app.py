@@ -9,7 +9,7 @@ from typing import Any
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
-from superclaw.agents import Agent
+from superclaw.agents import Agent, load_agents
 from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
@@ -244,6 +244,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         system_prompt=system_prompt, history=rt.store.replay(sid),
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
         context_window=rt.context_window, model_info=rt.model_info,
+        agents={a.name: a for a in load_agents(rt.settings.agent_roots(rt.workspace))},
         require_completion_signal=require_completion, verify=verify,
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
         session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled,

@@ -7,7 +7,9 @@ import pytest
 
 from supergraph import SuperGraph
 
+from superclaw.agents import Agent
 from superclaw.app import build_registry
+from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
 from superclaw.loop import Options, run
@@ -84,7 +86,7 @@ def gs():
 
 def options(ws, mode="auto", store=None, **kw):
     reg = Registry(observations=store)
-    for t in (*core_file_tools(), UpdatePlan(), Bash(), *([Recall(store)] if store else [])):
+    for t in (*core_file_tools(), UpdatePlan(), Bash(), Delegate(), *([Recall(store)] if store else [])):
         reg.register(t)
     return Options(registry=reg, policy=Policy(ws, Mode(mode), sandboxed=True), workspace=ws, system_prompt="SYS", **kw)
 
@@ -145,6 +147,18 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     info = ModelInfo("m", 100_000, 4096, input_per_token=0.001, output_per_token=0.002)
     res = run("go", Scripted(*[turn] * 4), options(ws, budget_usd=2.0, model_info=info, context_window=100_000, on_event=events.append))
     assert next(e for e in events if e["type"] == "usage")["cost_usd"] == 1.2 and res.stop_reason == "budget" and "$2.00" in res.final_answer
+    reviewer = Agent(name="reviewer", description="Reviews.", prompt="Only review.", tools=frozenset({"read_file"}))
+    events = []
+    provider = Scripted(Completion(tool_calls=[call("delegate", task="look at a.txt", agent="reviewer")]),
+                        read("k1", "a.txt"), Completion(text="child done"), Completion(text="parent done"))
+    res = run("go", provider, options(ws, agents={"reviewer": reviewer}, on_event=events.append))
+    child_prompt, child_tools = provider.requests[1]
+    assert "Only review." in child_prompt[0].content and child_tools == ["read_file"] and "delegate" not in child_tools
+    assert next(e for e in events if e["type"] == "delegate")["agent"] == "reviewer"
+    assert "as reviewer] done" in next(m.content for m in res.messages if m.role == "tool") and res.final_answer == "parent done"
+    bad = Scripted(Completion(tool_calls=[call("delegate", task="x", agent="ghost")]), Completion(text="fine"))
+    run("go", bad, options(ws, agents={"reviewer": reviewer}))
+    assert "unknown agent 'ghost'" in bad.requests[1][0][-1].content
 
 
 def test_intent_hooks_and_deferral(ws, gs):
