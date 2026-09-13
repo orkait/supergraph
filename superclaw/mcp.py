@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from superclaw import __version__
 from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
@@ -32,9 +34,15 @@ class MCPError(RuntimeError):
 @dataclass(frozen=True)
 class Server:
     name: str
-    command: str
+    command: str = ""
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def transport(self) -> str:
+        return "http" if self.url else "stdio"
 
 
 @dataclass
@@ -73,23 +81,41 @@ def load_config(paths: list[Path]) -> Config:
         for name, raw in sorted(_servers_of(data).items()):
             if not isinstance(raw, dict) or raw.get("disabled"):
                 continue
-            if raw.get("url"):
-                config.problems.append(f"{name}: only the stdio transport is supported; drop `url` or run the server locally")
-                continue
-            command = str(raw.get("command") or "").strip()
-            if not command:
-                config.problems.append(f"{name}: missing `command`")
+            problem = _validate(name, raw)
+            if problem:
+                config.problems.append(problem)
                 continue
             if name in seen:
                 config.problems.append(f"{name}: already defined in an earlier config file; the first one wins")
                 continue
             seen.add(name)
             config.servers.append(Server(
-                name=name, command=command,
+                name=name, command=str(raw.get("command") or "").strip(),
                 args=[str(a) for a in raw.get("args") or []],
                 env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
+                url=str(raw.get("url") or "").strip(),
+                headers={str(k): str(v) for k, v in (raw.get("headers") or {}).items()},
             ))
     return config
+
+
+def _validate(name: str, raw: dict[str, Any]) -> str:
+    kind = str(raw.get("type") or "").strip().lower() or ("http" if raw.get("url") else "stdio")
+    if kind == "sse":
+        return f"{name}: the legacy SSE transport is not supported; use a streamable HTTP `url`"
+    if kind not in ("stdio", "http"):
+        return f"{name}: unknown transport {kind!r}"
+    if kind == "stdio":
+        if not str(raw.get("command") or "").strip():
+            return f"{name}: missing `command`"
+        if raw.get("url") or raw.get("headers"):
+            return f"{name}: `url` and `headers` belong to the http transport"
+        return ""
+    if not str(raw.get("url") or "").strip():
+        return f"{name}: missing `url`"
+    if raw.get("command") or raw.get("args") or raw.get("env"):
+        return f"{name}: `command`, `args` and `env` belong to the stdio transport"
+    return ""
 
 
 class Client:
@@ -191,6 +217,85 @@ class Client:
             proc.wait()
 
 
+def _sse_messages(body: str) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    for event in body.replace("\r\n", "\n").split("\n\n"):
+        data = "\n".join(line[len("data:"):].strip() for line in event.split("\n") if line.startswith("data:"))
+        if not data:
+            continue
+        try:
+            message = json.loads(data)
+        except ValueError:
+            continue
+        if isinstance(message, dict):
+            found.append(message)
+    return found
+
+
+class HttpClient:
+    def __init__(self, server: Server) -> None:
+        self.server = server
+        self._http: httpx.Client | None = None
+        self._lock = threading.Lock()
+        self._next_id = 0
+        self._session_id = ""
+
+    def start(self) -> None:
+        self._http = httpx.Client(headers={**self.server.headers, "Content-Type": "application/json",
+                                           "Accept": "application/json, text/event-stream"})
+
+    def _post(self, message: dict[str, Any], timeout_s: float) -> httpx.Response:
+        if self._http is None:
+            raise MCPError("client is closed")
+        headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
+        try:
+            response = self._http.post(self.server.url, content=json.dumps(message).encode(), headers=headers, timeout=timeout_s)
+        except httpx.HTTPError as e:
+            raise MCPError(f"{type(e).__name__}: {e}") from e
+        if session_id := response.headers.get("mcp-session-id", "").strip():
+            self._session_id = session_id
+        if response.status_code < 200 or response.status_code >= 300:
+            raise MCPError(f"HTTP {response.status_code} from {self.server.url}: {response.text[:LIMITS.preview_error_chars]}")
+        return response
+
+    def request(self, method: str, params: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+        with self._lock:
+            self._next_id += 1
+            message_id = self._next_id
+        response = self._post({"jsonrpc": "2.0", "id": message_id, "method": method, "params": params}, timeout_s)
+        content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
+        candidates = _sse_messages(response.text) if content_type == "text/event-stream" else [response.json()]
+        reply = next((m for m in candidates if isinstance(m, dict) and m.get("id") == message_id), None)
+        if reply is None:
+            raise MCPError(f"no response to {method} in the {content_type or 'empty'} body")
+        if reply.get("error"):
+            raise MCPError(str(reply["error"].get("message") or reply["error"]))
+        return reply.get("result") or {}
+
+    def notify(self, method: str, params: dict[str, Any], timeout_s: float = LIMITS.mcp_connect_timeout_s) -> None:
+        self._post({"jsonrpc": "2.0", "method": method, "params": params}, timeout_s)
+
+    def handshake(self, timeout_s: float) -> None:
+        self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": CLIENT_NAME, "version": __version__},
+        }, timeout_s)
+        self.notify("notifications/initialized", {}, timeout_s)
+
+    def list_tools(self, timeout_s: float) -> list[dict[str, Any]]:
+        found = self.request("tools/list", {}, timeout_s).get("tools")
+        return [t for t in found or [] if isinstance(t, dict) and str(t.get("name") or "").strip()]
+
+    def call(self, name: str, arguments: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+        return self.request("tools/call", {"name": name, "arguments": arguments}, timeout_s)
+
+    def close(self) -> None:
+        http, self._http = self._http, None
+        if http is not None:
+            http.close()
+
+
 def text_content(blocks: Any) -> tuple[str, int]:
     texts, dropped = [], 0
     for block in blocks or []:
@@ -204,7 +309,7 @@ def text_content(blocks: Any) -> tuple[str, int]:
 class RemoteTool(Tool):
     deferred = True
 
-    def __init__(self, client: Client, remote: dict[str, Any]) -> None:
+    def __init__(self, client: Client | HttpClient, remote: dict[str, Any]) -> None:
         self._client = client
         self._remote = str(remote["name"]).strip()
         self.server = client.server.name
@@ -213,7 +318,7 @@ class RemoteTool(Tool):
         schema = remote.get("inputSchema")
         self.parameters = schema if isinstance(schema, dict) and schema.get("type") == "object" else EMPTY_SCHEMA
         self.safety = Safety(SideEffect.NETWORK, Permission.PROMPT,
-                             f"Runs {self._remote} on the {self.server} MCP server.")
+                             f"Runs {self._remote} on the {self.server} MCP server over {client.server.transport}.")
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         try:
@@ -235,7 +340,7 @@ class Skipped:
 
 @dataclass
 class Bridge:
-    clients: list[Client] = field(default_factory=list)
+    clients: list[Client | HttpClient] = field(default_factory=list)
     tools: list[RemoteTool] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
@@ -246,8 +351,8 @@ class Bridge:
         self.clients.clear()
 
 
-def _connect(server: Server, timeout_s: float) -> tuple[Client, list[dict[str, Any]]]:
-    client = Client(server)
+def _connect(server: Server, timeout_s: float) -> tuple[Client | HttpClient, list[dict[str, Any]]]:
+    client: Client | HttpClient = HttpClient(server) if server.url else Client(server)
     client.start()
     try:
         client.handshake(timeout_s)
