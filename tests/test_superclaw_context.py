@@ -9,7 +9,7 @@ from superclaw.compaction import PRUNE_MARKER, SUMMARY_LABEL, compact, cut_point
 from superclaw.meter import ContextMeter
 from superclaw.models import ModelInfo, lookup
 from superclaw.provider import LitellmProvider, hint, parse_response
-from superclaw.runtime import Message, ToolCall, Usage, approx_tokens
+from superclaw.runtime import Message, ToolCall, Usage, approx_tokens, message_tokens, to_wire
 from superclaw.settings import LIMITS, PROVIDERS, Settings, read_opencode_key
 from supergraph.ingest.llm.resolve import build_provider_chain, resolve_model
 
@@ -125,6 +125,10 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
 
 
 def test_meter_cut_prune_and_compaction():
+    shot = Message(role="user", content="look", images=["data:image/png;base64,AAA"])
+    assert to_wire([shot])[0]["content"] == [{"type": "text", "text": "look"},
+                                             {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}]
+    assert message_tokens(shot) == approx_tokens("look") + LIMITS.message_overhead_tokens + LIMITS.image_tokens
     meter = ContextMeter(window=1000, reserve=100)
     meter.observe(Usage(input_tokens=880, output_tokens=10))
     meter.append(user("x" * 80))

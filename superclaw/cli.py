@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once
+from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
@@ -47,6 +48,11 @@ def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
 def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     sid = resolve_session(rt, args.resume, args.fork)
     prompt = args.prompt if args.prompt != "-" else sys.stdin.read()
+    attached = read_attachments(args.file, (rt.workspace, *rt.extra_dirs))
+    for problem in attached.problems:
+        print(f"superclaw: attachment {problem}", file=sys.stderr)
+    if attached.text:
+        prompt = f"{prompt}\n\n{attached.text}"
     run_id = f"run_{secrets.token_hex(LIMITS.run_id_bytes)}"
     stream = args.output_format == "stream-json"
 
@@ -58,7 +64,8 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
             print(line, file=sys.stderr)
 
     emit({"type": "run_start", "sessionId": sid, "cwd": str(rt.workspace), "model": rt.model, "mode": rt.mode.value})
-    res = run_once(rt, prompt, sid, Callbacks(on_event=emit), require_completion=args.require_completion or args.verify, verify=args.verify)
+    res = run_once(rt, prompt, sid, Callbacks(on_event=emit), require_completion=args.require_completion or args.verify,
+                   verify=args.verify, images=attached.images)
     status = "incomplete" if res.incomplete else "success"
     exit_code = 2 if res.incomplete else 0
     if stream:
@@ -161,6 +168,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     ex = sub.add_parser("exec", help="run one prompt headless and exit")
     ex.add_argument("prompt", help="the prompt, or - to read stdin")
+    ex.add_argument("-f", "--file", action="append", default=[], metavar="PATH",
+                    help="attach a workspace file to the prompt; an image is sent as an image (repeatable)")
     ex.add_argument("--output-format", choices=["text", "json", "stream-json"], default="text")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")

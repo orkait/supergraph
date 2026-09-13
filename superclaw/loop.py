@@ -51,6 +51,7 @@ class Options:
     policy: Policy
     workspace: Path
     extra_dirs: tuple[Path, ...] = ()
+    images: list[str] = field(default_factory=list)
     system_prompt: str = ""
     history: list[Message] = field(default_factory=list)
     max_turns: int = LIMITS.max_turns
@@ -125,10 +126,13 @@ class _Run:
         if message.role == "tool":
             seq = self.persist("tool_result", {"tool_call_id": message.tool_call_id, "output": message.content, "ok": not message.is_error})
         else:
-            seq = self.persist("message", {
+            payload: dict[str, Any] = {
                 "role": message.role, "content": message.content,
                 "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.arguments} for c in message.tool_calls],
-            })
+            }
+            if message.images:
+                payload["images"] = len(message.images)
+            seq = self.persist("message", payload)
         self.seqs.append(seq)
 
     def complete(self, exposed: list[dict[str, Any]]) -> Completion:
@@ -428,7 +432,7 @@ class _Run:
         self.messages = [Message(role="system", content=o.system_prompt), *o.history]
         self.seqs = [0] * len(self.messages)
         self.persist("prompt", {"hash": prompt_hash(o.system_prompt), "tokens": approx_tokens(o.system_prompt), "text": o.system_prompt})
-        self.append(Message(role="user", content=prompt))
+        self.append(Message(role="user", content=prompt, images=list(o.images)))
         if o.hooks:
             for line in o.hooks.dispatch("sessionStart", {"session": o.session_id, "prompt": prompt}).context:
                 self.append(Message(role="user", content=f"[hook] {line}"))

@@ -22,6 +22,7 @@ class Message:
     tool_calls: list[ToolCall] = field(default_factory=list)
     tool_call_id: str = ""
     is_error: bool = False
+    images: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -61,6 +62,11 @@ def to_wire(messages: list[Message]) -> list[dict[str, Any]]:
                     for c in m.tool_calls
                 ],
             })
+        elif m.images:
+            blocks: list[dict[str, Any]] = [{"type": "image_url", "image_url": {"url": url}} for url in m.images]
+            if m.content:
+                blocks.insert(0, {"type": "text", "text": m.content})
+            wire.append({"role": m.role, "content": blocks})
         else:
             wire.append({"role": m.role, "content": m.content})
     return wire
@@ -94,7 +100,8 @@ def approx_tokens(text: str) -> int:
 
 def message_tokens(m: Message) -> int:
     overhead = LIMITS.message_overhead_tokens
-    return approx_tokens(m.content) + overhead + sum(approx_tokens(c.name) + approx_tokens(c.arguments) + overhead for c in m.tool_calls)
+    images = len(m.images) * LIMITS.image_tokens
+    return approx_tokens(m.content) + overhead + images + sum(approx_tokens(c.name) + approx_tokens(c.arguments) + overhead for c in m.tool_calls)
 
 
 def estimate_tokens(messages: list[Message], tools: list[dict[str, Any]]) -> int:
