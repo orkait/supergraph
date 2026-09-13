@@ -12,8 +12,10 @@ from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
+from superclaw.settings import Settings
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.cards import ToolCard
+from superclaw.tui.setup import SetupScreen
 
 
 class Scripted:
@@ -29,7 +31,8 @@ def rt(tmp_path):
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     memory = Memory(gs)
     rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), tmp_path),
-                 policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model")
+                 policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model",
+                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg")}))
     yield rt
     gs.close()
 
@@ -42,12 +45,24 @@ async def _wait_for(pilot, predicate, timeout=5.0):
     raise AssertionError("condition not met in time")
 
 
-def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path):
+def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
+    setup_app = SuperclawApp(rt, sid)
+
+    async def connect():
+        async with setup_app.run_test(size=(100, 34)) as pilot:
+            await _wait_for(pilot, lambda: isinstance(setup_app.screen, SetupScreen))
+            await pilot.press(*"sk-or-v1-test", "enter")
+            await _wait_for(pilot, lambda: not isinstance(setup_app.screen, SetupScreen))
+            assert rt.provider is not None and "OPENROUTER_API_KEY=sk-or-v1-test" in rt.settings.credentials.read_text()
+            assert oct(rt.settings.credentials.stat().st_mode)[-3:] == "600"
+
+    asyncio.run(connect())
     rt.provider = Scripted(
         Completion(tool_calls=[ToolCall("c1", "write_file", json.dumps({"path": "out.txt", "content": "hi"}))]),
         Completion(text="wrote **out.txt**"),
     )
-    sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     app = SuperclawApp(rt, sid)
 
     async def drive():

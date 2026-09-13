@@ -11,9 +11,8 @@ from superclaw.tui.theme import ACCENT, MUTED
 
 WORDMARK = "superclaw"
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-SEPARATOR = "  │  "
-GAUGE_FULL = "▰"
-GAUGE_EMPTY = "▱"
+_THOUSAND = 1000
+_MILLION = 1_000_000
 
 
 @dataclass
@@ -57,27 +56,27 @@ class RunStats:
         return self.used / self.window if self.window else 0.0
 
 
-def gauge(fill: float) -> str:
-    full = min(LIMITS.gauge_cells, round(fill * LIMITS.gauge_cells))
-    return GAUGE_FULL * full + GAUGE_EMPTY * (LIMITS.gauge_cells - full)
-
-
 def tier(width: int) -> int:
     return sum(width >= bound for bound in (LIMITS.tui_tier_narrow, LIMITS.tui_tier_medium, LIMITS.tui_tier_full))
 
 
 class TitleBar(Static):
-    def show(self, cwd: str, branch: str, model: str, session: str, width: int) -> None:
+    def show(self, cwd: str, branch: str, session: str, width: int) -> None:
         level = tier(width)
-        left = Text(WORDMARK, style=ACCENT)
-        left.append(f"  {cwd}", style=MUTED)
+        left = Text(cwd, style=MUTED)
         if branch and level >= 1:
             left.append(f" · {branch}", style=MUTED)
-        right = Text(model if level >= 2 else "", style=MUTED)
-        if level >= 3:
-            right.append(f" · {session}", style=MUTED)
+        right = Text(session if level >= 3 else "", style=MUTED)
         gap = max(1, width - len(left) - len(right) - 2)
         self.update(left + Text(" " * gap) + right)
+
+
+def compact(tokens: int) -> str:
+    if tokens >= _MILLION:
+        return f"{tokens / _MILLION:.1f}M"
+    if tokens >= _THOUSAND:
+        return f"{tokens / _THOUSAND:.1f}K"
+    return str(tokens)
 
 
 class StatusBar(Static):
@@ -85,12 +84,12 @@ class StatusBar(Static):
         level = tier(width)
         text = Text("● ", style=ACCENT)
         text.append(mode)
-        if level >= 1:
-            text.append(SEPARATOR + gauge(stats.fill) + f" {stats.fill:.1%} of {stats.window:,}" if stats.window else SEPARATOR + f"{stats.tokens:,} tokens", style=MUTED)
-        if level >= 2:
-            text.append(SEPARATOR + f"${stats.cost:.4f}", style=MUTED)
+        if level >= 1 and stats.window:
+            text.append(f"    ◔ {compact(stats.used)}/{compact(stats.window)} · {stats.fill:.1%}", style=MUTED)
+        if level >= 2 and stats.cost:
+            text.append(f"    ${stats.cost:.4f}", style=MUTED)
         if level >= 2 and (stats.saved or stats.kept_out):
-            text.append(SEPARATOR + f"kept out {stats.saved + stats.kept_out:,}", style=MUTED)
+            text.append(f"    kept out {compact(stats.saved + stats.kept_out)}", style=MUTED)
         self.update(text)
 
 

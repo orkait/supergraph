@@ -17,7 +17,7 @@ superclaw is the harness half of supergraph: a terminal coding agent (TUI and he
 
 ```bash
 pip install 'supergraphdb[superclaw]'
-export OPENROUTER_API_KEY=...        # or any provider key listed below
+superclaw setup                      # stores a provider key in ~/.config/superclaw/credentials.env (or set OPENROUTER_API_KEY)
 cd your-project
 superclaw                            # TUI, mode=ask
 superclaw --mode auto exec "test_calc.py fails; find the bug, fix it, run pytest -q"
@@ -77,6 +77,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 
 | Setting | Env / flag | Default |
 |---|---|---|
+| Provider key | `superclaw setup [--provider openrouter\|groq\|cerebras\|ollama\|aistudio\|nvidia_nim]`, `/setup` in the TUI, or the provider's env var | saved to `~/.config/superclaw/credentials.env` (mode 600) together with `SUPERCLAW_MODEL`; the environment overrides the file. The TUI opens without a key and shows the setup screen; `exec` refuses to run without one |
 | Store path | `SUPERCLAW_DB_PATH`, `--db` | `~/.local/share/superclaw/brain` |
 | Model | `SUPERCLAW_MODEL`, `--model` | `openrouter/deepseek/deepseek-v4-flash` |
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
@@ -100,7 +101,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 <details>
 <summary>TUI commands</summary>
 
-`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
+`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). Without a key it opens anyway and shows the provider setup screen. The glyphs it uses (`❯ ◔ ✓ ✗ § ╭╮`) need a code font with box drawing and symbols; Fira Code, JetBrains Mono or any Nerd Font in your terminal's settings is enough. The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
 
 | Surface | What it shows |
 |---|---|
@@ -115,6 +116,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
 | `/context [prompt]` | what the next request costs, by category |
 | `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |
+| `/setup` | connect a provider key and model without leaving the TUI |
 | `/clear`, `/help`, `/quit` | housekeeping |
 
 Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`), `ctrl+c` quits. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix) or `d` (deny).
