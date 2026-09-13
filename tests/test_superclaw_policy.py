@@ -1,6 +1,6 @@
 import pytest
 
-from superclaw.cli import build_parser
+from superclaw.cli import _tool_set, build_parser
 from superclaw.policy import Action, Mode, Policy, classify_command, next_mode, validate_prefix
 from superclaw.settings import Settings
 from superclaw.tools import Permission, Registry, Safety, SideEffect, Tool
@@ -48,6 +48,11 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     assert p.evaluate(reg.get("bash"), {"command": "ls"}).action == Action.ALLOW and p.evaluate(reg.get("bash"), {"command": "rm -rf x"}).action == Action.PROMPT
     assert p.evaluate(reg.get("bash"), {"command": "git pull origin main"}).action == Action.ALLOW and p.evaluate(reg.get("bash"), {"command": "git push"}).action == Action.PROMPT
     assert [d["function"]["name"] for d in reg.definitions(Policy(tmp_path, Mode.PLAN).visible)] == ["glob", "grep", "list_directory", "read_file"]
+    allow = Policy(tmp_path, Mode.AUTO, allow_tools=frozenset({"read_file", "grep"}))
+    assert {d["function"]["name"] for d in reg.definitions(allow.visible)} == {"read_file", "grep"}
+    names = {d["function"]["name"] for d in reg.definitions(Policy(tmp_path, Mode.AUTO, deny_tools=frozenset({"bash", "web_fetch"})).visible)}
+    assert "bash" not in names and "web_fetch" not in names and "read_file" in names
+    assert _tool_set("read_file, grep bash") == frozenset({"read_file", "grep", "bash"}) and _tool_set("") == frozenset()
     assert [next_mode(m) for m in (Mode.ASK, Mode.AUTO, Mode.PLAN, Mode.UNSAFE)] == [Mode.AUTO, Mode.PLAN, Mode.ASK, Mode.ASK]
     parsed = build_parser(Settings.from_env({})).parse_args(["--dangerously-skip-permissions", "exec", "x"])
     assert parsed.dangerously_skip_permissions and (Mode.UNSAFE.value if parsed.dangerously_skip_permissions else parsed.mode) == "unsafe"

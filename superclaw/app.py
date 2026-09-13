@@ -128,6 +128,8 @@ def build_runtime(
     intent_gate: bool = False,
     hooks: Dispatcher | None = None,
     require_provider: bool = True,
+    allow_tools: frozenset[str] = frozenset(),
+    deny_tools: frozenset[str] = frozenset(),
 ) -> Runtime:
     provider = connect_provider(settings.model, settings.effort)
     if provider is None and require_provider:
@@ -140,7 +142,7 @@ def build_runtime(
     kernel = build_kernel(workspace, backend, observations, gs)
     return Runtime(
         gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, observations, workspace, backend, settings, kernel),
-        policy=Policy(workspace, mode, sandboxed=backend is not None), provider=provider,
+        policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools), provider=provider,
         workspace=workspace, model=settings.model, settings=settings, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel,
     )

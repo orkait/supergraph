@@ -242,10 +242,13 @@ def validate_prefix(prefix: list[str], command: str) -> str:
 
 
 class Policy:
-    def __init__(self, workspace: Path, mode: Mode = Mode.ASK, sandboxed: bool = False) -> None:
+    def __init__(self, workspace: Path, mode: Mode = Mode.ASK, sandboxed: bool = False,
+                 allow_tools: frozenset[str] = frozenset(), deny_tools: frozenset[str] = frozenset()) -> None:
         self.workspace = Path(workspace)
         self.mode = mode
         self.sandboxed = sandboxed
+        self.allow_tools = allow_tools
+        self.deny_tools = deny_tools
         self.request_kind = Kind.CHANGE
         self._session_grants: set[str] = set()
         self._prefix_grants: list[list[str]] = []
@@ -273,6 +276,8 @@ class Policy:
 
     def visible(self, tool: Tool) -> bool:
         if tool.safety.permission == Permission.DENY:
+            return False
+        if tool.name in self.deny_tools or (self.allow_tools and tool.name not in self.allow_tools):
             return False
         if self.mode == Mode.PLAN:
             return tool.safety.side_effect in (SideEffect.NONE, SideEffect.READ)

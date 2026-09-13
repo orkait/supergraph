@@ -24,6 +24,10 @@ _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
 
 
+def _tool_set(value: str) -> frozenset[str]:
+    return frozenset(t for t in value.replace(",", " ").split() if t)
+
+
 def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
     kind = event["type"]
     if kind == "tool_call":
@@ -115,6 +119,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--budget-usd", type=float, default=defaults.budget_usd, help="stop a run once this much was spent at catalog prices (0 = unlimited)")
     parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--trust-workspace", action="store_true", help="also run hooks from <workspace>/.superclaw/hooks.json")
+    parser.add_argument("--allow-tools", default="", help="only expose these tools (comma or space separated)")
+    parser.add_argument("--deny-tools", default="", help="hide these tools (comma or space separated)")
     parser.add_argument("--resume", default=None, help="session id, or 'latest'")
     parser.add_argument("--fork", default=None, help="copy a session (id or 'latest') into a new one and continue from it")
     sub = parser.add_subparsers(dest="command")
@@ -176,7 +182,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(settings, args)
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
-                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None)
+                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None,
+                           allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools))
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
