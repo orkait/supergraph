@@ -9,6 +9,7 @@ from typing import Any
 from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
+from superclaw.agents import Agent
 from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
@@ -58,6 +59,7 @@ class Runtime:
     hooks: Dispatcher | None = None
     kernel: Kernel | None = None
     mcp: Bridge | None = None
+    agent: Agent | None = None
 
     @property
     def model_info(self) -> ModelInfo:
@@ -145,6 +147,7 @@ def build_runtime(
     deny_tools: frozenset[str] = frozenset(),
     extra_dirs: tuple[Path, ...] = (),
     mcp_config: list[Path] | None = None,
+    agent: Agent | None = None,
 ) -> Runtime:
     provider = connect_provider(settings.model, settings.effort, settings.fallback_models)
     if provider is None and require_provider:
@@ -157,11 +160,13 @@ def build_runtime(
     kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
     registry = build_registry(memory, observations, workspace, backend, settings, kernel)
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
+    if agent and agent.tools:
+        allow_tools = (allow_tools & agent.tools) if allow_tools else agent.tools
     return Runtime(
         gs=gs, store=SessionStore(gs), memory=memory, registry=registry,
         policy=Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs),
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
-        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge,
+        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
     )
 
 
@@ -193,6 +198,7 @@ def system_prompt_for(rt: Runtime, prompt: str) -> str:
     return build_system_prompt(PromptInputs(
         cwd=rt.workspace, mode=rt.mode, skills=load_skills(rt.settings.skill_roots(rt.workspace)),
         memory=rt.memory.recall(prompt), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
+        agent=rt.agent.prompt if rt.agent else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
     ))
 
