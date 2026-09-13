@@ -88,6 +88,8 @@ class LitellmProvider:
                 kwargs["account_id"] = provider["account_id"]
             if self.effort:
                 kwargs["reasoning_effort"] = self.effort
+            if provider.get("extra_headers"):
+                kwargs["extra_headers"] = provider["extra_headers"]
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"

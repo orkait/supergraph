@@ -1,9 +1,23 @@
 from __future__ import annotations
 
 import os
+import secrets
 
 OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
 OPENCODE_ZEN_BASE = "https://opencode.ai/zen/v1"
+OPENCODE_GO_MARKER = "zen/go"
+OPENCODE_SESSION_HEADER = "x-opencode-session"
+_OPENCODE_SESSION = ""
+
+
+def _opencode_session() -> str:
+    global _OPENCODE_SESSION
+    override = os.getenv("OPENCODE_SESSION", "").strip()
+    if override:
+        return override
+    if not _OPENCODE_SESSION:
+        _OPENCODE_SESSION = "ses_" + secrets.token_hex(16)
+    return _OPENCODE_SESSION
 
 DEFAULT_ALIASES: dict[str, str] = {
     "gpt-4": "groq/llama-3.3-70b-versatile",
@@ -56,8 +70,11 @@ def resolve_model(model_id: str, aliases: dict[str, str] | None = None) -> dict:
                 "api_key": os.getenv("OLLAMA_API_KEY", "ollama")}
     if model_id.startswith("opencode/"):
         slug = model_id[len("opencode/"):]
-        return {"litellm_model": f"openai/{slug}", "api_base": OPENCODE_ZEN_BASE,
-                "api_key": os.getenv("OPENCODE_API_KEY", "")}
+        base = os.getenv("OPENCODE_API_BASE", "").strip() or OPENCODE_ZEN_BASE
+        entry = {"litellm_model": f"openai/{slug}", "api_base": base, "api_key": os.getenv("OPENCODE_API_KEY", "")}
+        if OPENCODE_GO_MARKER in base:
+            entry["extra_headers"] = {OPENCODE_SESSION_HEADER: _opencode_session()}
+        return entry
     if model_id.startswith("openrouter/"):
         return {"litellm_model": model_id, "api_base": None,
                 "api_key": os.getenv("OPENROUTER_API_KEY", "")}
@@ -90,5 +107,7 @@ def build_provider_chain(
         }
         if r.get("account_id"):
             entry["account_id"] = r["account_id"]
+        if r.get("extra_headers"):
+            entry["extra_headers"] = r["extra_headers"]
         chain.append(entry)
     return chain

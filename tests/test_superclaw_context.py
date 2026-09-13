@@ -11,7 +11,7 @@ from superclaw.models import ModelInfo, lookup
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens
 from superclaw.settings import LIMITS, PROVIDERS, Settings, read_opencode_key
-from supergraph.ingest.llm.resolve import resolve_model
+from supergraph.ingest.llm.resolve import build_provider_chain, resolve_model
 
 
 def user(text):
@@ -69,10 +69,18 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert read_opencode_key({"OPENCODE_AUTH_PATH": str(auth)}) == ""
     auth.write_text(json.dumps({"opencode-go": {"type": "api", "key": "oc-ambient"}}))
     monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENCODE_API_BASE", raising=False)
     monkeypatch.setenv("OPENCODE_AUTH_PATH", str(auth))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg2"))
     Settings.from_env()
-    assert os.environ["OPENCODE_API_KEY"] == "oc-ambient" and resolve_model("opencode/deepseek-v4-flash")["api_key"] == "oc-ambient"
+    assert os.environ["OPENCODE_API_KEY"] == "oc-ambient" and os.environ["OPENCODE_API_BASE"] == "https://opencode.ai/zen/go/v1"
+    go = resolve_model("opencode/deepseek-v4-flash")
+    assert go["api_key"] == "oc-ambient" and go["api_base"].endswith("/zen/go/v1") and go["extra_headers"]["x-opencode-session"].startswith("ses_")
+    chain = build_provider_chain(["opencode/deepseek-v4-flash"], free_first=False)
+    assert chain[0]["extra_headers"]["x-opencode-session"].startswith("ses_")
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-zen")
+    monkeypatch.delenv("OPENCODE_API_BASE", raising=False)
+    assert resolve_model("opencode/deepseek-v4-flash")["api_base"].endswith("/zen/v1") and "extra_headers" not in resolve_model("opencode/deepseek-v4-flash")
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
@@ -104,6 +112,9 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     kw.clear()
     LitellmProvider(one).complete([user("hi")], [])
     assert "reasoning_effort" not in kw
+    kw.clear()
+    LitellmProvider([{"litellm_model": "m", "api_key": "k", "api_base": None, "extra_headers": {"x-opencode-session": "ses_x"}}]).complete([user("hi")], [])
+    assert kw["extra_headers"] == {"x-opencode-session": "ses_x"}
     assert Settings.from_env({"SUPERCLAW_EFFORT": "high"}).effort == "high" and Settings.from_env({"SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env({}).effort == ""
 
 
