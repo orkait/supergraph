@@ -133,6 +133,10 @@ def read_opencode_key(e: Mapping[str, str]) -> str:
     return ""
 
 
+def split_models(value: str) -> tuple[str, ...]:
+    return tuple(part for part in (p.strip() for p in value.replace(",", " ").split()) if part)
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     try:
         lines = path.read_text().splitlines()
@@ -280,6 +284,7 @@ LIMITS = Limits()
 @dataclass(frozen=True)
 class Settings:
     model: str
+    fallback_models: tuple[str, ...]
     mode: str
     effort: str
     context_window: int
@@ -312,6 +317,7 @@ class Settings:
         skills_override = e.get("SUPERCLAW_SKILLS_DIR", "").strip()
         return cls(
             model=e.get("SUPERCLAW_MODEL", "").strip() or DEFAULT_MODEL,
+            fallback_models=split_models(e.get("SUPERCLAW_FALLBACK_MODELS", "")),
             mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
             effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),

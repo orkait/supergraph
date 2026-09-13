@@ -116,6 +116,12 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     LitellmProvider([{"litellm_model": "m", "api_key": "k", "api_base": None, "extra_headers": {"x-opencode-session": "ses_x"}}]).complete([user("hi")], [])
     assert kw["extra_headers"] == {"x-opencode-session": "ses_x"}
     assert Settings.from_env({"SUPERCLAW_EFFORT": "high"}).effort == "high" and Settings.from_env({"SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env({}).effort == ""
+    assert Settings.from_env({"SUPERCLAW_FALLBACK_MODELS": "a/b, c/d"}).fallback_models == ("a/b", "c/d") and Settings.from_env({}).fallback_models == ()
+    import superclaw.app as app_mod
+
+    asked: list[list[str]] = []
+    monkeypatch.setattr(app_mod, "build_provider_chain", lambda models, **kw: asked.append(list(models)) or [])
+    assert app_mod.connect_provider("m/a", "", ("m/b", "m/c")) is None and asked == [["m/a", "m/b", "m/c"]]
 
 
 def test_meter_cut_prune_and_compaction():

@@ -65,7 +65,8 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         f"terminal {env.get('TERM_PROGRAM') or env.get('TERM') or 'unknown'} {dot} vte {env.get('VTE_VERSION') or 'n/a'} "
         f"{dot} glyphs {'ascii' if glyphs.border == ASCII.border else 'unicode'}",
         f"sandbox {'on' if rt.policy.sandboxed else 'off'} {dot} mode {rt.mode.value} {dot} effort {rt.settings.effort or EFFORT_OFF}",
-        f"model {rt.model} {dot} window {compact(rt.context_window)} {dot} {'catalog' if rt.model_info.known else 'fallback'}",
+        f"model {rt.model} {dot} window {compact(rt.context_window)} {dot} {'catalog' if rt.model_info.known else 'fallback'}"
+        + (f" {dot} then {', '.join(rt.settings.fallback_models)}" if rt.settings.fallback_models else ""),
         f"store {rt.settings.db_path} {dot} workspace {rt.workspace}",
         f"mcp {len(rt.mcp.tools) if rt.mcp else 0} tools {dot} {len(rt.mcp.clients) if rt.mcp else 0} servers"
         + (f" {dot} {len(rt.mcp.skipped)} skipped" if rt.mcp and rt.mcp.skipped else ""),

@@ -16,7 +16,7 @@ from superclaw.policy import Mode
 from superclaw.provider import hint
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
-from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings
+from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
 from superclaw.skills import load_skills
 from superclaw.worktree import WorktreeError
 from superclaw.worktree import prepare as prepare_worktree
@@ -145,6 +145,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
     parser.add_argument("--model", default=defaults.model)
+    parser.add_argument("--fallback-model", default="", metavar="MODELS",
+                        help="comma or space separated models to try, in order, when the main model fails")
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--context-window", type=int, default=defaults.context_window, help="override the model's catalog context window (0 = from catalog)")
@@ -215,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
     mode = Mode.UNSAFE.value if args.dangerously_skip_permissions else args.mode
     settings = replace(defaults, model=args.model, mode=mode, context_window=args.context_window,
+                       fallback_models=split_models(args.fallback_model) or defaults.fallback_models,
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     if args.command == "setup":
         return cmd_setup(settings, args)
