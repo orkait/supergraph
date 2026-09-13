@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from supergraph import SuperGraph
+from supergraph.core.errors import SuperGraphError
 
 import argparse
 
@@ -28,6 +29,7 @@ from superclaw.policy import Action, Mode, Policy
 from superclaw.runtime import Completion, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
+from superclaw.share import NotServing, open_shared, socket_path
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
@@ -188,6 +190,29 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     with pytest.raises(cron.CronError):
         jobs.remove("nightly")
     cron_gs.close()
+    brain = ws / "brain"
+    owner = open_shared(brain)
+    attached = open_shared(brain)
+    assert (owner.role, attached.role) == ("owner", "attached") and socket_path(brain).exists()
+    shared_store = SessionStore(attached)
+    shared_sid = shared_store.create(cwd=str(ws), model="m")
+    shared_store.append(shared_sid, "message", {"role": "user", "content": "from the attached one"})
+    assert SessionStore(owner).get(shared_sid)["event_count"] == 1 and [m.content for m in SessionStore(owner).replay(shared_sid)] == ["from the attached one"]
+    with pytest.raises(SuperGraphError):
+        attached.execute("BOGUS QUERY", namespace="superclaw")
+    assert attached.execute("COUNT NODES", namespace="superclaw").count == 2
+    owner.close()
+    assert not socket_path(brain).exists()
+    assert attached.execute("COUNT NODES", namespace="superclaw").count == 2 and attached.role == "owner" and socket_path(brain).exists()
+    late = open_shared(brain)
+    assert late.role == "attached" and SessionStore(late).get(shared_sid)["event_count"] == 1
+    late.close()
+    attached.close()
+    assert not socket_path(brain).exists()
+    legacy = SuperGraph(path=str(ws / "old-brain"), embedder="none", enable_sentence_nodes=False)
+    with pytest.raises(NotServing, match="predates store sharing"):
+        open_shared(ws / "old-brain")
+    legacy.close()
 
 
 def test_guards_gates_and_verifier(ws):

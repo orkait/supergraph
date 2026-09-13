@@ -6,7 +6,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from supergraph import SuperGraph
 from supergraph.ingest.llm.resolve import build_provider_chain
 
 from superclaw.agents import Agent, load_agents
@@ -27,6 +26,7 @@ from superclaw.repomap import render, scan
 from superclaw.runtime import Provider
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
+from superclaw.share import open_shared
 from superclaw.settings import MCP_FILE, PROVIDERS, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tools import Registry
@@ -161,7 +161,7 @@ def build_runtime(
     registry = Registry()
     if open_store:
         settings.db_path.mkdir(parents=True, exist_ok=True)
-        gs = SuperGraph(path=str(settings.db_path))
+        gs = open_shared(settings.db_path)
         memory = Memory(gs)
         observations = ObservationStore(gs)
         kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)

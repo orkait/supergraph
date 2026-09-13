@@ -32,6 +32,7 @@ from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
+from superclaw.share import NotServing
 from superclaw.skills import load_skills
 from superclaw.usercommands import expand, load_commands
 from superclaw.usercommands import find as find_command
@@ -591,7 +592,8 @@ def main(argv: list[str] | None = None) -> int:
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
-        sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
+        remedy = "" if isinstance(e, NotServing) else "\n  close the other superclaw, or give this one its own store with --db <path>"
+        sys.exit(f"superclaw: {e}{remedy}")
     handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "cron": cmd_cron, "review": cmd_review,
                "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
