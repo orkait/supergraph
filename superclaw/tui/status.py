@@ -9,8 +9,6 @@ from textual.widgets import Static
 from superclaw.settings import LIMITS
 from superclaw.tui.theme import ACCENT, MUTED
 
-WORDMARK = "superclaw"
-SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _THOUSAND = 1000
 _MILLION = 1_000_000
 
@@ -61,11 +59,14 @@ def tier(width: int) -> int:
 
 
 class TitleBar(Static):
+    def on_resize(self) -> None:
+        self.app.relayout()
+
     def show(self, cwd: str, branch: str, session: str, width: int) -> None:
         level = tier(width)
         left = Text(cwd, style=MUTED)
         if branch and level >= 1:
-            left.append(f" · {branch}", style=MUTED)
+            left.append(f" {self.app.glyphs.dot} {branch}", style=MUTED)
         right = Text(session if level >= 3 else "", style=MUTED)
         gap = max(1, width - len(left) - len(right) - 2)
         self.update(left + Text(" " * gap) + right)
@@ -82,10 +83,11 @@ def compact(tokens: int) -> str:
 class StatusBar(Static):
     def show(self, mode: str, stats: RunStats, width: int) -> None:
         level = tier(width)
-        text = Text("● ", style=ACCENT)
+        glyphs = self.app.glyphs
+        text = Text(f"{glyphs.mode} ", style=ACCENT)
         text.append(mode)
         if level >= 1 and stats.window:
-            text.append(f"    ◔ {compact(stats.used)}/{compact(stats.window)} · {stats.fill:.1%}", style=MUTED)
+            text.append(f"    {glyphs.gauge} {compact(stats.used)}/{compact(stats.window)} {glyphs.dot} {stats.fill:.1%}", style=MUTED)
         if level >= 2 and stats.cost:
             text.append(f"    ${stats.cost:.4f}", style=MUTED)
         if level >= 2 and (stats.saved or stats.kept_out):
@@ -107,6 +109,7 @@ class WorkingLine(Static):
         self.add_class("hidden")
 
     def tick(self, elapsed: float, calls: int) -> None:
-        self.phase = (self.phase + 1) % len(SPINNER)
-        detail = f"  {elapsed:.0f}s" + (f" · {calls} tools" if calls else "")
-        self.update(Text(f"{SPINNER[self.phase]} {self.label}", style=ACCENT) + Text(detail, style=MUTED))
+        glyphs = self.app.glyphs
+        self.phase = (self.phase + 1) % len(glyphs.spinner)
+        detail = f"  {elapsed:.0f}s" + (f" {glyphs.dot} {calls} tools" if calls else "")
+        self.update(Text(f"{glyphs.spinner[self.phase]} {self.label}", style=ACCENT) + Text(detail, style=MUTED))

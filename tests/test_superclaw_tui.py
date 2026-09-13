@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 from textual.widgets import Markdown
@@ -12,8 +13,9 @@ from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
-from superclaw.settings import Settings
+from superclaw.settings import ASCII, UNICODE, Settings, choose_glyphs
 from superclaw.tui import PermissionScreen, SuperclawApp
+from superclaw.tui.app import WORDMARK_ART
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.setup import SetupScreen
 
@@ -32,7 +34,7 @@ def rt(tmp_path):
     memory = Memory(gs)
     rt = Runtime(gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, ObservationStore(gs), tmp_path),
                  policy=Policy(tmp_path, Mode.ASK), provider=None, workspace=tmp_path, model="fake/model",
-                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg")}))
+                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "LANG": "C.UTF-8"}))
     yield rt
     gs.close()
 
@@ -77,9 +79,12 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await _wait_for(pilot, lambda: len(app.query(Markdown)) == 1 and not app.running)
             assert (tmp_path / "out.txt").read_text() == "hi"
             card = app.query_one(ToolCard)
-            assert card.tool == "write_file" and card.status == "✓" and "+hi" in str(card.query_one(".body").content)
+            assert card.tool == "write_file" and card.ok and "+hi" in str(card.query_one(".body").content)
             assert app.query_one("#transcript").display and not app.query_one("#welcome").display
             assert "done in" in str(app.query(".note").last().content) and app.stats.timer.calls == 1
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    drawn = {ch for path in Path(SuperclawApp.__module__.replace(".", "/")).parent.glob("*.py") for ch in path.read_text() if not ch.isascii()}
+    allowed = {ch for value in vars(UNICODE).values() if isinstance(value, str) for ch in value} | set("".join(WORDMARK_ART)) | {"§"}
+    assert drawn <= allowed and choose_glyphs({"LANG": "C"}) is ASCII and choose_glyphs({"LANG": "C.UTF-8", "SUPERCLAW_ASCII": "1"}) is ASCII

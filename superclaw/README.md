@@ -85,7 +85,8 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Turn limit | `--max-turns` | `12` |
 | Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
 | Spend budget | `SUPERCLAW_BUDGET_USD`, `--budget-usd` | `0` (unlimited); priced per call from the catalog, cached input at the cache-read rate |
-| Every tunable | `superclaw/settings.py` `Limits` | one frozen dataclass holds every threshold, clamp, budget and preview width; nothing else in the package carries a literal |
+| Glyphs | `SUPERCLAW_ASCII=1`, or a locale without `UTF-8` in `LC_ALL`, `LC_CTYPE` or `LANG` | Unicode set `❯ ◐ ✓ ✗ · ◔ ● ↳ … →`, rounded borders and the block wordmark; every glyph is in DejaVu Sans Mono, the `Monospace` alias on Ubuntu. The ASCII set `> ~ + x | # * -> ... ->` with plain borders takes over when the locale cannot carry them. superclaw never installs fonts or changes terminal settings |
+| Every tunable | `superclaw/settings.py` `Limits` and `Glyphs` | one frozen dataclass holds every threshold, clamp, budget and preview width, another every drawn symbol; nothing else in the package carries a literal |
 | Hooks | `~/.config/superclaw/hooks.json`, plus `<workspace>/.superclaw/hooks.json` with `--trust-workspace` | off until the file says `"enabled": true`; events `sessionStart` `beforeTool` `afterTool` `stop`, regex `matcher` on the tool name, JSON payload on stdin, exit 2 blocks a tool or asks the run to continue, stdout `{"additionalContext": ...}` is injected |
 | Intent gate | `--intent-gate` | off; one narrow model call classifies the request as `answer`, `diagnose`, `change` or `monitor`, and `answer` hides writes, shell and network while `diagnose` hides writes |
 | Skills dir | `SUPERCLAW_SKILLS_DIR` | `~/.config/superclaw/skills`, `~/.agents/skills`, `<workspace>/.superclaw/skills` |
@@ -101,14 +102,14 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 <details>
 <summary>TUI commands</summary>
 
-`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). Without a key it opens anyway and shows the provider setup screen. The glyphs it uses (`❯ ◔ ✓ ✗ § ╭╮`) need a code font with box drawing and symbols; Fira Code, JetBrains Mono or any Nerd Font in your terminal's settings is enough. The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
+`superclaw` with no subcommand opens the TUI (it refuses a non-TTY stdin and points at `exec`). Without a key it opens anyway and shows the provider setup screen. It draws with the glyph set from the configuration table, which any stock monospace font carries; `SUPERCLAW_ASCII=1` switches to plain ASCII. The welcome screen shows the version, workspace, branch and model; the first prompt replaces it with the transcript.
 
 | Surface | What it shows |
 |---|---|
 | Transcript | `❯` user lines, assistant markdown, one card per tool call: status glyph (`◐` running, `✓`, `✗`), tool name, target (path, pattern, command, task), then the body - a unified diff for `edit_file`/`write_file`, output lines for everything else, `§id` when stored. Bodies fold at 12 lines; click to expand. Child (`delegate`) calls are indented |
 | Working line | spinner, current phase (`thinking`, or the tool name), elapsed seconds excluding time spent in a permission prompt, tool count |
-| Status bar | `● mode`, context gauge `▰▰▱▱ 12% of 1,000,000`, run cost, model, session; segments drop as the terminal narrows (tiers at 58, 80 and 100 columns) |
-| Command palette | typing `/` lists matching commands with usage and help; enter picks one |
+| Title bar and status bar | workspace, branch and session id above; `● mode`, context reading `◔ 21.4K/1.0M · 2.1%`, run cost and tokens kept out below; the model sits on the composer border. Segments drop as the terminal narrows (tiers at 58, 80 and 100 columns) |
+| Command palette | typing `/` lists matching commands with usage and help; `up`/`down` move the highlight, `tab` or enter on a highlighted row picks it, enter with nothing highlighted runs what was typed, `esc` closes it. A command that takes arguments is completed into the prompt; one without runs at once |
 
 | Command | Effect |
 |---|---|
@@ -119,7 +120,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/setup` | connect a provider key and model without leaving the TUI |
 | `/clear`, `/help`, `/quit` | housekeeping |
 
-Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`), `ctrl+c` quits. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix) or `d` (deny).
+Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure (bad key, network) ends the turn with a `run failed` line and leaves the shell open; `/setup` changes the key.
 
 </details>
 

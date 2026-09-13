@@ -67,7 +67,7 @@ def _clear(app: SuperclawApp, arg: str) -> None:
 def _help(app: SuperclawApp, arg: str) -> None:
     for command in COMMANDS:
         app.note(f"{command.usage:<24} {command.help}")
-    app.note("esc cancels the run · ctrl+c quits · click a card to expand it")
+    app.note(f" {app.glyphs.dot} ".join(("up/down and tab pick a command", "esc cancels the run", "ctrl+c quits", "click a card to expand it")))
 
 
 def _setup(app: SuperclawApp, arg: str) -> None:
@@ -83,7 +83,7 @@ COMMANDS = (
     Command("/new", "/new", "start a fresh session", _new),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions", "list recent sessions", _sessions),
-    Command("/context", "/context [prompt]", "what the next request costs, by category", _context),
+    Command("/context", "/context [prompt]", "what the next request costs", _context),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
     Command("/clear", "/clear", "clear the transcript view", _clear),
     Command("/setup", "/setup", "connect a provider key and model", _setup),

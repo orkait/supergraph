@@ -12,7 +12,7 @@ from superclaw.settings import PROVIDERS, Provider
 
 
 class SetupScreen(ModalScreen[bool]):
-    BINDINGS = [("escape", "later", "Later")]
+    BINDINGS = [("escape", "later", "Later"), ("ctrl+c", "app.interrupt", "Quit")]
 
     def __init__(self, rt: Runtime) -> None:
         super().__init__()

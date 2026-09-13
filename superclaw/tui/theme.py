@@ -20,15 +20,16 @@ ToolCard .more { color: $text-muted; text-style: italic; }
 #hints.hidden { display: none; }
 #working { height: 1; padding: 0 2; color: $accent; }
 #working.hidden { display: none; }
-#composer { height: 3; border: round $panel; border-subtitle-color: $text-muted; padding: 0 1; }
-#composer:focus-within { border: round $accent; }
+#composer { height: 3; border: $border-kind $panel; border-subtitle-color: $text-muted; padding: 0 1; }
+#composer:focus-within { border: $border-kind $accent; }
 #composer .gutter { width: 2; color: $accent; text-style: bold; }
 #prompt { border: none; height: 1; padding: 0; background: transparent; }
 #prompt:focus { border: none; background: transparent; }
 #status { height: 1; padding: 0 2; color: $text-muted; }
-#palette { layer: popup; dock: bottom; margin: 0 0 5 2; height: auto; max-height: 8; width: 64; background: $surface; border: round $panel; }
+#palette { layer: popup; dock: bottom; margin: 0 0 5 2; height: auto; max-height: 8; width: 64; background: $surface; border: $border-kind $panel; }
 #palette.hidden { display: none; }
-#dialog { width: 80%; max-width: 100; height: auto; padding: 1 2; background: $surface; border: round $accent; }
+ModalScreen { align: center middle; }
+#dialog { width: 80%; max-width: 100; height: auto; padding: 1 2; background: $surface; border: $border-kind $accent; }
 #dialog .title { text-style: bold; margin-bottom: 1; }
 #dialog .args { color: $text-muted; max-height: 12; overflow-y: auto; }
 #dialog .reason { margin: 1 0; }

@@ -9,6 +9,40 @@ DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
 CREDENTIALS_FILE = "credentials.env"
 CREDENTIALS_MODE = 0o600
+ASCII_ENV = "SUPERCLAW_ASCII"
+OFF_VALUES = ("", "0", "false", "off")
+LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
+UTF8_MARK = "utf"
+
+
+@dataclass(frozen=True)
+class Glyphs:
+    prompt: str
+    running: str
+    ok: str
+    failed: str
+    dot: str
+    gauge: str
+    mode: str
+    child: str
+    ellipsis: str
+    call: str
+    spinner: str
+    border: str
+    block_art: bool
+
+
+UNICODE = Glyphs(prompt="\u276f", running="\u25d0", ok="\u2713", failed="\u2717", dot="\u00b7", gauge="\u25d4", mode="\u25cf", child="\u21b3", ellipsis="\u2026", call="\u2192",
+                 spinner="\u25d0\u25d3\u25d1\u25d2", border="round", block_art=True)
+ASCII = Glyphs(prompt=">", running="~", ok="+", failed="x", dot="|", gauge="#", mode="*", child="->", ellipsis="...", call="->",
+               spinner="-\\|/", border="ascii", block_art=False)
+
+
+def choose_glyphs(e: Mapping[str, str]) -> Glyphs:
+    if e.get(ASCII_ENV, "").strip().lower() not in OFF_VALUES:
+        return ASCII
+    locale = next((e[name] for name in LOCALE_ENVS if e.get(name)), "")
+    return UNICODE if UTF8_MARK in locale.lower() else ASCII
 
 
 @dataclass(frozen=True)
@@ -169,6 +203,7 @@ class Settings:
     config_dir: Path
     db_path: Path
     skills_dir: Path | None
+    glyphs: Glyphs
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -193,6 +228,7 @@ class Settings:
             config_dir=config_dir,
             db_path=Path(db_override) if db_override else data_dir / "brain",
             skills_dir=Path(skills_override) if skills_override else None,
+            glyphs=choose_glyphs(e),
         )
 
     @property
