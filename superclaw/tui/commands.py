@@ -122,6 +122,18 @@ def _tools(app: SuperclawApp, arg: str) -> None:
         app.note(f"{mark} {tool.name:<{app.limits.tool_name_width}} {tool.safety.side_effect.value} {app.glyphs.dot} {kind}")
 
 
+def _mcp(app: SuperclawApp, arg: str) -> None:
+    bridge = app.rt.mcp
+    for tool in bridge.tools if bridge else []:
+        app.note(f"{tool.server} {app.glyphs.dot} {tool.name}: {tool.summary()}")
+    for skipped in bridge.skipped if bridge else []:
+        app.note(f"{skipped.name} skipped: {skipped.error}", error=True)
+    for problem in bridge.problems if bridge else []:
+        app.note(f"config: {problem}", error=True)
+    if bridge is None or not bridge.tools:
+        app.note(f"no MCP tools; add servers to {app.rt.settings.user_mcp}", error=True)
+
+
 def _permissions(app: SuperclawApp, arg: str) -> None:
     dot = app.glyphs.dot
     app.note(f"mode {app.rt.mode.value}")
@@ -173,6 +185,7 @@ COMMANDS = (
     Command("/rename", "/rename <title>", "name this session", _rename),
     Command("/export", "/export", "write the transcript to a markdown file", _export),
     Command("/tools", "/tools", "list the tools and their side effects", _tools),
+    Command("/mcp", "/mcp", "list the MCP servers and the tools they expose", _mcp),
     Command("/permissions", "/permissions", "show the mode and remembered grants", _permissions),
     Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),

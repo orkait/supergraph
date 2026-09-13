@@ -56,7 +56,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     monkeypatch.setattr("superclaw.report.keyed_providers", lambda: [])
     lines = doctor_lines(rt, "/setup")
     assert lines[1].startswith("sandbox ") and f"model {rt.model}" in lines[2]
-    assert str(rt.settings.db_path) in lines[3] and lines[4].endswith("none; /setup")
+    assert str(rt.settings.db_path) in lines[3] and lines[4] == "mcp 0 tools · 0 servers" and lines[-1].endswith("none; /setup")
     monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)

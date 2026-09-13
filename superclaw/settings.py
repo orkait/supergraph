@@ -79,6 +79,8 @@ MODEL_SOURCE_LIVE = "live"
 MODEL_SOURCE_CATALOG = "catalog"
 MODELS_CACHE_DIR = "models"
 WORKTREES_DIR = "worktrees"
+MCP_FILE = "mcp.json"
+WORKSPACE_DIR = ".superclaw"
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,10 @@ class Limits:
 
     hook_timeout_s: int = 60
     hook_block_exit_code: int = 2
+    mcp_connect_timeout_s: float = 8.0
+    mcp_call_timeout_s: float = 120.0
+    mcp_message_bytes: int = 4 * 1024 * 1024
+    mcp_shutdown_wait_s: float = 0.5
     memory_recall_limit: int = 5
     guideline_file_bytes: int = 8 * 1024
     guideline_total_bytes: int = 32 * 1024
@@ -326,6 +332,10 @@ class Settings:
     @property
     def user_hooks(self) -> Path:
         return self.config_dir / "hooks.json"
+
+    @property
+    def user_mcp(self) -> Path:
+        return self.config_dir / MCP_FILE
 
     @property
     def credentials(self) -> Path:
