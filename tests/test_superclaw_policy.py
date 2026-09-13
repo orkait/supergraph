@@ -2,6 +2,10 @@ import pytest
 
 from superclaw.cli import _tool_set, build_parser
 from superclaw.policy import Action, Mode, Policy, classify_command, next_mode, validate_prefix
+from superclaw.schema import SchemaError
+from superclaw.schema import extract as schema_extract
+from superclaw.schema import instruction as schema_instruction
+from superclaw.schema import problems as schema_problems
 from superclaw.settings import Settings
 from superclaw.tools import Permission, Registry, Safety, SideEffect, Tool
 from superclaw.tools.files import core_file_tools
@@ -73,3 +77,16 @@ def test_command_classes_and_prefix_rules():
     assert validate_prefix(["git", "pull"], "git pull origin main") == ""
     assert "too broad" in validate_prefix(["rm", "-rf"], "rm -rf x") and "single-token" in validate_prefix(["make"], "make test")
     assert "heredoc" in validate_prefix(["cat", "-n"], "cat -n <<EOF\nx\nEOF") and "match the start" in validate_prefix(["git", "push"], "git pull")
+    shape = {"type": "object", "required": ["verdict", "findings"],
+             "properties": {"verdict": {"type": "string"}, "count": {"type": "integer"},
+                            "findings": {"type": "array", "items": {"type": "object", "required": ["file"],
+                                                                    "properties": {"file": {"type": "string"}}}}}}
+    good = {"verdict": "ok", "count": 2, "findings": [{"file": "a.py"}]}
+    assert schema_problems(good, shape) == [] and schema_extract('```json\n{"verdict": "ok"}\n```') == {"verdict": "ok"}
+    assert schema_problems({"verdict": 1, "findings": [{"line": 2}]}, shape) == [
+        "$.verdict: expected string, got int", "$.findings[0]: missing required property 'file'"]
+    assert schema_problems({"verdict": "ok", "findings": [], "count": True}, shape) == ["$.count: expected integer, got boolean"]
+    assert schema_problems([], shape) == ["$: expected object, got list"]
+    with pytest.raises(SchemaError):
+        schema_extract("sorry, no JSON here")
+    assert "Your final message must be one JSON value" in schema_instruction(shape)

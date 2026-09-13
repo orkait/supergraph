@@ -19,6 +19,11 @@ from superclaw.policy import Mode
 from superclaw.provider import hint
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
+from superclaw.schema import SchemaError
+from superclaw.schema import extract as schema_extract
+from superclaw.schema import instruction as schema_instruction
+from superclaw.schema import load as load_schema
+from superclaw.schema import problems as schema_problems
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
 from superclaw.skills import load_skills
 from superclaw.worktree import WorktreeError
@@ -55,6 +60,13 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
         print(f"superclaw: attachment {problem}", file=sys.stderr)
     if attached.text:
         prompt = f"{prompt}\n\n{attached.text}"
+    shape = None
+    if args.output_schema:
+        try:
+            shape = load_schema(Path(args.output_schema))
+        except SchemaError as e:
+            sys.exit(f"superclaw: {e}")
+        prompt = f"{prompt}\n\n{schema_instruction(shape)}"
     run_id = f"run_{secrets.token_hex(LIMITS.run_id_bytes)}"
     stream = args.output_format == "stream-json"
 
@@ -70,6 +82,15 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
                    verify=args.verify, images=attached.images)
     status = "incomplete" if res.incomplete else "success"
     exit_code = 2 if res.incomplete else 0
+    if shape is not None and not res.incomplete:
+        try:
+            found = schema_problems(schema_extract(res.final_answer), shape)
+        except SchemaError as e:
+            found = [str(e)]
+        for problem in found:
+            print(f"superclaw: output schema: {problem}", file=sys.stderr)
+        if found:
+            status, exit_code = "schema_mismatch", 2
     if stream:
         emit({"type": "final", "text": res.final_answer, "incomplete": res.incomplete, "reason": res.incomplete_reason})
         emit({"type": "run_end", "status": status, "turns": res.turns, "exitCode": exit_code,
@@ -187,6 +208,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ex.add_argument("-f", "--file", action="append", default=[], metavar="PATH",
                     help="attach a workspace file to the prompt; an image is sent as an image (repeatable)")
     ex.add_argument("--output-format", choices=["text", "json", "stream-json"], default="text")
+    ex.add_argument("--output-schema", default="", metavar="FILE",
+                    help="JSON Schema the final answer must match; a mismatch exits 2")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
