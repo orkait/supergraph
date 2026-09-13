@@ -108,6 +108,17 @@ class SessionStore:
                 items = ev["payload"].get("items", [])
         return items
 
+    def usage(self, sid: str) -> dict[str, Any]:
+        calls = tokens = 0
+        cost = 0.0
+        for ev in self.events(sid):
+            if ev["type"] == "usage":
+                p = ev["payload"]
+                calls += 1
+                tokens += int(p.get("input_tokens", 0)) + int(p.get("output_tokens", 0))
+                cost += float(p.get("cost_usd", 0.0))
+        return {"calls": calls, "tokens": tokens, "cost_usd": cost}
+
     def rename(self, sid: str, title: str) -> None:
         if self.get(sid) is None:
             raise KeyError(f"unknown session {sid}")

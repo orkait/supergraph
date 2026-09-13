@@ -49,7 +49,7 @@ HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
-BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model", "/compact", "/retry")
+BUSY_COMMANDS = ("/new", "/resume", "/fork", "/clear", "/model", "/compact", "/retry")
 
 
 def describe(event: dict[str, Any], glyphs: Glyphs) -> str:

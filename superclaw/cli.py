@@ -38,7 +38,7 @@ def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
 
 
 def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
-    sid = resolve_session(rt, args.resume)
+    sid = resolve_session(rt, args.resume, args.fork)
     prompt = args.prompt if args.prompt != "-" else sys.stdin.read()
     run_id = f"run_{secrets.token_hex(LIMITS.run_id_bytes)}"
     stream = args.output_format == "stream-json"
@@ -72,6 +72,13 @@ def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_usage(rt: Runtime, args: argparse.Namespace) -> int:
+    for s in rt.store.recent():
+        u = rt.store.usage(s["id"])
+        print(f"{s['id']}  {u['calls']:4d} calls  {u['tokens']:>10,} tokens  ${u['cost_usd']:.4f}  {s['model']}")
+    return 0
+
+
 def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
     for s in load_skills(rt.settings.skill_roots(rt.workspace)):
         print(f"{s.name}: {s.description}")
@@ -90,7 +97,7 @@ def cmd_context(rt: Runtime, args: argparse.Namespace) -> int:
 def cmd_tui(rt: Runtime, args: argparse.Namespace) -> int:
     from superclaw.tui import SuperclawApp
 
-    SuperclawApp(rt, resolve_session(rt, args.resume)).run()
+    SuperclawApp(rt, resolve_session(rt, args.resume, args.fork)).run()
     return 0
 
 
@@ -109,6 +116,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--trust-workspace", action="store_true", help="also run hooks from <workspace>/.superclaw/hooks.json")
     parser.add_argument("--resume", default=None, help="session id, or 'latest'")
+    parser.add_argument("--fork", default=None, help="copy a session (id or 'latest') into a new one and continue from it")
     sub = parser.add_subparsers(dest="command")
     ex = sub.add_parser("exec", help="run one prompt headless and exit")
     ex.add_argument("prompt", help="the prompt, or - to read stdin")
@@ -116,6 +124,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
     sub.add_parser("sessions", help="list sessions")
+    sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
@@ -170,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
                            hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
+    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
     except KeyError as e:
