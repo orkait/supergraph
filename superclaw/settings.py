@@ -79,6 +79,7 @@ MODEL_SOURCE_LIVE = "live"
 MODEL_SOURCE_CATALOG = "catalog"
 MODELS_CACHE_DIR = "models"
 WORKTREES_DIR = "worktrees"
+CLIPBOARD_DIR = "clipboard"
 MCP_FILE = "mcp.json"
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
@@ -239,6 +240,11 @@ class Limits:
     repo_map_bytes: int = 6000
     repo_map_matches: int = 20
     attachment_image_bytes: int = 5 * 1024 * 1024
+    paste_lines_threshold: int = 3
+    paste_chars_threshold: int = 2000
+    drop_paths_max: int = 10
+    clipboard_timeout_s: float = 5.0
+    clipboard_keep: int = 50
     image_tokens: int = 1500
     tool_output_bytes: int = 64 * 1024
     tool_output_tokens: int = 10_000
@@ -389,6 +395,10 @@ class Settings:
     @property
     def worktrees_dir(self) -> Path:
         return self.data_dir / WORKTREES_DIR
+
+    @property
+    def clipboard_dir(self) -> Path:
+        return self.data_dir / CLIPBOARD_DIR
 
     def save_credentials(self, provider: Provider, key: str, model: str) -> None:
         self._save({provider.env: key, "SUPERCLAW_MODEL": model})

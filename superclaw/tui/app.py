@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,6 @@ from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 from superclaw import __version__
 from superclaw.agents import load_agents
 from superclaw.app import Callbacks, NoProviderKey, Runtime, apply_effort, run_once, switch_model
-from superclaw.attach import Attachments
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
 from superclaw.loop import Result
@@ -29,8 +29,11 @@ from superclaw.compaction import SUMMARY_INSTRUCTIONS
 from superclaw.compaction import compact as compact_context
 from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
+from superclaw import clipboard
+from superclaw.clips import Clip, Clips
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching, user_entries
+from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
@@ -49,7 +52,7 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+c quit")
+HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "esc cancel", "ctrl+c quit")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
@@ -161,7 +164,7 @@ class SuperclawApp(App[None]):
         self.hist_index = 0
         self.hist_draft = ""
         self._title = ""
-        self.pending = Attachments()
+        self.clips = Clips()
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
         self.streaming: Static | None = None
         self.stream_text = ""
@@ -177,7 +180,7 @@ class SuperclawApp(App[None]):
         yield WorkingLine()
         with Horizontal(id="composer"):
             yield Static(self.glyphs.prompt, classes="gutter")
-            yield Input(placeholder=PROMPT_PLACEHOLDER, id="prompt", select_on_focus=False)
+            yield Composer(placeholder=PROMPT_PLACEHOLDER, id="prompt", select_on_focus=False)
         yield StatusBar(id="status")
         yield OptionList(id="palette", classes="hidden")
 
@@ -516,18 +519,52 @@ class SuperclawApp(App[None]):
         self.query_one("#hints").remove_class("hidden")
         self.note(text, error=error)
 
-    def attach(self, raw: str) -> None:
+    def attach(self, raw: str, quiet: bool = False) -> Clip | None:
         if not raw:
             self.note("usage: /attach <path>", error=True)
-            return
-        found = read_attachments([raw], (self.rt.workspace, *self.rt.extra_dirs))
+            return None
+        found = read_attachments([raw], (self.rt.workspace, *self.rt.extra_dirs, self.rt.settings.clipboard_dir))
         for problem in found.problems:
             self.note(f"attachment {problem}", error=True)
         if not found.text:
+            return None
+        clip = self.clips.add("Image" if found.images else "File", text=found.text, image=found.images[0] if found.images else "")
+        self.query_one("#prompt", Input).insert_text_at_cursor(clip.marker + " ")
+        if not quiet:
+            self.note(f"{clip.marker} is {raw}; it goes with the next message that still contains the marker")
+        return clip
+
+    def take_paste(self, text: str) -> bool:
+        dropped = clipboard.parse_drop(text)
+        if dropped:
+            markers = [clip.marker for path in dropped if (clip := self.attach(str(path), quiet=True))]
+            self.note(f"attached {', '.join(markers)}; delete a marker to leave that file out")
+            return bool(markers)
+        lines = text.count("\n") + 1
+        if lines >= LIMITS.paste_lines_threshold or len(text) > LIMITS.paste_chars_threshold:
+            clip = self.clips.add_pasted(text, lines)
+            self.query_one("#prompt", Input).insert_text_at_cursor(clip.marker + " ")
+            return True
+        return False
+
+    def paste_clipboard(self) -> None:
+        prompt = self.query_one("#prompt", Input)
+        image = clipboard.image_bytes()
+        if image is not None:
+            data, mime = image
+            folder = self.rt.settings.clipboard_dir
+            folder.mkdir(parents=True, exist_ok=True)
+            for stale in sorted(folder.glob("*.*"), key=lambda p: p.stat().st_mtime)[: -LIMITS.clipboard_keep]:
+                stale.unlink(missing_ok=True)
+            target = folder / f"clip-{int(time.time() * 1000)}.{mime.split('/')[1]}"
+            target.write_bytes(data)
+            clip = self.attach(str(target), quiet=True)
+            if clip:
+                self.note(f"{clip.marker} is the clipboard image ({len(data):,} bytes); it goes with the next message that still contains the marker")
             return
-        self.pending.text = f"{self.pending.text}\n\n{found.text}".strip()
-        self.pending.images += found.images
-        self.note(f"attached {raw}{' as an image' if found.images else ''}; it goes with your next message")
+        pasted = clipboard.text()
+        if pasted and not self.take_paste(pasted):
+            prompt.insert_text_at_cursor(pasted.splitlines()[0])
 
     def use_agent(self, name: str) -> None:
         profiles = load_agents(self.rt.settings.agent_roots(self.rt.workspace))
@@ -552,16 +589,16 @@ class SuperclawApp(App[None]):
 
     def begin_run(self, text: str, typed: str = "") -> None:
         self.remember(typed or text)
-        pending, self.pending = self.pending, Attachments()
-        if pending.text:
-            text = f"{text}\n\n{pending.text}"
+        picked = self.clips.select(text)
+        self.clips.clear()
+        text = picked.prompt
         self.running = True
         self.cancel_flag.clear()
         self.stats.timer.start()
         self.query_one("#hints").add_class("hidden")
         self.query_one(WorkingLine).start(PHASE_THINKING)
         self.query_one("#prompt", Input).placeholder = "esc to cancel"
-        self.run_prompt(text, pending.images)
+        self.run_prompt(text, picked.images)
 
     def action_cancel(self) -> None:
         palette = self.query_one("#palette", OptionList)
