@@ -14,6 +14,7 @@ from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolCo
 
 REF = re.compile(r"§([0-9a-f]{8,})")
 KIND = "obs"
+KERNEL_KIND = "kernel"
 
 
 def ref_in(text: str) -> str:
@@ -70,6 +71,19 @@ class ObservationStore:
             return None
         row = self._x(f'NODE {_lit(KIND + ":" + ref)}').data or {}
         return Observation(ref, str(row.get("tool", "")), body)
+
+    def save_kernel(self, session_id: str, blob: str) -> None:
+        node = _lit(KERNEL_KIND + ":" + session_id)
+        if self.load_kernel(session_id):
+            self._x(f"DELETE NODE {node}")
+        self._x(f'CREATE NODE {node} kind = {_lit(KERNEL_KIND)} sid = {_lit(session_id)} DOCUMENT {_lit(blob)}')
+
+    def load_kernel(self, session_id: str) -> str:
+        try:
+            data = self._x(f'NODE {_lit(KERNEL_KIND + ":" + session_id)} WITH DOCUMENT').data
+        except SuperGraphError:
+            return ""
+        return (data or {}).get("_document") or ""
 
     def search(self, query: str, limit: int = LIMITS.recall_search_limit) -> list[Observation]:
         try:

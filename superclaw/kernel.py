@@ -17,11 +17,13 @@ READ_VERBS = ("NODE", "NODES", "EDGES", "TRAVERSE", "SUBGRAPH", "PATH", "PATHS",
               "COMMON", "MATCH", "COUNT", "AGGREGATE", "RECALL", "SIMILAR", "LEXICAL", "REMEMBER", "ANSWER")
 
 CHILD = r'''
-import contextlib, io, json, subprocess, sys, traceback
+import base64, contextlib, io, json, pickle, subprocess, sys, traceback
 
 class Run:
     def __init__(self, out, code):
         self.out, self.code = out, code
+    def __reduce__(self):
+        return (Run, (self.out, self.code))
     @property
     def lines(self):
         return self.out.splitlines()
@@ -48,10 +50,27 @@ def sh(command, timeout=__TIMEOUT__):
     return Run((p.stdout + p.stderr).rstrip("\n"), p.returncode)
 
 ns = {"obs": obs, "query": query, "sh": sh, "Run": Run}
+_builtin = set(ns)
+
+def _dump():
+    keep = {}
+    for key, value in ns.items():
+        if key in _builtin or key.startswith("__"):
+            continue
+        try:
+            pickle.dumps(value); keep[key] = value
+        except Exception:
+            pass
+    return base64.b64encode(pickle.dumps(keep)).decode()
+
 for line in sys.stdin:
     req = json.loads(line)
     if "bind" in req:
         ns[req["bind"]] = Run(**req["value"]); continue
+    if "dump" in req:
+        _pipe.write(json.dumps({"ok": True, "out": _dump()}) + "\n"); _pipe.flush(); continue
+    if "load" in req:
+        ns.update(pickle.loads(base64.b64decode(req["load"]))); continue
     buf = io.StringIO()
     ok = True
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
@@ -124,6 +143,23 @@ class Kernel:
 
     def bind(self, name: str, out: str, code: int) -> None:
         self._send({"bind": name, "value": {"out": out, "code": code}})
+
+    def checkpoint(self) -> str:
+        if not self.alive:
+            return ""
+        previous = signal.signal(signal.SIGALRM, _raise_timeout)
+        try:
+            self._send({"dump": True})
+            return str(self._serve(LIMITS.kernel_checkpoint_timeout_s)["out"])
+        except (TimeoutError, BrokenPipeError, ValueError, OSError):
+            self.close()
+            return ""
+        finally:
+            signal.signal(signal.SIGALRM, previous)
+
+    def restore(self, blob: str) -> None:
+        if blob:
+            self._send({"load": blob})
 
     def close(self) -> None:
         if self.alive:

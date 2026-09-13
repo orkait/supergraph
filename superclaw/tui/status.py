@@ -48,6 +48,8 @@ class RunStats:
     window: int = 0
     tokens: int = 0
     cost: float = 0.0
+    saved: int = 0
+    kept_out: int = 0
     timer: TurnTimer = field(default_factory=TurnTimer)
 
     @property
@@ -87,6 +89,8 @@ class StatusBar(Static):
             text.append(SEPARATOR + gauge(stats.fill) + f" {stats.fill:.1%} of {stats.window:,}" if stats.window else SEPARATOR + f"{stats.tokens:,} tokens", style=MUTED)
         if level >= 2:
             text.append(SEPARATOR + f"${stats.cost:.4f}", style=MUTED)
+        if level >= 2 and (stats.saved or stats.kept_out):
+            text.append(SEPARATOR + f"kept out {stats.saved + stats.kept_out:,}", style=MUTED)
         self.update(text)
 
 

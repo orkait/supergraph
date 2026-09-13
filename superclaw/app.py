@@ -175,10 +175,12 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         if cb.on_event:
             cb.on_event({"type": "intent", "kind": rt.policy.request_kind.value})
     system_prompt = system_prompt_for(rt, prompt)
+    if rt.kernel and not rt.kernel.alive and rt.registry.observations:
+        rt.kernel.restore(rt.registry.observations.load_kernel(sid))
     previous = rt.store.last_prompt(sid)
     if previous and previous.get("hash") != prompt_hash(system_prompt) and cb.on_event:
         cb.on_event({"type": "prompt_drift", "previous": previous.get("hash"), "current": prompt_hash(system_prompt)})
-    return run(prompt, rt.provider, Options(
+    result = run(prompt, rt.provider, Options(
         registry=rt.registry, policy=rt.policy, workspace=rt.workspace,
         system_prompt=system_prompt, history=rt.store.replay(sid),
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
@@ -187,3 +189,6 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
         session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled,
     ))
+    if rt.kernel and rt.registry.observations and (blob := rt.kernel.checkpoint()):
+        rt.registry.observations.save_kernel(sid, blob)
+    return result

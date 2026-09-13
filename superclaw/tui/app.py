@@ -252,6 +252,7 @@ class SuperclawApp(App[None]):
         elif kind == "usage" and not child:
             self.stats.used, self.stats.window = event["context_used"], event["context_window"]
             self.stats.tokens, self.stats.cost = event["run_total"], event["run_cost_usd"]
+            self.stats.saved, self.stats.kept_out = event["saved_tokens"], event["kept_out_tokens"]
             self.refresh_status()
         elif kind == "delegate":
             self.note(f"↳ delegate {event['child']}: {clip(event['task'], LIMITS.preview_args_chars)}")
@@ -264,7 +265,7 @@ class SuperclawApp(App[None]):
         self.running = False
         self.query_one(WorkingLine).stop()
         elapsed = self.stats.timer.elapsed()
-        summary = f"done in {elapsed:.0f}s · {result.turns} turns · {self.stats.timer.calls} tools"
+        summary = f"done in {elapsed:.0f}s · {result.turns} turns · {self.stats.timer.calls} tools · {result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window"
         if result.stop_reason or result.incomplete:
             self.note(f"stopped: {result.stop_reason or result.incomplete_reason} · {summary}", error=True)
         else:

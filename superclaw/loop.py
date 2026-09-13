@@ -80,6 +80,8 @@ class Result:
     incomplete: bool = False
     incomplete_reason: str = ""
     stop_reason: str = ""
+    saved_tokens: int = 0
+    kept_out_tokens: int = 0
 
 
 class _Run:
@@ -99,6 +101,9 @@ class _Run:
         self.promise_nudged = False
         self.objective = ""
         self.changed: set[str] = set()
+        self.refs: list[str] = []
+        self.saved_tokens = 0
+        self.kept_out_tokens = 0
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, state={"plan": plan, SPAWN_KEY: self.spawn})
 
@@ -133,7 +138,7 @@ class _Run:
             raise
 
     def result(self, answer: str, **kw: Any) -> Result:
-        return Result(final_answer=answer, turns=self.turns, messages=list(self.messages), **kw)
+        return Result(final_answer=answer, turns=self.turns, messages=list(self.messages), saved_tokens=self.saved_tokens, kept_out_tokens=self.kept_out_tokens, **kw)
 
     def summarize(self, brief: str) -> str:
         if self.o.summarize:
@@ -163,6 +168,7 @@ class _Run:
     def prune(self) -> int:
         pruned = prune_tool_results(self.messages, cut_point(self.messages, self.keep_tokens))
         for index, content, _ in pruned:
+            self.saved_tokens += approx_tokens(self.messages[index].content) - approx_tokens(content)
             self.messages[index].content = content
             self.persist("prune", {"seq": self.seqs[index], "output": content})
         if pruned:
@@ -302,12 +308,16 @@ class _Run:
         res = child.run(self.handoff(task, args))
         self.tokens_used += child.tokens_used
         self.cost_usd += child.cost_usd
+        self.kept_out_tokens += child.tokens_used + child.kept_out_tokens
+        self.saved_tokens += child.saved_tokens
         self.changed.update(child.changed)
         status = f"incomplete ({res.incomplete_reason})" if res.incomplete else "done"
         answer = clip(res.final_answer, LIMITS.delegate_answer_tokens * LIMITS.chars_per_token)
         head = f"[delegate {sid or 'child'}] {status}, {res.turns} turns, {child.tokens_used:,} tokens, ${child.cost_usd:.4f}"
         if child.changed:
             head += "\nchanged: " + ", ".join(sorted(child.changed))
+        if child.refs:
+            head += "\nresults it stored: " + ", ".join(f"§{ref}" for ref in child.refs[-LIMITS.delegate_refs_returned:])
         return ToolResult.success(f"{head}\n\n{answer}", changed_files=sorted(child.changed), meta={"full": res.final_answer})
 
     def handoff(self, task: str, args: dict[str, Any]) -> str:
@@ -325,6 +335,10 @@ class _Run:
         res, denied = self.execute(call)
         self.changed.update(res.changed_files)
         self.loaded.update(res.meta.get("load_tools", []))
+        if res.artifact:
+            self.refs.append(res.artifact.ref)
+        if res.diagnostics:
+            self.saved_tokens += max(0, res.diagnostics.original_tokens - res.diagnostics.model_tokens)
         self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,
                    "display": asdict(res.display), "ref": res.artifact.ref if res.artifact else "",
@@ -376,7 +390,8 @@ class _Run:
         self.emit({"type": "usage", "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
                    "cache_read_tokens": usage.cache_read_tokens, "run_total": self.tokens_used,
                    "cost_usd": round(cost, LIMITS.usd_decimals), "run_cost_usd": round(self.cost_usd, LIMITS.usd_decimals),
-                   "context_used": usage.input_tokens, "context_window": self.o.context_window})
+                   "context_used": usage.input_tokens, "context_window": self.o.context_window,
+                   "saved_tokens": self.saved_tokens, "kept_out_tokens": self.kept_out_tokens})
 
     def stopped(self) -> Result | None:
         if self.o.cancelled and self.o.cancelled():

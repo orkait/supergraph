@@ -95,6 +95,8 @@ class Limits:
     shell_capture_bytes: int = 1024 * 1024
     capture_preview_lines: int = 5
     kernel_trace_depth: int = 3
+    kernel_checkpoint_timeout_s: float = 10.0
+    delegate_refs_returned: int = 5
     delegate_depth: int = 2
     delegate_max_turns: int = 24
     delegate_budget_tokens: int = 200_000
