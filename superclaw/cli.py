@@ -20,6 +20,7 @@ from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
 from superclaw import review
+from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
 from superclaw.schema import SchemaError
@@ -119,6 +120,12 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     else:
         print(res.final_answer)
     return exit_code
+
+
+def cmd_acp(rt: Runtime, args: argparse.Namespace) -> int:
+    print(f"superclaw: serving the Agent Client Protocol over stdio for {rt.workspace}", file=sys.stderr)
+    acp_serve(rt)
+    return 0
 
 
 def cmd_review(rt: Runtime, args: argparse.Namespace) -> int:
@@ -284,6 +291,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
                     help="JSON Schema the final answer must match; a mismatch exits 2")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
+    sub.add_parser("acp", help="serve the Agent Client Protocol over stdio so an editor can drive superclaw")
     rv = sub.add_parser("review", help="review a change read-only and print findings with file:line and a verdict")
     rv.add_argument("prompt", nargs="?", default="", help="extra focus for the reviewer, or - to read it from stdin")
     scope = rv.add_mutually_exclusive_group()
@@ -381,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+    handler = {"exec": cmd_exec, "acp": cmd_acp, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
