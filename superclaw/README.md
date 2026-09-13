@@ -94,7 +94,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Personal guidelines | `~/.config/superclaw/SUPERCLAW.md` | none |
 | Project guidelines | `AGENTS.md`, `SUPERCLAW.md` or `.superclaw/AGENTS.md`, walked from the git root to the cwd | none |
 
-Provider keys follow the model prefix: `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`, `GOOGLE_AISTUDIO_API_KEY`, `NVIDIA_NIM_API_KEY`, `OLLAMA_API_KEY`, `OPENCODE_API_KEY` (OpenCode Zen, base `https://opencode.ai/zen/v1`; when it is unset, the key is read from OpenCode's own `auth.json` under `~/.local/share/opencode`, honoring `OPENCODE_AUTH_PATH`, `OPENCODE_DIR` and `XDG_DATA_HOME`, so a machine already logged in through the OpenCode CLI needs no extra setup). A bare model id routes through OpenRouter.
+Provider keys follow the model prefix: `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`, `GOOGLE_AISTUDIO_API_KEY`, `NVIDIA_NIM_API_KEY`, `OLLAMA_API_KEY`, `OPENCODE_API_KEY` (OpenCode Zen, base `https://opencode.ai/zen/v1`). When it is unset, the key is read from OpenCode's own `auth.json` under `~/.local/share/opencode` (honoring `OPENCODE_AUTH_PATH`, `OPENCODE_DIR` and `XDG_DATA_HOME`); that is a Go subscription key, so it routes to `https://opencode.ai/zen/go/v1` with the required `x-opencode-session` header instead of the pay-per-use Zen endpoint, and a machine already logged in through the OpenCode CLI needs no extra setup. `OPENCODE_API_BASE` overrides the endpoint and `OPENCODE_SESSION` the routing id. A bare model id routes through OpenRouter.
 
 Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific file wins on conflict.
 

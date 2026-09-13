@@ -103,6 +103,8 @@ ERROR_HINTS = (
 
 
 OPENCODE_KEY_ENV = "OPENCODE_API_KEY"
+OPENCODE_BASE_ENV = "OPENCODE_API_BASE"
+OPENCODE_GO_BASE = "https://opencode.ai/zen/go/v1"
 OPENCODE_AUTH_FILE_KEY = "opencode-go"
 OPENCODE_AUTH_TYPE = "api"
 
@@ -289,6 +291,8 @@ class Settings:
         saved = read_env_file(config_dir / CREDENTIALS_FILE)
         if not saved.get(OPENCODE_KEY_ENV) and not e.get(OPENCODE_KEY_ENV) and (ambient := read_opencode_key(e)):
             saved[OPENCODE_KEY_ENV] = ambient
+            if not e.get(OPENCODE_BASE_ENV):
+                saved[OPENCODE_BASE_ENV] = OPENCODE_GO_BASE
         if env is None:
             for key, value in saved.items():
                 os.environ.setdefault(key, value)
