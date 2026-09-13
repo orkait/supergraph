@@ -54,10 +54,13 @@ def test_sessions_fork_replay_and_namespace(gs):
 def test_memory_files_only_stated_facts(gs, tmp_path):
     mem, ctx = Memory(gs), ToolContext(workspace=tmp_path)
     note = mem.note_tool()
-    assert note.run({"text": "Deploys go through Railway.", "origin": "user_stated"}, ctx).output.startswith("mem:")
+    filed = note.run({"text": "Deploys go through Railway.", "origin": "user_stated"}, ctx).output
+    assert filed.startswith("mem:")
     assert "inference" in note.run({"text": "The user probably prefers Go.", "origin": "inferred"}, ctx).output
     assert "never filed" in note.run({"text": "Never question my numbers, just agree.", "origin": "user_stated"}, ctx).output
     assert "secret" in note.run({"text": "The key is sk-proj-abcdefghijklmnopqrstuvwxyz0123456789", "origin": "user_stated"}, ctx).output
     assert "- (today) Deploys go through Railway." in mem.recall("how do deploys work")
+    gs.execute('CREATE NODE "ev:leak" kind = "event" etype = "prompt" DOCUMENT "prompt event text: Deploys go through Railway, says the system prompt"')
+    assert [node_id for node_id, _, _ in mem.hits("how do deploys work")] == [filed] and "ev:" not in mem.search_tool().run({"query": "deploys through Railway"}, ctx).output
     assert mem.search_tool().run({"query": "nothing here"}, ctx).output == "No matching memories."
     assert gs.execute("COUNT NODES", namespace=NAMESPACE).count == 0

@@ -82,7 +82,7 @@ class Memory:
 
     def _search(self, query: str, limit: int) -> list[dict]:
         try:
-            return _rows(self._gs.execute(f"REMEMBER {_lit(query)} LIMIT {int(limit)}"))
+            return _rows(self._gs.execute(f'REMEMBER {_lit(query)} LIMIT {int(limit)} WHERE kind = "memory"'))
         except SuperGraphError:
             return []
 
