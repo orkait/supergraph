@@ -15,6 +15,13 @@ from supergraph.core.types import Result, encode_json
 from superclaw.settings import LIMITS, SHARE_DIR
 
 
+class NotServing(StoreInUse):
+    def __init__(self, lock_path: Path, sock: Path) -> None:
+        SuperGraphError.__init__(self, f"{lock_path} is held by a superclaw that is not serving it at {sock}; "
+                                       "it predates store sharing, so restart that session")
+        self.lock_path = str(lock_path)
+
+
 def socket_path(db_path: Path) -> Path:
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "").strip() or f"/tmp/superclaw-{os.getuid()}")
     key = hashlib.sha256(str(Path(db_path).resolve()).encode()).hexdigest()[: LIMITS.share_key_chars]
@@ -147,7 +154,7 @@ class SharedGraph:
         except StoreInUse:
             path = socket_path(self.db_path)
             if not path.exists():
-                raise StoreInUse(f"{self.db_path / '.supergraph.lock'} is held by a superclaw that is not serving it at {path}; restart that session") from None
+                raise NotServing(self.db_path / ".supergraph.lock", path) from None
             self._remote = RemoteGraph(path)
         return self
 

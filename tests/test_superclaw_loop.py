@@ -29,7 +29,7 @@ from superclaw.policy import Action, Mode, Policy
 from superclaw.runtime import Completion, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
-from superclaw.share import open_shared, socket_path
+from superclaw.share import NotServing, open_shared, socket_path
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
@@ -209,6 +209,10 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     late.close()
     attached.close()
     assert not socket_path(brain).exists()
+    legacy = SuperGraph(path=str(ws / "old-brain"), embedder="none", enable_sentence_nodes=False)
+    with pytest.raises(NotServing, match="predates store sharing"):
+        open_shared(ws / "old-brain")
+    legacy.close()
 
 
 def test_guards_gates_and_verifier(ws):
