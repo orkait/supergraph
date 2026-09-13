@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 from superclaw.runtime import Completion, Message, ToolCall, Usage, to_wire
@@ -49,6 +50,55 @@ def parse_response(resp: Any) -> Completion:
     )
 
 
+def _visible(text: str) -> str:
+    cleaned = _THINK.sub("", text)
+    start = cleaned.find("<think>")
+    return cleaned if start < 0 else cleaned[:start]
+
+
+def collect(chunks: Any, on_text: Callable[[str], None]) -> Completion:
+    parts: list[str] = []
+    calls: dict[Any, ToolCall] = {}
+    order: list[Any] = []
+    shown, finish, usage = "", "", Usage()
+    for chunk in chunks:
+        chunk_usage = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            details = getattr(chunk_usage, "prompt_tokens_details", None)
+            usage = Usage(
+                input_tokens=int(getattr(chunk_usage, "prompt_tokens", 0) or 0),
+                output_tokens=int(getattr(chunk_usage, "completion_tokens", 0) or 0),
+                cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
+            )
+        for choice in getattr(chunk, "choices", None) or []:
+            finish = getattr(choice, "finish_reason", None) or finish
+            delta = getattr(choice, "delta", None)
+            if delta is None:
+                continue
+            if getattr(delta, "content", None):
+                parts.append(delta.content)
+                visible = _visible("".join(parts))
+                if len(visible) > len(shown):
+                    on_text(visible[len(shown):])
+                    shown = visible
+            for tc in getattr(delta, "tool_calls", None) or []:
+                key = tc.index if getattr(tc, "index", None) is not None else (tc.id or len(order))
+                call = calls.get(key)
+                if call is None:
+                    call = calls[key] = ToolCall(id=getattr(tc, "id", "") or "", name="", arguments="")
+                    order.append(key)
+                if getattr(tc, "id", None) and not call.id:
+                    call.id = tc.id
+                function = getattr(tc, "function", None)
+                if function is not None:
+                    if getattr(function, "name", None) and not call.name:
+                        call.name = function.name
+                    call.arguments += getattr(function, "arguments", None) or ""
+    tool_calls = [ToolCall(id=c.id or f"call_{i}", name=c.name, arguments=c.arguments or "{}")
+                  for i, c in enumerate(calls[k] for k in order) if c.name]
+    return Completion(text=_THINK.sub("", "".join(parts)).strip(), tool_calls=tool_calls, usage=usage, finish_reason=finish)
+
+
 class LitellmProvider:
     def __init__(
         self,
@@ -58,6 +108,7 @@ class LitellmProvider:
         temperature: float = 0.0,
         timeout_s: int = LIMITS.completion_timeout_s,
         effort: str = "",
+        stream: bool = True,
     ) -> None:
         if not chain:
             raise ValueError("LitellmProvider needs at least one provider in the chain")
@@ -66,13 +117,15 @@ class LitellmProvider:
         self._temperature = temperature
         self._timeout_s = timeout_s
         self.effort = effort
+        self.streams = stream
 
     @property
     def model(self) -> str:
         return self._chain[0]["litellm_model"]
 
-    def complete(self, messages: list[Message], tools: list[dict[str, Any]]) -> Completion:
+    def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None) -> Completion:
         last_err: Exception | None = None
+        streaming = self.streams and on_text is not None
         for provider in self._chain:
             kwargs: dict[str, Any] = {
                 "model": provider["litellm_model"],
@@ -82,8 +135,10 @@ class LitellmProvider:
                 "temperature": self._temperature,
                 "max_tokens": self._max_tokens,
                 "timeout": self._timeout_s,
-                "stream": False,
+                "stream": streaming,
             }
+            if streaming:
+                kwargs["stream_options"] = {"include_usage": True}
             if provider.get("account_id"):
                 kwargs["account_id"] = provider["account_id"]
             if self.effort:
@@ -94,7 +149,8 @@ class LitellmProvider:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
             try:
-                return parse_response(_completion(**kwargs))
+                response = _completion(**kwargs)
+                return collect(response, on_text) if streaming else parse_response(response)
             except Exception as e:
                 last_err = e
         raise RuntimeError(f"all providers failed: {last_err}")

@@ -140,6 +140,8 @@ class _Run:
 
     def complete(self, exposed: list[dict[str, Any]]) -> Completion:
         try:
+            if getattr(self.provider, "streams", False) and self.o.on_event:
+                return self.provider.complete(self.messages, exposed, on_text=lambda text: self.emit({"type": "text_delta", "text": text}))
             return self.provider.complete(self.messages, exposed)
         except Exception as e:
             self.persist("error", {"turn": self.turns, "error": f"{type(e).__name__}: {e}"})

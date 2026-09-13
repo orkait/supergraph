@@ -160,6 +160,19 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     run("go", bad, options(ws, agents={"reviewer": reviewer}))
     assert "unknown agent 'ghost'" in bad.requests[1][0][-1].content
 
+    class Streaming(Scripted):
+        streams = True
+
+        def complete(self, messages, tools, on_text=None):
+            for fragment in ("Hel", "lo") if on_text else ():
+                on_text(fragment)
+            return super().complete(messages, tools)
+
+    events = []
+    res = run("go", Streaming(Completion(text="Hello")), options(ws, on_event=events.append))
+    assert [e["text"] for e in events if e["type"] == "text_delta"] == ["Hel", "lo"] and [e["text"] for e in events if e["type"] == "text"] == ["Hello"]
+    assert res.final_answer == "Hello" and run("go", Streaming(Completion(text="quiet")), options(ws)).final_answer == "quiet"
+
 
 def test_intent_hooks_and_deferral(ws, gs):
     assert parse_kind("garbage") is Kind.CHANGE

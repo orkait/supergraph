@@ -123,6 +123,25 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(app_mod, "build_provider_chain", lambda models, **kw: asked.append(list(models)) or [])
     assert app_mod.connect_provider("m/a", "", ("m/b", "m/c")) is None and asked == [["m/a", "m/b", "m/c"]]
 
+    def part(index, cid, name, args):
+        return SimpleNamespace(index=index, id=cid, function=SimpleNamespace(name=name, arguments=args))
+
+    def piece(content=None, calls=None, finish=None):
+        return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=content, tool_calls=calls), finish_reason=finish)], usage=None)
+
+    def streamed(**kwargs):
+        assert kwargs["stream"] is True and kwargs["stream_options"] == {"include_usage": True}
+        return iter([piece("<think>hidden"), piece(" more</think>Hel"), piece("lo", [part(0, "call_9", "read_file", '{"pa')]),
+                     piece(None, [part(0, None, None, 'th": "a"}')], "tool_calls"),
+                     SimpleNamespace(choices=[], usage=SimpleNamespace(prompt_tokens=11, completion_tokens=3, prompt_tokens_details=SimpleNamespace(cached_tokens=4)))])
+
+    monkeypatch.setattr(mod, "_completion", streamed)
+    frags: list[str] = []
+    done = LitellmProvider(one).complete([user("hi")], [], on_text=frags.append)
+    assert frags == ["Hel", "lo"] and done.text == "Hello" and done.usage.cache_read_tokens == 4 and done.finish_reason == "tool_calls"
+    assert [(c.id, c.name, c.arguments) for c in done.tool_calls] == [("call_9", "read_file", '{"path": "a"}')]
+    assert LitellmProvider(one, stream=False).streams is False and Settings.from_env({}).stream and not Settings.from_env({"SUPERCLAW_STREAM": "off"}).stream
+
 
 def test_meter_cut_prune_and_compaction():
     shot = Message(role="user", content="look", images=["data:image/png;base64,AAA"])
