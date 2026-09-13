@@ -26,6 +26,9 @@ DUCKDUCKGO_SEARCH_URL = "https://html.duckduckgo.com/html/"
 DUCKDUCKGO_LOCALE = "us-en"
 YTDLP_BIN = "yt-dlp"
 AUDIO_FORMAT = "mp3"
+RG_BIN = "rg"
+HOST_TOOLS = (("rg", "grep"), ("fd", "find"), ("sd", "sed"), ("xh", "curl"), ("jq", ""), ("uv", "pip"), ("bat", ""), ("eza", "ls"),
+              ("delta", ""), ("hyperfine", "time"), ("gh", ""), (YTDLP_BIN, ""), ("ffmpeg", ""))
 LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
 UTF8_MARK = "utf"
 
@@ -302,6 +305,7 @@ class Limits:
     download_bytes_max: int = 256 * 1024 * 1024
     download_timeout_s: float = 600.0
     download_chunk_bytes: int = 64 * 1024
+    grep_timeout_s: float = 30.0
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
