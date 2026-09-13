@@ -10,6 +10,7 @@ from superclaw.models import ModelInfo, lookup
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens
 from superclaw.settings import LIMITS, PROVIDERS, Settings
+from supergraph.ingest.llm.resolve import resolve_model
 
 
 def user(text):
@@ -51,6 +52,13 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert resolve("glm", live, "ollama").id == "ollama/glm-5.2" and resolve("glm-5.2", live, "ollama") and resolve("zzz", live, "ollama") is None
     assert describe(live[0], "|") == "200.0K ctx | tools | $1.00/2.00 | live" and lookup("ollama/none", tmp_path).known is False
     assert "/setup" in hint("OpenrouterException: Invalid API Key", tui=True) and "superclaw models" in hint("x is not a valid model ID", tui=False) and hint("boom", tui=True) == ""
+    opencode = next(p for p in PROVIDERS if p.name == "opencode")
+    oc_body = json.dumps({"data": [{"id": "deepseek-v4-flash"}, {"id": "text-embedding-3"}]}).encode()
+    oc_models = models_for(opencode, "sk-oc", tmp_path / "oc", fetch=lambda url, headers: oc_body)
+    assert [m.id for m in oc_models] == ["opencode/deepseek-v4-flash"] and opencode.default_model == "opencode/deepseek-v4-flash"
+    monkeypatch.setenv("OPENCODE_API_KEY", "sk-oc-test")
+    resolved = resolve_model("opencode/deepseek-v4-flash")
+    assert resolved["litellm_model"] == "openai/deepseek-v4-flash" and resolved["api_base"].endswith("/zen/v1") and resolved["api_key"] == "sk-oc-test"
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
