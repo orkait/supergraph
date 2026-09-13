@@ -1,7 +1,10 @@
+import io
 import json
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -13,8 +16,9 @@ from superclaw.clipboard import parse_drop
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, jail, relative, web
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, fetch, jail, relative, web
 from superclaw.tools.budget import Category
+from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
 from superclaw.tools.web import WebSearch
@@ -49,7 +53,31 @@ def reg():
     return reg
 
 
-def test_jail_and_boundary(tmp_path, ws, tmp_path_factory):
+class FakeResponse:
+    def __init__(self, url, body, content_type="text/html; charset=utf-8", status=200):
+        self.url, self.body, self.headers, self.status = url, body, {"Content-Type": content_type}, status
+
+    def read(self, n=-1):
+        return self.body[:n] if n > 0 else self.body
+
+    def geturl(self):
+        return self.url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+PAGE_HTML = (
+    '<!doctype html><html><head><title>T</title><style>b{}</style></head><body><nav><a href="/docs">Docs</a></nav>'
+    '<h1>Hello <b>world</b></h1><p>First para with <a href="https://x.y/z">a link</a> and <a href="#top">anchor</a>.</p>'
+    '<ul><li>one</li><li>two</li></ul><pre>code  here</pre><script>alert(1)</script></body></html>'
+)
+
+
+def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     other = tmp_path_factory.mktemp("other")
     (other / "secret").write_text("s")
     os.symlink(other / "secret", ws / "link")
@@ -75,6 +103,38 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory):
     bare.register(Leaky())
     assert "not recoverable" in bare.run("leaky", {}, ctx).output
     gs.close()
+    pages = {"https://public.example/page": FakeResponse("https://public.example/page", PAGE_HTML.encode()),
+             "https://public.example/data": FakeResponse("https://public.example/data", b'{"a": 1}', "application/json"),
+             "https://public.example/latin": FakeResponse("https://public.example/latin", b"caf\xe9", "text/plain; charset=latin-1"),
+             "https://public.example/long": FakeResponse("https://public.example/long", b"abcdefgh", "text/plain")}
+
+    def open_url(request):
+        if request.full_url.endswith("/missing"):
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, io.BytesIO(b"nope"))
+        return pages[request.full_url]
+
+    hosts = {"public.example": ["93.184.216.34"], "inner.example": ["10.0.0.5"], "both.example": ["93.184.216.34", "127.0.0.1"], "v6.example": ["::ffff:192.168.1.2"]}
+    monkeypatch.setattr(fetch, "resolve", lambda host: hosts[host])
+    monkeypatch.setattr(fetch, "open_url", open_url)
+    web_fetch = WebFetch()
+    page = web_fetch.run({"url": "https://public.example/page"}, ctx)
+    assert page.ok and page.output.startswith("URL: https://public.example/page\nStatus: 200\nContent-Type: text/html; charset=utf-8\nBytes: ") and "Converted: html to markdown" in page.output
+    assert page.output.split("\n\n", 1)[1] == "[Docs](/docs)\n\n# Hello world\n\nFirst para with [a link](https://x.y/z) and anchor.\n\n- one\n- two\n\n```\ncode  here\n```"
+    assert page.meta["full"] == page.output and "<h1>" in web_fetch.run({"url": "https://public.example/page", "format": "raw"}, ctx).output
+    data = web_fetch.run({"url": "https://public.example/data"}, ctx).output
+    assert data.endswith('\n\n{"a": 1}') and "Converted" not in data and web_fetch.run({"url": "https://public.example/latin"}, ctx).output.endswith("\n\ncafé")
+    cut = web_fetch.run({"url": "https://public.example/long", "max_bytes": 4}, ctx)
+    assert cut.truncated and "Bytes: 4, truncated" in cut.output and cut.output.endswith("\n\nabcd")
+    missing = web_fetch.run({"url": "https://public.example/missing"}, ctx)
+    assert not missing.ok and missing.output == "Error fetching URL: HTTP 404 Not Found\nnope"
+    for bad, why in (("http://inner.example/", "private"), ("http://both.example/", "loopback"), ("http://localhost:8000/", "localhost"), ("http://127.0.0.1/", "loopback"),
+                     ("http://[::1]/", "loopback"), ("http://v6.example/", "private"), ("http://169.254.169.254/latest", "link-local"), ("ftp://public.example/x", "only public http"),
+                     ("file:///etc/passwd", "only public http")):
+        out = web_fetch.run({"url": bad}, ctx).output
+        assert out.startswith("Error:") and why in out, (bad, out)
+    with pytest.raises(fetch.Unsafe):
+        fetch._Redirects().redirect_request(urllib.request.Request("https://public.example/page"), None, 302, "Found", {}, "http://inner.example/")
+    assert WebFetch.deferred and WebFetch.safety.side_effect is SideEffect.NETWORK and fetch._Redirects.max_redirections == LIMITS.web_fetch_redirects
 
 
 DUCK_HTML = (
