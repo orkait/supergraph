@@ -145,7 +145,7 @@ class WebSearch(Tool):
     deferred = True
     description = (
         "Search the web and get ranked results as title, URL and snippet. Google when GOOGLE_API_KEY and GOOGLE_CSE_ID are set, "
-        "DuckDuckGo otherwise. Read a result's page with bash curl only if the user allows network; quote the URL you relied on."
+        "DuckDuckGo otherwise. Read a result's page with web_fetch; quote the URL you relied on."
     )
     parameters = {
         "type": "object",
