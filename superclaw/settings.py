@@ -83,6 +83,9 @@ MCP_FILE = "mcp.json"
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
 COMMANDS_DIR = "commands"
+PACKAGE = "supergraphdb"
+PYPI_URL = f"https://pypi.org/pypi/{PACKAGE}/json"
+UV_TOOLS_MARKER = "/uv/tools/"
 
 
 @dataclass(frozen=True)
