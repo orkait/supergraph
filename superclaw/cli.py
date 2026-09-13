@@ -98,6 +98,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="superclaw", description="A terminal coding agent with supergraph as its memory.")
     parser.add_argument("-C", "--cwd", default=".", help="workspace root (default: current directory)")
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
+    parser.add_argument("--dangerously-skip-permissions", action="store_true",
+                        help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
     parser.add_argument("--model", default=defaults.model)
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
     parser.add_argument("--max-turns", type=int, default=12)
@@ -156,14 +158,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: not a directory: {workspace}")
     if args.command is None and not sys.stdin.isatty():
         sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
-    settings = replace(defaults, model=args.model, mode=args.mode, context_window=args.context_window,
+    mode = Mode.UNSAFE.value if args.dangerously_skip_permissions else args.mode
+    settings = replace(defaults, model=args.model, mode=mode, context_window=args.context_window,
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     if args.command == "setup":
         return cmd_setup(settings, args)
     if args.command == "models":
         return cmd_models(settings, args)
     try:
-        rt = build_runtime(settings, workspace, Mode(args.mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
+        rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")

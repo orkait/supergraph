@@ -18,6 +18,7 @@ from superclaw import __version__
 from superclaw.app import Callbacks, NoProviderKey, Runtime, run_once, switch_model
 from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
 from superclaw.loop import Result
+from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
 from superclaw.runtime import clip, compact
@@ -42,7 +43,7 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "tab complete", "esc cancel", "ctrl+c quit", "click a card to expand")
+HINTS = ("/ commands", "shift+tab mode", "esc cancel", "ctrl+c quit", "click a card to expand")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model")
@@ -135,6 +136,7 @@ class SuperclawApp(App[None]):
         Binding("down", "palette_move(1)", "Next command", show=False, priority=True),
         Binding("up", "palette_move(-1)", "Previous command", show=False, priority=True),
         Binding("tab", "palette_complete", "Complete command", show=False, priority=True),
+        Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
     ]
     limits = LIMITS
 
@@ -297,6 +299,11 @@ class SuperclawApp(App[None]):
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         return self.palette_open() if action.startswith("palette_") else True
+
+    def action_cycle_mode(self) -> None:
+        self.rt.mode = next_mode(self.rt.mode)
+        self.refresh_status()
+        self.note(f"mode {self.rt.mode.value}")
 
     def action_palette_move(self, step: int) -> None:
         palette = self.query_one("#palette", OptionList)

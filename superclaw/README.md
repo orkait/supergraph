@@ -56,7 +56,7 @@ The system prompt is 736 tokens (1,033 with the confirmation policy). Only seven
 | `plan` | allow | hidden | hidden | hidden |
 | `unsafe` | allow | allow | allow | allow |
 
-Anything outside the workspace is denied in every mode. Interactive programs (`vim`, `less`, `top`, a bare REPL, `git rebase -i`) are denied because they hang the agent. Headless `exec` has no approver, so a prompt is a denial there; use `--mode auto` or a session grant. Without `bwrap` on the host, `auto` shell degrades to a prompt rather than running unsandboxed. An approval can be remembered as a command prefix (`p` in the TUI) when the model offered a narrow `prefix_rule`; prefixes for `rm`, `sudo`, interpreters, single tokens and heredoc commands are never remembered.
+`shift+tab` cycles `ask`, `auto` and `plan` in the TUI (the status bar shows the current mode); `unsafe` is deliberately not in that cycle. Reach it with `/mode unsafe`, `--mode unsafe`, or `--dangerously-skip-permissions`, which is the same as `--mode unsafe` and only belongs in a sandbox you can discard. Anything outside the workspace is denied in every mode. Interactive programs (`vim`, `less`, `top`, a bare REPL, `git rebase -i`) are denied because they hang the agent. Headless `exec` has no approver, so a prompt is a denial there; use `--mode auto` or a session grant. Without `bwrap` on the host, `auto` shell degrades to a prompt rather than running unsandboxed. An approval can be remembered as a command prefix (`p` in the TUI) when the model offered a narrow `prefix_rule`; prefixes for `rm`, `sudo`, interpreters, single tokens and heredoc commands are never remembered.
 
 ## 🧠 supergraph as the substrate
 
@@ -121,7 +121,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/setup` | connect a provider key and model without leaving the TUI |
 | `/clear`, `/help`, `/quit` | housekeeping |
 
-Keys: `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure ends the turn with a `run failed` line plus one next step (a rejected key points at `/setup`, an unknown model at `/model`, a full window at `/new`, rate limits and unreachable hosts say so) and leaves the shell open; `superclaw exec` prints the same line with the command-line equivalents.
+Keys: `shift+tab` cycles the permission mode through `ask`, `auto` and `plan`; `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure ends the turn with a `run failed` line plus one next step (a rejected key points at `/setup`, an unknown model at `/model`, a full window at `/new`, rate limits and unreachable hosts say so) and leaves the shell open; `superclaw exec` prints the same line with the command-line equivalents.
 
 </details>
 

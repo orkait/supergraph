@@ -17,6 +17,15 @@ class Mode(str, Enum):
     UNSAFE = "unsafe"
 
 
+CYCLE_MODES = (Mode.ASK, Mode.AUTO, Mode.PLAN)
+
+
+def next_mode(mode: Mode) -> Mode:
+    if mode not in CYCLE_MODES:
+        return CYCLE_MODES[0]
+    return CYCLE_MODES[(CYCLE_MODES.index(mode) + 1) % len(CYCLE_MODES)]
+
+
 class Action(str, Enum):
     ALLOW = "allow"
     PROMPT = "prompt"
