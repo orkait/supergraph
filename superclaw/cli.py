@@ -141,6 +141,29 @@ def cmd_review(rt: Runtime, args: argparse.Namespace) -> int:
     return 2 if res.incomplete else 0
 
 
+def cmd_export(rt: Runtime, args: argparse.Namespace) -> int:
+    sid = rt.store.latest() if args.session in ("", "latest") else args.session
+    if not sid or rt.store.get(sid) is None:
+        sys.exit(f"superclaw: no session {args.session or 'latest'!r}")
+    doc = json.dumps(rt.store.export(sid), indent=2)
+    if args.output:
+        Path(args.output).write_text(doc + "\n")
+        print(f"superclaw: wrote session {sid} to {args.output}", file=sys.stderr)
+    else:
+        print(doc)
+    return 0
+
+
+def cmd_import(rt: Runtime, args: argparse.Namespace) -> int:
+    try:
+        doc = json.loads(Path(args.file).read_text() if args.file != "-" else sys.stdin.read())
+        sid = rt.store.import_(doc, cwd=str(rt.workspace))
+    except (OSError, ValueError) as e:
+        sys.exit(f"superclaw: {e}")
+    print(sid)
+    return 0
+
+
 def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
     if args.query:
         hits = rt.store.search(args.query)
@@ -267,6 +290,11 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     scope.add_argument("--uncommitted", action="store_true", help="staged, unstaged and untracked changes (default)")
     scope.add_argument("--base", default="", metavar="BRANCH", help="changes on this branch since it left BRANCH")
     scope.add_argument("--commit", default="", metavar="SHA", help="the changes one commit introduced")
+    exp = sub.add_parser("export", help="write a session and its events as JSON")
+    exp.add_argument("session", nargs="?", default="latest", help="session id (default: latest)")
+    exp.add_argument("-o", "--output", default="", metavar="FILE", help="write here instead of stdout")
+    imp = sub.add_parser("import", help="create a new session from an exported JSON file")
+    imp.add_argument("file", help="the export, or - for stdin")
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
@@ -353,7 +381,8 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "review": cmd_review, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
+    handler = {"exec": cmd_exec, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+               "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)

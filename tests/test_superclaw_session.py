@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from supergraph import SuperGraph
@@ -38,6 +40,15 @@ def test_sessions_fork_replay_and_namespace(gs):
     store.append(a, "usage", {"input_tokens": 100, "output_tokens": 20, "cost_usd": 0.5})
     store.append(a, "usage", {"input_tokens": 30, "output_tokens": 10, "cost_usd": 0.25})
     assert store.usage(a) == {"calls": 2, "tokens": 160, "cost_usd": 0.75} and store.usage(b) == {"calls": 0, "tokens": 0, "cost_usd": 0.0}
+    doc = json.loads(json.dumps(store.export(a)))
+    assert doc["schemaVersion"] == 1 and doc["session"]["id"] == a and [e["seq"] for e in doc["events"]] == list(range(1, 10))
+    c = store.import_(doc, cwd="/elsewhere")
+    assert c not in (a, b) and store.get(c)["parent"] == a and store.get(c)["cwd"] == "/elsewhere"
+    assert [(m.role, m.content) for m in store.replay(c)] == [(m.role, m.content) for m in store.replay(a)] and store.usage(c) == store.usage(a)
+    with pytest.raises(ValueError):
+        store.import_({"schemaVersion": 99})
+    with pytest.raises(KeyError):
+        store.export("s_nope")
 
 
 def test_memory_files_only_stated_facts(gs, tmp_path):
