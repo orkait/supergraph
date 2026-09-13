@@ -128,32 +128,35 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.press(*"/agent none", "enter")
             await pilot.pause(0.05)
             assert rt.agent is None and rt.policy.allow_tools == frozenset()
+            prompt = app.query_one("#prompt", Input)
             await pilot.press(*"/attach out.txt", "enter")
             await pilot.pause(0.05)
-            assert "out.txt" in app.pending.text and "goes with your next message" in str(app.query(".note").last().content)
+            assert prompt.value == "[File #1] " and "[File #1] is out.txt" in str(app.query(".note").last().content) and len(app.clips) == 1
+            prompt.value = ""
             await pilot.press(*"/attach nope.txt", "enter")
             await pilot.pause(0.05)
-            assert "not a file" in str(app.query(".error").last().content)
+            assert "not a file" in str(app.query(".error").last().content) and prompt.value == ""
             (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 8)
-            prompt = app.query_one("#prompt", Input)
             prompt.post_message(Paste(f"file://{tmp_path}/shot.png"))
             await pilot.pause(0.1)
-            assert prompt.value == "[Image #1] " and len(app.pending.images) == 1
+            assert prompt.value == "[Image #1] " and len(app.clips) == 2
             prompt.post_message(Paste("line one\nline two\nline three\nline four"))
             await pilot.pause(0.1)
-            assert prompt.value == "[Image #1] [Pasted text #1 +4 lines] " and 'attachment path="Pasted text #1 +4 lines"' in app.pending.text and "line four" in app.pending.text
+            assert prompt.value == "[Image #1] [Pasted text #1 +4 lines] " and len(app.clips) == 3
             prompt.post_message(Paste("short"))
             await pilot.pause(0.1)
             assert prompt.value == "[Image #1] [Pasted text #1 +4 lines] short"
             monkeypatch.setattr("superclaw.clipboard.image_bytes", lambda: (b"\x89PNG\r\n\x1a\n" + b"1" * 8, "image/png"))
             app.paste_clipboard()
             await pilot.pause(0.1)
-            assert prompt.value.endswith("[Image #2] ") and len(app.pending.images) == 2 and list(rt.settings.clipboard_dir.glob("clip-*.png"))
+            assert prompt.value.endswith("short[Image #2] ") and len(app.clips) == 4 and list(rt.settings.clipboard_dir.glob("clip-*.png"))
             monkeypatch.setattr("superclaw.clipboard.image_bytes", lambda: None)
             monkeypatch.setattr("superclaw.clipboard.text", lambda: "from the clipboard")
             app.paste_clipboard()
             await pilot.pause(0.1)
             assert prompt.value.endswith("[Image #2] from the clipboard")
+            picked = app.clips.select("keep [Image #2] and [Pasted text #1 +4 lines], the rest was deleted")
+            assert len(picked.images) == 1 and "line four" in picked.prompt and "out.txt" not in picked.prompt and picked.prompt.startswith("keep [Image #2]")
             assert "write it" in app.history and app.hist_index == len(app.history)
 
     asyncio.run(drive())

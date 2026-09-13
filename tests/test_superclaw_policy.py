@@ -1,6 +1,7 @@
 import pytest
 
 from superclaw.cli import _tool_set, build_parser
+from superclaw.clips import Clips
 from superclaw.policy import Action, Mode, Policy, classify_command, next_mode, validate_prefix
 from superclaw.schema import SchemaError
 from superclaw.schema import extract as schema_extract
@@ -122,3 +123,16 @@ def test_command_classes_and_prefix_rules(tmp_path):
     assert newer.available and "0.7.0 -> 0.8.0" in describe_update(newer)[1] and apply_update(wheel) == 0
     assert "cannot tell" in describe_update(plan_update(Install("unknown", "0.7.0"), fetch=False))[1]
     assert "no upstream branch" in describe_update(plan_update(Install("editable", "0.7.0", str(tmp_path)), fetch=False))[1]
+    clips = Clips()
+    shot = clips.add("Image", text='<attachment path="shot.png">\n(attached as an image)\n</attachment>', image="data:image/png;base64,AAA")
+    pasted = clips.add("Pasted text", text='<attachment path="Pasted text #1 +4 lines">\nl1\nl2\nl3\nl4\n</attachment>', extra=" +4 lines")
+    second = clips.add("Image", image="data:image/png;base64,BBB")
+    assert (shot.marker, pasted.marker, second.marker) == ("[Image #1]", "[Pasted text #1 +4 lines]", "[Image #2]") and len(clips) == 3
+    picked = clips.select(f"compare {second.marker} with {shot.marker} {pasted.marker} please")
+    assert picked.images == ["data:image/png;base64,BBB", "data:image/png;base64,AAA"] and picked.prompt.startswith("compare [Image #2] with [Image #1]")
+    assert picked.prompt.index("(attached as an image)") < picked.prompt.index("l1\nl2") and "[Pasted text #1 +4 lines]" in picked.prompt
+    dropped = clips.select("only [Image #1] now, and [Image #9] typed by hand, and [Image #1] again")
+    assert dropped.images == ["data:image/png;base64,AAA"] and dropped.prompt.count("(attached as an image)") == 1 and "l1" not in dropped.prompt
+    assert clips.select("no markers at all").images == [] and clips.select("no markers at all").prompt == "no markers at all"
+    clips.clear()
+    assert len(clips) == 0 and clips.select("[Image #1]").images == [] and clips.add("Image").marker == "[Image #3]"
