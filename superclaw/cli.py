@@ -120,6 +120,8 @@ def cmd_tui(rt: Runtime, args: argparse.Namespace) -> int:
 def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="superclaw", description="A terminal coding agent with supergraph as its memory.")
     parser.add_argument("-C", "--cwd", default=".", help="workspace root (default: current directory)")
+    parser.add_argument("--add-dir", action="append", default=[], metavar="PATH",
+                        help="allow reads and writes in an extra directory, and bind it into the sandbox (repeatable)")
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
@@ -185,6 +187,10 @@ def main(argv: list[str] | None = None) -> int:
     workspace = Path(args.cwd).resolve()
     if not workspace.is_dir():
         sys.exit(f"superclaw: not a directory: {workspace}")
+    extra_dirs = tuple(Path(d).resolve() for d in args.add_dir)
+    for extra in extra_dirs:
+        if not extra.is_dir():
+            sys.exit(f"superclaw: not a directory: {extra}")
     if args.command is None and not sys.stdin.isatty():
         sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
     mode = Mode.UNSAFE.value if args.dangerously_skip_permissions else args.mode
@@ -197,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command not in (None, "doctor"),
-                           allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools))
+                           allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills,

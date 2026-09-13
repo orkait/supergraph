@@ -7,7 +7,7 @@ from supergraph import SuperGraph
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, jail
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
 from superclaw.tools.budget import Category
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.shell import Bash
@@ -49,6 +49,9 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory):
     for escape in ("../outside.txt", str(other / "x"), "link"):
         with pytest.raises(PathEscapes):
             jail(ws, escape)
+    roots = (ws, other)
+    assert jail(roots, str(other / "x")) == (other / "x").resolve() and jail(roots, "src/a.py") == (ws / "src" / "a.py").resolve()
+    assert relative(roots, (other / "secret").resolve()) == "secret" and relative(ws, (other / "secret").resolve()) == str((other / "secret").resolve())
     gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
     store = ObservationStore(gs)
     reg = Registry(observations=store)
@@ -88,6 +91,13 @@ def test_file_tools(reg, ws):
     assert reg.run("grep", {"pattern": "beta", "case_insensitive": True}, ctx).output.splitlines() == ["src/a.py:2:BETA", "src/b.txt:1:Beta here", "src/b.txt:2:and beta again"]
     assert reg.run("glob", {"pattern": "**/*.py"}, ctx).output.splitlines() == ["src/a.py"]
     assert reg.run("list_directory", {"path": "src"}, ctx).output.splitlines() == ["a.py", "b.txt"]
+    vendor = ws.parent / "vendor"
+    vendor.mkdir()
+    (vendor / "lib.py").write_text("vendored\n")
+    assert "escapes the workspace" in reg.run("read_file", {"path": str(vendor / "lib.py")}, ctx).output
+    wide = ToolContext(workspace=ws, extra_dirs=(vendor,))
+    assert wide.roots == (ws, vendor) and reg.run("read_file", {"path": str(vendor / "lib.py")}, wide).output == "1→vendored"
+    assert reg.run("grep", {"pattern": "vendored", "path": str(vendor)}, wide).output == "lib.py:1:vendored"
 
 
 def test_bash(tmp_path):

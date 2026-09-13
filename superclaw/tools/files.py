@@ -79,7 +79,7 @@ class ReadFile(Tool):
     output_category = Category.FILE
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        target = jail(ctx.workspace, args["path"])
+        target = jail(ctx.roots, args["path"])
         rel = args["path"]
         if not target.exists():
             return Result.error(f"Error: file not found: {rel}")
@@ -121,8 +121,8 @@ class WriteFile(Tool):
     safety = _write("Creates or overwrites a file.")
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        target = jail(ctx.workspace, args["path"])
-        rel = relative(ctx.workspace, target)
+        target = jail(ctx.roots, args["path"])
+        rel = relative(ctx.roots, target)
         before = ""
         if target.exists():
             if not args.get("overwrite"):
@@ -156,8 +156,8 @@ class EditFile(Tool):
     safety = _write("Edits an existing file in place.")
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        target = jail(ctx.workspace, args["path"])
-        rel = relative(ctx.workspace, target)
+        target = jail(ctx.roots, args["path"])
+        rel = relative(ctx.roots, target)
         if not target.is_file():
             return Result.error(f"Error: file not found: {rel}")
         old = args["old_string"]
@@ -197,7 +197,7 @@ class ListDirectory(Tool):
     safety = _read("Lists directory entries inside the workspace.")
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        base = jail(ctx.workspace, args.get("path") or ".")
+        base = jail(ctx.roots, args.get("path") or ".")
         if not base.is_dir():
             return Result.error(f"Error: not a directory: {args.get('path') or '.'}")
         depth = int(args.get("max_depth") or LIMITS.list_directory_depth) if args.get("recursive") else 1
@@ -231,7 +231,7 @@ class Glob(Tool):
     safety = _read("Matches file names inside the workspace.")
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        base = jail(ctx.workspace, args.get("cwd") or ".")
+        base = jail(ctx.roots, args.get("cwd") or ".")
         limit = int(args.get("limit") or LIMITS.glob_limit)
         rows = []
         for match in sorted(base.glob(args["pattern"])):
@@ -267,17 +267,16 @@ class Grep(Tool):
     output_category = Category.SEARCH
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
-        base = jail(ctx.workspace, args.get("path") or ".")
+        base = jail(ctx.roots, args.get("path") or ".")
         try:
             rx = re.compile(args["pattern"], re.IGNORECASE if args.get("case_insensitive") else 0)
         except re.error as e:
             return Result.error(f"Error: invalid regex: {e}")
         mode = args.get("output_mode") or "content"
         head = int(args.get("head_limit") or LIMITS.grep_head_limit)
-        root = Path(ctx.workspace).resolve()
         rows: list[str] = []
         truncated = False
-        for rel, hits in self._matches(base, root, rx, args.get("glob")):
+        for rel, hits in self._matches(base, ctx.roots, rx, args.get("glob")):
             if mode == "files_with_matches":
                 rows.append(rel)
             elif mode == "count":
@@ -292,10 +291,10 @@ class Grep(Tool):
         return Result.success(out or "(no matches)", truncated=truncated)
 
     @staticmethod
-    def _matches(base: Path, root: Path, rx: re.Pattern[str], name_filter: str | None):
+    def _matches(base: Path, roots: tuple[Path, ...], rx: re.Pattern[str], name_filter: str | None):
         files = [base] if base.is_file() else [p for p in _walk(base, None) if p.is_file()]
         for f in sorted(files):
-            rel = f.relative_to(root).as_posix()
+            rel = relative(roots, f)
             if name_filter and not PurePath(rel).match(name_filter):
                 continue
             try:

@@ -243,8 +243,10 @@ def validate_prefix(prefix: list[str], command: str) -> str:
 
 class Policy:
     def __init__(self, workspace: Path, mode: Mode = Mode.ASK, sandboxed: bool = False,
-                 allow_tools: frozenset[str] = frozenset(), deny_tools: frozenset[str] = frozenset()) -> None:
+                 allow_tools: frozenset[str] = frozenset(), deny_tools: frozenset[str] = frozenset(),
+                 extra_dirs: tuple[Path, ...] = ()) -> None:
         self.workspace = Path(workspace)
+        self.extra_dirs = tuple(Path(d) for d in extra_dirs)
         self.mode = mode
         self.sandboxed = sandboxed
         self.allow_tools = allow_tools
@@ -252,6 +254,10 @@ class Policy:
         self.request_kind = Kind.CHANGE
         self._session_grants: set[str] = set()
         self._prefix_grants: list[list[str]] = []
+
+    @property
+    def roots(self) -> tuple[Path, ...]:
+        return (self.workspace, *self.extra_dirs)
 
     @property
     def session_grants(self) -> list[str]:
@@ -293,7 +299,7 @@ class Policy:
             value = args.get(key)
             if value:
                 try:
-                    jail(self.workspace, str(value))
+                    jail(self.roots, str(value))
                 except PathEscapes as e:
                     return str(e)
         return ""
@@ -331,7 +337,7 @@ class Policy:
 
     def _inside(self, path: str) -> bool:
         try:
-            jail(self.workspace, path)
+            jail(self.roots, path)
         except PathEscapes:
             return False
         return True
