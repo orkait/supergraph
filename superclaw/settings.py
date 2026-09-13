@@ -15,6 +15,15 @@ CREDENTIALS_MODE = 0o600
 TRANSCRIPT_TEMPLATE = "superclaw-transcript-{sid}.md"
 ASCII_ENV = "SUPERCLAW_ASCII"
 OFF_VALUES = ("", "0", "false", "off")
+SEARCH_ENV = "SUPERCLAW_SEARCH"
+GOOGLE_KEY_ENV = "GOOGLE_API_KEY"
+GOOGLE_CX_ENV = "GOOGLE_CSE_ID"
+ENGINE_GOOGLE = "google"
+ENGINE_DUCKDUCKGO = "duckduckgo"
+ENGINES = (ENGINE_GOOGLE, ENGINE_DUCKDUCKGO)
+GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
+DUCKDUCKGO_SEARCH_URL = "https://html.duckduckgo.com/html/"
+DUCKDUCKGO_LOCALE = "us-en"
 LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
 UTF8_MARK = "utf"
 
@@ -40,6 +49,13 @@ UNICODE = Glyphs(prompt="\u276f", running="\u25d0", ok="\u2713", failed="\u2717"
                  spinner="\u25d0\u25d3\u25d1\u25d2", border="round", block_art=True)
 ASCII = Glyphs(prompt=">", running="~", ok="+", failed="x", dot="|", gauge="#", mode="*", child="->", ellipsis="...", call="->",
                spinner="-\\|/", border="ascii", block_art=False)
+
+
+def choose_engine(e: Mapping[str, str]) -> str:
+    wanted = e.get(SEARCH_ENV, "").strip().lower()
+    if wanted in ENGINES:
+        return wanted
+    return ENGINE_GOOGLE if e.get(GOOGLE_KEY_ENV, "").strip() and e.get(GOOGLE_CX_ENV, "").strip() else ENGINE_DUCKDUCKGO
 
 
 def choose_glyphs(e: Mapping[str, str]) -> Glyphs:
@@ -268,6 +284,14 @@ class Limits:
     glob_max_limit: int = 1000
     grep_head_limit: int = 50
     tool_search_matches: int = 10
+    web_search_results: int = 5
+    web_search_results_max: int = 10
+    web_search_timeout_s: float = 10.0
+    web_search_body_bytes: int = 256 * 1024
+    web_search_snippet_chars: int = 300
+    web_search_min_interval_s: float = 1.5
+    web_search_retry_s: float = 3.0
+    web_search_attempts: int = 2
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
@@ -326,6 +350,9 @@ class Settings:
     effort: str
     stream: bool
     repo_map: bool
+    search_engine: str
+    google_search_key: str
+    google_search_cx: str
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -361,6 +388,9 @@ class Settings:
             effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
             stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
             repo_map=e.get("SUPERCLAW_REPO_MAP", "1").strip().lower() not in OFF_VALUES,
+            search_engine=choose_engine(e),
+            google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
+            google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
