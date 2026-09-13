@@ -6,11 +6,13 @@ import json
 import os
 import secrets
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
+from superclaw.loop import Result
 from supergraph.core.errors import StoreInUse
 
 from superclaw.agents import load_agents
@@ -19,7 +21,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import checks, plugins, repomap, review, update
+from superclaw import checks, plugins, repomap, review, spec, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -97,10 +99,16 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
             print(line, file=sys.stderr)
 
     emit({"type": "run_start", "sessionId": sid, "cwd": str(rt.workspace), "model": rt.model, "mode": rt.mode.value})
-    res = run_once(rt, prompt, sid, Callbacks(on_event=emit), require_completion=args.require_completion or args.verify,
-                   verify=args.verify, images=attached.images)
+    if args.spec:
+        res = draft_spec(rt, prompt, sid, emit)
+    else:
+        res = run_once(rt, prompt, sid, Callbacks(on_event=emit), require_completion=args.require_completion or args.verify,
+                       verify=args.verify, images=attached.images)
     status = "incomplete" if res.incomplete else "success"
     exit_code = 2 if res.incomplete else 0
+    if args.spec:
+        status = "spec_review" if res.stop_reason == spec.CONTROL else "no_spec"
+        exit_code = 3 if res.stop_reason == spec.CONTROL else 2
     if shape is not None and not res.incomplete:
         try:
             found = schema_problems(schema_extract(res.final_answer), shape)
@@ -120,6 +128,40 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     else:
         print(res.final_answer)
     return exit_code
+
+
+def draft_spec(rt: Runtime, prompt: str, sid: str, emit: Callable[[dict[str, Any]], None]) -> Result:
+    rt.registry.register(spec.SubmitSpec())
+    rt.mode = Mode.PLAN
+    rt.policy.plan_exempt = frozenset({spec.TOOL_NAME})
+    return run_once(rt, f"{spec.draft_prompt()}\n\n<task>\n{prompt}\n</task>", sid, Callbacks(on_event=emit))
+
+
+def cmd_spec(rt: Runtime, args: argparse.Namespace) -> int:
+    if args.spec_command == "approve":
+        try:
+            body, path = spec.load(rt.workspace, args.id)
+        except spec.SpecError as e:
+            sys.exit(f"superclaw: {e}")
+        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"implement {path.stem}")
+        print(f"superclaw: implementing {path.name} in mode {rt.mode.value}, session {sid}", file=sys.stderr)
+        res = run_once(rt, spec.implementation_prompt(body, path, args.note), sid, Callbacks(on_event=lambda event: None))
+        print(res.final_answer)
+        return 2 if res.incomplete else 0
+    if args.spec_command == "show":
+        try:
+            body, path = spec.load(rt.workspace, args.id)
+        except spec.SpecError as e:
+            sys.exit(f"superclaw: {e}")
+        print(body)
+        return 0
+    found = spec.list_specs(rt.workspace)
+    for path in found:
+        print(f"{path.stem:<{LIMITS.model_id_width}} {path.read_text(errors='replace').splitlines()[0].lstrip('# ') if path.stat().st_size else ''}")
+    if not found:
+        print(f"no specs under {spec.specs_dir(rt.workspace)}; draft one with `superclaw exec --spec \"<task>\"`", file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_verify(rt: Runtime, args: argparse.Namespace) -> int:
@@ -312,6 +354,15 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ex.add_argument("--output-format", choices=["text", "json", "stream-json"], default="text")
     ex.add_argument("--output-schema", default="", metavar="FILE",
                     help="JSON Schema the final answer must match; a mismatch exits 2")
+    ex.add_argument("--spec", action="store_true",
+                    help="draft an implementation spec read-only, save it under .superclaw/specs and stop for review (exit 3); approve with `superclaw spec approve`")
+    sp = sub.add_parser("spec", help="list, show or approve saved implementation specs")
+    sp_sub = sp.add_subparsers(dest="spec_command")
+    sp_sub.add_parser("list", help="specs under .superclaw/specs")
+    sp_sub.add_parser("show", help="print a spec").add_argument("id")
+    approve = sp_sub.add_parser("approve", help="implement a spec in the current mode")
+    approve.add_argument("id")
+    approve.add_argument("--note", default="", help="a note for the implementer, appended to the spec")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
     vf = sub.add_parser("verify", help="detect and run the workspace's checks (go test, package.json scripts, pytest, cargo test)")
@@ -476,15 +527,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
-                           require_provider=args.command not in (None, *STORELESS) and not (args.command == "verify" and args.attempts <= 1),
-                           open_store=args.command not in STORELESS and not (args.command == "verify" and args.attempts <= 1),
+                           require_provider=args.command not in (None, *STORELESS) and not (args.command == "verify" and args.attempts <= 1)
+                           and not (args.command == "spec" and args.spec_command != "approve"),
+                           open_store=args.command not in STORELESS and not (args.command == "verify" and args.attempts <= 1)
+                           and not (args.command == "spec" and args.spec_command != "approve"),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
                            mcp_config=mcp_paths(settings, workspace, args.trust_workspace), agent=agent)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+    handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "review": cmd_review, "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:

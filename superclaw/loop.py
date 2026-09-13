@@ -38,7 +38,7 @@ from superclaw.tools.plan import format_plan, pending_items
 from superclaw.verifier import verify
 
 ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
-OWN_STATE_TOOLS = {"update_plan", "ask_user", "memory_note", "write_file", "edit_file"}
+OWN_STATE_TOOLS = {"update_plan", "ask_user", "memory_note", "write_file", "edit_file", "submit_spec"}
 
 
 def label_untrusted(tool: str, output: str) -> str:
@@ -109,6 +109,7 @@ class _Run:
         self.refs: list[str] = []
         self.saved_tokens = 0
         self.kept_out_tokens = 0
+        self.control = ""
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, extra_dirs=options.extra_dirs,
                                state={"plan": plan, SPAWN_KEY: self.spawn})
@@ -367,6 +368,8 @@ class _Run:
         res, denied = self.execute(call)
         self.changed.update(res.changed_files)
         self.loaded.update(res.meta.get("load_tools", []))
+        if res.ok and res.meta.get("control"):
+            self.control = str(res.meta["control"])
         if res.artifact:
             self.refs.append(res.artifact.ref)
         if res.diagnostics:
@@ -410,6 +413,9 @@ class _Run:
             if outcome.stop:
                 self.abort_rest(calls[index + 1:])
                 return self.result(tool_failure_stop_answer(call.name, outcome.count), stop_reason="tool_failure_loop")
+            if self.control:
+                self.abort_rest(calls[index + 1:])
+                return self.result(self.messages[-1].content, stop_reason=self.control)
         for text in followups + self.turn_reminders(completion, len(calls)):
             self.append(Message(role="user", content=text))
         return None
