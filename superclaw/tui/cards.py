@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from rich.text import Text
@@ -8,7 +9,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from superclaw.runtime import clip
+from superclaw.runtime import clip, count
 from superclaw.settings import LIMITS
 from superclaw.tui.theme import ACCENT, ADD, ADD_ROW, DEL, DEL_ROW, MUTED
 
@@ -53,6 +54,9 @@ class ToolCard(Vertical):
         self.counts = (0, 0)
         self.expanded = False
         self.ok: bool | None = None
+        self.started = time.monotonic()
+        self.elapsed = 0.0
+        self.produced = 0
         self.add_class("running")
 
     def compose(self) -> ComposeResult:
@@ -69,33 +73,49 @@ class ToolCard(Vertical):
             text.append(f"  {self.target}", style=MUTED)
         if self.counts != (0, 0):
             text.append(f"  (+{self.counts[0]} ", style=ADD).append(f"-{self.counts[1]})", style=DEL)
+        elif self.ok is not None:
+            text.append(f"  {glyphs.dot} {count(self.produced, 'line')}", style=MUTED)
+        if self.ok is not None:
+            text.append(f"  {self.elapsed:.1f}s", style=MUTED)
         return text
 
     def finish(self, ok: bool, output: str, display: dict[str, Any], ref: str) -> None:
         self.remove_class("running")
         self.ok = ok
+        self.elapsed = time.monotonic() - self.started
         if not ok:
             self.add_class("failed")
         self.counts = diff_counts(display) if self.tool in DIFF_TOOLS else (0, 0)
         self.lines = body_lines(self.tool, output, display)
+        self.produced = len(self.lines)
         if ref:
             self.lines.append(Text(f"§{ref}", style=MUTED))
-        if self.is_mounted:
+        if self.children:
             self.render_body()
 
     def on_mount(self) -> None:
         self.render_body()
 
+    def folded(self) -> int:
+        return LIMITS.card_body_lines if self.tool in DIFF_TOOLS or self.ok is False else 0
+
     def render_body(self) -> None:
         self.query_one(".head", Static).update(self.head())
-        shown = self.lines if self.expanded else self.lines[:LIMITS.card_body_lines]
-        body = Text("\n").join(shown) if shown else Text("")
-        self.query_one(".body", Static).update(body)
+        unfolded = self.expanded or self.app.verbose  # type: ignore[attr-defined]
+        shown = self.lines if unfolded else self.lines[: self.folded()]
+        body = self.query_one(".body", Static)
+        body.update(Text("\n").join(shown) if shown else Text(""))
+        body.display = bool(shown)
         hidden = len(self.lines) - len(shown)
-        more = f"{self.app.glyphs.ellipsis} {hidden} more lines, click to expand" if hidden > 0 else ("click to collapse" if self.expanded and len(self.lines) > LIMITS.card_body_lines else "")
-        self.query_one(".more", Static).update(more)
+        if hidden > 0:
+            more = f"{self.app.glyphs.ellipsis} {count(hidden, 'more line') if shown else count(hidden, 'line')}, click or ctrl+o to expand"
+        else:
+            more = "click to collapse" if unfolded and len(self.lines) > self.folded() else ""
+        hint = self.query_one(".more", Static)
+        hint.update(more)
+        hint.display = bool(more)
 
     def on_click(self) -> None:
-        if len(self.lines) > LIMITS.card_body_lines:
+        if len(self.lines) > self.folded():
             self.expanded = not self.expanded
             self.render_body()

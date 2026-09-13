@@ -88,6 +88,10 @@ def compact(count: int) -> str:
     return str(count)
 
 
+def count(n: int, one: str, many: str = "") -> str:
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
 _ASCII_INK = re.compile(r"[!-~]")
 _NON_ASCII = re.compile(r"[^\x00-\x7f]")
 
