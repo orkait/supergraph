@@ -19,6 +19,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
+from superclaw import review
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
 from superclaw.schema import SchemaError
@@ -118,6 +119,26 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     else:
         print(res.final_answer)
     return exit_code
+
+
+def cmd_review(rt: Runtime, args: argparse.Namespace) -> int:
+    try:
+        if args.commit:
+            change = review.commit(rt.workspace, args.commit)
+        elif args.base:
+            change = review.against(rt.workspace, args.base)
+        else:
+            change = review.uncommitted(rt.workspace)
+        text = review.prompt(change, args.prompt if args.prompt != "-" else sys.stdin.read())
+    except review.ReviewError as e:
+        sys.exit(f"superclaw: {e}")
+    rt.mode = Mode.PLAN
+    sid = resolve_session(rt, None, None)
+    rt.store.rename(sid, f"review: {change.label}")
+    print(f"superclaw: reviewing {change.label} in plan mode, session {sid}", file=sys.stderr)
+    res = run_once(rt, text, sid, Callbacks(on_event=lambda event: None))
+    print(res.final_answer)
+    return 2 if res.incomplete else 0
 
 
 def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
@@ -240,6 +261,12 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
                     help="JSON Schema the final answer must match; a mismatch exits 2")
     ex.add_argument("--require-completion", action="store_true", help="refuse a no-tool answer while plan items are pending")
     ex.add_argument("--verify", action="store_true", help="run a read-only verifier call before accepting the final answer; implies --require-completion")
+    rv = sub.add_parser("review", help="review a change read-only and print findings with file:line and a verdict")
+    rv.add_argument("prompt", nargs="?", default="", help="extra focus for the reviewer, or - to read it from stdin")
+    scope = rv.add_mutually_exclusive_group()
+    scope.add_argument("--uncommitted", action="store_true", help="staged, unstaged and untracked changes (default)")
+    scope.add_argument("--base", default="", metavar="BRANCH", help="changes on this branch since it left BRANCH")
+    scope.add_argument("--commit", default="", metavar="SHA", help="the changes one commit introduced")
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
@@ -326,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
+    handler = {"exec": cmd_exec, "review": cmd_review, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)

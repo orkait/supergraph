@@ -211,6 +211,7 @@ class Limits:
     recall_search_limit: int = 5
     recall_preview_chars: int = 120
 
+    review_diff_tokens: int = 24_000
     attachment_image_bytes: int = 5 * 1024 * 1024
     image_tokens: int = 1500
     tool_output_bytes: int = 64 * 1024

@@ -75,6 +75,10 @@ def test_modes_shell_risk_and_grants(reg, tmp_path):
     flags = build_parser(Settings.from_env({})).parse_args(["-w", "--add-dir", "/tmp", "exec", "x"])
     assert flags.worktree == "" and flags.add_dir == ["/tmp"]
     assert build_parser(Settings.from_env({})).parse_args(["--worktree", "alpha", "exec", "x"]).worktree == "alpha"
+    reviewed = build_parser(Settings.from_env({})).parse_args(["review", "--base", "main", "focus on tests"])
+    assert reviewed.base == "main" and reviewed.prompt == "focus on tests" and not reviewed.uncommitted
+    with pytest.raises(SystemExit):
+        build_parser(Settings.from_env({})).parse_args(["review", "--base", "main", "--commit", "abc"])
 
 
 def test_command_classes_and_prefix_rules():
