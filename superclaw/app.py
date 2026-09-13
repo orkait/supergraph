@@ -112,6 +112,7 @@ def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> D
     paths = [settings.user_hooks]
     if trust_workspace:
         paths.append(workspace / WORKSPACE_DIR / "hooks.json")
+    paths += [d / "hooks.json" for d in settings.plugin_dirs(workspace, trusted=trust_workspace)]
     hooks = load_hooks(paths)
     return Dispatcher(hooks, workspace) if hooks else None
 
@@ -120,7 +121,7 @@ def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> lis
     paths = [settings.user_mcp]
     if trust_workspace:
         paths.append(workspace / WORKSPACE_DIR / MCP_FILE)
-    return paths
+    return paths + [d / MCP_FILE for d in settings.plugin_dirs(workspace, trusted=trust_workspace)]
 
 
 def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,

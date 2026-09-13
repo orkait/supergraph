@@ -83,6 +83,9 @@ MCP_FILE = "mcp.json"
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
 COMMANDS_DIR = "commands"
+PLUGINS_DIR = "plugins"
+PLUGIN_MANIFEST = "plugin.json"
+PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
 PACKAGE = "supergraphdb"
 PYPI_URL = f"https://pypi.org/pypi/{PACKAGE}/json"
 UV_TOOLS_MARKER = "/uv/tools/"
@@ -389,21 +392,36 @@ class Settings:
     def window(self) -> int:
         return self.context_window or self.model_info().context_window
 
+    @property
+    def user_plugins(self) -> Path:
+        return self.config_dir / PLUGINS_DIR
+
+    def plugin_roots(self, workspace: Path | None = None) -> list[Path]:
+        roots = [self.user_plugins]
+        if workspace is not None:
+            roots.insert(0, Path(workspace) / WORKSPACE_DIR / PLUGINS_DIR)
+        return roots
+
+    def plugin_dirs(self, workspace: Path | None = None, trusted: bool = True) -> list[Path]:
+        roots = self.plugin_roots(workspace) if trusted else [self.user_plugins]
+        return [entry for root in roots if root.is_dir()
+                for entry in sorted(root.iterdir(), key=lambda p: p.name) if (entry / PLUGIN_MANIFEST).is_file()]
+
     def skill_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.skills_dir] if self.skills_dir else []
         roots += [self.config_dir / "skills", Path.home() / ".agents" / "skills"]
         if workspace is not None:
             roots.append(Path(workspace) / WORKSPACE_DIR / "skills")
-        return roots
+        return roots + [d / "skills" for d in self.plugin_dirs(workspace)]
 
     def agent_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / AGENTS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / AGENTS_DIR)
-        return roots
+        return roots + [d / AGENTS_DIR for d in self.plugin_dirs(workspace)]
 
     def command_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / COMMANDS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / COMMANDS_DIR)
-        return roots
+        return roots + [d / COMMANDS_DIR for d in self.plugin_dirs(workspace)]

@@ -19,7 +19,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import review, update
+from superclaw import plugins, review, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -313,6 +313,11 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("commands", help="list the user slash commands from .superclaw/commands and the config dir")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
+    plg = sub.add_parser("plugin", help="list, install or remove plugins: directories that bundle skills, agents, commands, hooks and MCP servers")
+    plg_sub = plg.add_subparsers(dest="plugin_command")
+    plg_sub.add_parser("list", help="plugins found under the workspace and the config dir")
+    plg_sub.add_parser("install", help="copy a plugin directory, or clone a git URL, into the config dir").add_argument("source")
+    plg_sub.add_parser("remove", help="delete an installed plugin by id").add_argument("id")
     upd = sub.add_parser("update", help="check for a newer superclaw, and install it with --apply")
     upd.add_argument("--apply", action="store_true", help="run the install command for this install method")
     setup = sub.add_parser("setup", help="store a provider key and default model")
@@ -332,6 +337,26 @@ def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
         for model in models_for(provider, os.environ.get(provider.env, ""), settings.models_cache, refresh=args.refresh):
             mark = "*" if model.id == settings.model else " "
             print(f"{mark} {model.id:<{LIMITS.model_id_width}} {describe(model, ' ')}")
+    return 0
+
+
+def cmd_plugin(settings: Settings, workspace: Path, args: argparse.Namespace) -> int:
+    try:
+        if args.plugin_command == "install":
+            plugin = plugins.install(args.source, settings.user_plugins)
+            print(f"installed {plugin.id} {plugin.version} to {plugin.path}; provides {', '.join(plugin.parts) or 'nothing yet'}")
+            return 0
+        if args.plugin_command == "remove":
+            print(f"removed {plugins.remove(args.id, settings.user_plugins)}")
+            return 0
+    except plugins.PluginError as e:
+        sys.exit(f"superclaw: {e}")
+    found = plugins.load_plugins(settings.plugin_roots(workspace))
+    for plugin in found:
+        print(f"{plugin.id:<{_NAME_WIDTH}} {plugin.version:<{_TOKENS_WIDTH}} {plugin.description}  [{', '.join(plugin.parts) or 'empty'}]  ({plugin.path})")
+    if not found:
+        print(f"no plugins; install one with `superclaw plugin install <dir|git url>` into {settings.user_plugins}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -387,6 +412,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_models(settings, args)
     if args.command == "update":
         return cmd_update(settings, args)
+    if args.command == "plugin":
+        return cmd_plugin(settings, workspace, args)
     if args.worktree is not None:
         try:
             tree = prepare_worktree(workspace, Path(args.worktree_dir) if args.worktree_dir else settings.worktrees_dir, args.worktree)
