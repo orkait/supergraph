@@ -10,6 +10,9 @@ from superclaw.plugins import remove as remove_plugin
 from superclaw.agents import resolve as resolve_agent
 from superclaw.policy import Mode
 from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, project_guidelines, skills_block
+from superclaw.repomap import render as render_repo
+from superclaw.repomap import scan as scan_repo
+from superclaw.repomap import search as search_repo
 from superclaw.runtime import approx_tokens
 from superclaw.settings import LIMITS, Settings
 from superclaw.skills import Skill, load_skills
@@ -89,3 +92,17 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path):
     assert remove_plugin("acme-tools", settings.user_plugins) == installed.path and load_plugins(settings.plugin_roots(root)) == []
     with pytest.raises(PluginError):
         remove_plugin("acme-tools", settings.user_plugins)
+    tree = tmp_path / "repo"
+    for rel in ("README.md", "pyproject.toml", "src/app/main.py", "src/app/auth/tokens.py", "tests/test_auth.py", "node_modules/x/index.js", "docs/a/b/c/d/e/f/deep.md"):
+        (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel).write_text("x")
+    found = scan_repo(tree, max_depth=4)
+    assert "node_modules/x/index.js" not in found.files and "docs/a/b/c/d/e/f/deep.md" not in found.files and found.directories == 4
+    assert found.important == ["README.md", "pyproject.toml"] and found.languages[0] == ("python", 3) and not found.truncated
+    text = render_repo(found)
+    assert text.startswith("Repo: repo\nCounts: files=5 dirs=4\nImportant files: README.md, pyproject.toml\nLanguages: python=3, markdown=1, toml=1") and "  src/app/auth/tokens.py" in text
+    assert render_repo(found, budget=80).endswith("...[clipped]") and len(render_repo(found, budget=80).encode()) <= 80 and render_repo(found, budget=0) == ""
+    assert [p for p, _ in search_repo(found, "auth tokens")][0] == "src/app/auth/tokens.py" and search_repo(found, "") == []
+    assert scan_repo(tree, max_files=2).truncated and len(scan_repo(tree, max_files=2).files) == 2
+    mapped = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", repo_map=text))
+    assert "<repo_map>" in mapped and "table of contents" in mapped and "src/app/main.py" in mapped

@@ -23,6 +23,7 @@ from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
+from superclaw.repomap import render, scan
 from superclaw.runtime import Provider
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
@@ -200,11 +201,15 @@ def apply_effort(rt: Runtime, effort: str) -> None:
         rt.provider.effort = effort
 
 
+def repo_map_text(rt: Runtime) -> str:
+    return render(scan(rt.workspace)) if rt.settings.repo_map else ""
+
+
 def system_prompt_for(rt: Runtime, prompt: str) -> str:
     return build_system_prompt(PromptInputs(
         cwd=rt.workspace, mode=rt.mode, skills=load_skills(rt.settings.skill_roots(rt.workspace)),
         memory=rt.memory.recall(prompt), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
-        agent=rt.agent.prompt if rt.agent else "",
+        agent=rt.agent.prompt if rt.agent else "", repo_map=repo_map_text(rt),
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
     ))
 

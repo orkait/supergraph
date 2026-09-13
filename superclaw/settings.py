@@ -83,6 +83,8 @@ MCP_FILE = "mcp.json"
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
 COMMANDS_DIR = "commands"
+REPO_MAP_IGNORED_DIRS = frozenset({".git", ".cache", ".next", ".worktrees", ".superclaw", "build", "coverage", "dist", "node_modules",
+                                   "vendor", ".venv", "venv", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "target"})
 PLUGINS_DIR = "plugins"
 PLUGIN_MANIFEST = "plugin.json"
 PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
@@ -218,6 +220,10 @@ class Limits:
     recall_preview_chars: int = 120
 
     review_diff_tokens: int = 24_000
+    repo_map_files: int = 2000
+    repo_map_depth: int = 6
+    repo_map_bytes: int = 6000
+    repo_map_matches: int = 20
     attachment_image_bytes: int = 5 * 1024 * 1024
     image_tokens: int = 1500
     tool_output_bytes: int = 64 * 1024
@@ -299,6 +305,7 @@ class Settings:
     mode: str
     effort: str
     stream: bool
+    repo_map: bool
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -333,6 +340,7 @@ class Settings:
             mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
             effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
             stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
+            repo_map=e.get("SUPERCLAW_REPO_MAP", "1").strip().lower() not in OFF_VALUES,
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),

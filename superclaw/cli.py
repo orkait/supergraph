@@ -19,7 +19,7 @@ from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
 from superclaw.provider import hint
-from superclaw import plugins, review, update
+from superclaw import plugins, repomap, review, update
 from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
@@ -313,6 +313,11 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("commands", help="list the user slash commands from .superclaw/commands and the config dir")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
+    rmap = sub.add_parser("repo-map", help="a deterministic map of the workspace: counts, important files, paths; the same text the model gets")
+    rmap.add_argument("--json", action="store_true", help="print the full map as JSON instead of the prompt text")
+    rmap.add_argument("--query", default="", metavar="TEXT", help="rank paths against these terms instead of printing the map")
+    rmap.add_argument("--max-files", type=int, default=0, help=f"cap the scan (default {LIMITS.repo_map_files})")
+    rmap.add_argument("--max-bytes", type=int, default=0, help=f"cap the rendered text (default {LIMITS.repo_map_bytes})")
     plg = sub.add_parser("plugin", help="list, install or remove plugins: directories that bundle skills, agents, commands, hooks and MCP servers")
     plg_sub = plg.add_subparsers(dest="plugin_command")
     plg_sub.add_parser("list", help="plugins found under the workspace and the config dir")
@@ -337,6 +342,22 @@ def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
         for model in models_for(provider, os.environ.get(provider.env, ""), settings.models_cache, refresh=args.refresh):
             mark = "*" if model.id == settings.model else " "
             print(f"{mark} {model.id:<{LIMITS.model_id_width}} {describe(model, ' ')}")
+    return 0
+
+
+def cmd_repo_map(settings: Settings, workspace: Path, args: argparse.Namespace) -> int:
+    found = repomap.scan(workspace, max_files=args.max_files or LIMITS.repo_map_files)
+    if args.query:
+        hits = repomap.search(found, args.query)
+        for path, reason in hits:
+            print(f"{path:<{LIMITS.model_id_width}} {reason}")
+        return 0 if hits else 1
+    if args.json:
+        print(json.dumps({"root": str(found.root), "fileCount": len(found.files), "directoryCount": found.directories, "truncated": found.truncated,
+                          "importantFiles": found.important, "languages": dict(found.languages), "extensions": dict(found.extensions),
+                          "files": found.files}, indent=2))
+        return 0
+    print(repomap.render(found, budget=args.max_bytes or LIMITS.repo_map_bytes))
     return 0
 
 
@@ -414,6 +435,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_update(settings, args)
     if args.command == "plugin":
         return cmd_plugin(settings, workspace, args)
+    if args.command == "repo-map":
+        return cmd_repo_map(settings, workspace, args)
     if args.worktree is not None:
         try:
             tree = prepare_worktree(workspace, Path(args.worktree_dir) if args.worktree_dir else settings.worktrees_dir, args.worktree)
