@@ -70,6 +70,10 @@ def _help(app: SuperclawApp, arg: str) -> None:
     app.note("esc cancels the run · ctrl+c quits · click a card to expand it")
 
 
+def _setup(app: SuperclawApp, arg: str) -> None:
+    app.open_setup()
+
+
 def _quit(app: SuperclawApp, arg: str) -> None:
     app.exit()
 
@@ -82,6 +86,7 @@ COMMANDS = (
     Command("/context", "/context [prompt]", "what the next request costs, by category", _context),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
     Command("/clear", "/clear", "clear the transcript view", _clear),
+    Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
     Command("/quit", "/quit", "exit", _quit),
 )

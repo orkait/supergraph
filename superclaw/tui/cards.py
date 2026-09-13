@@ -10,7 +10,7 @@ from textual.widgets import Static
 
 from superclaw.runtime import clip
 from superclaw.settings import LIMITS
-from superclaw.tui.theme import ACCENT, ADD, DEL, MUTED
+from superclaw.tui.theme import ACCENT, ADD, ADD_ROW, DEL, DEL_ROW, MUTED
 
 GLYPH_RUNNING = "◐"
 GLYPH_OK = "✓"
@@ -29,15 +29,20 @@ def target_of(name: str, args: dict[str, Any]) -> str:
 
 def body_lines(name: str, output: str, display: dict[str, Any]) -> list[Text]:
     if name in DIFF_TOOLS and display.get("preview"):
-        return [_diff_line(line) for line in display["preview"].splitlines() if not line.startswith(("---", "+++"))]
+        return [_diff_line(line) for line in display["preview"].splitlines() if not line.startswith(("---", "+++", "@@"))]
     return [Text(line, style=MUTED) for line in output.splitlines()]
+
+
+def diff_counts(display: dict[str, Any]) -> tuple[int, int]:
+    lines = [line for line in (display.get("preview") or "").splitlines() if not line.startswith(("---", "+++"))]
+    return sum(line.startswith("+") for line in lines), sum(line.startswith("-") for line in lines)
 
 
 def _diff_line(line: str) -> Text:
     if line.startswith("+"):
-        return Text(line, style=ADD)
+        return Text(line, style=f"{ADD} {ADD_ROW}")
     if line.startswith("-"):
-        return Text(line, style=DEL)
+        return Text(line, style=f"{DEL} {DEL_ROW}")
     return Text(line, style=MUTED)
 
 
@@ -48,6 +53,7 @@ class ToolCard(Vertical):
         self.tool = name
         self.target = target_of(name, args)
         self.lines: list[Text] = []
+        self.counts = (0, 0)
         self.expanded = False
         self.status = GLYPH_RUNNING
         self.add_class("running")
@@ -62,6 +68,8 @@ class ToolCard(Vertical):
         text.append(self.tool, style=ACCENT)
         if self.target:
             text.append(f"  {self.target}", style=MUTED)
+        if self.counts != (0, 0):
+            text.append(f"  (+{self.counts[0]} ", style=ADD).append(f"-{self.counts[1]})", style=DEL)
         return text
 
     def finish(self, ok: bool, output: str, display: dict[str, Any], ref: str) -> None:
@@ -69,6 +77,7 @@ class ToolCard(Vertical):
         self.status = GLYPH_OK if ok else GLYPH_FAILED
         if not ok:
             self.add_class("failed")
+        self.counts = diff_counts(display) if self.tool in DIFF_TOOLS else (0, 0)
         self.lines = body_lines(self.tool, output, display)
         if ref:
             self.lines.append(Text(f"§{ref}", style=MUTED))

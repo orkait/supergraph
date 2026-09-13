@@ -7,6 +7,35 @@ from pathlib import Path
 
 DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
+CREDENTIALS_FILE = "credentials.env"
+CREDENTIALS_MODE = 0o600
+
+
+@dataclass(frozen=True)
+class Provider:
+    name: str
+    env: str
+    default_model: str
+    console: str
+
+
+PROVIDERS = (
+    Provider("openrouter", "OPENROUTER_API_KEY", DEFAULT_MODEL, "https://openrouter.ai/keys"),
+    Provider("groq", "GROQ_API_KEY", "groq/llama-3.3-70b-versatile", "https://console.groq.com/keys"),
+    Provider("cerebras", "CEREBRAS_API_KEY", "cerebras/llama-3.3-70b", "https://cloud.cerebras.ai"),
+    Provider("ollama", "OLLAMA_API_KEY", "ollama/gpt-oss:120b", "https://ollama.com/settings/keys"),
+    Provider("aistudio", "GOOGLE_AISTUDIO_API_KEY", "aistudio/gemini-2.0-flash", "https://aistudio.google.com/apikey"),
+    Provider("nvidia_nim", "NVIDIA_NIM_API_KEY", "nvidia_nim/meta/llama-3.3-70b-instruct", "https://build.nvidia.com"),
+)
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        return {}
+    pairs = (line.partition("=") for line in lines if "=" in line and not line.lstrip().startswith("#"))
+    return {key.strip(): value.strip().strip("'\"") for key, _, value in pairs if key.strip()}
 
 
 @dataclass(frozen=True)
@@ -147,6 +176,11 @@ class Settings:
         home = Path.home()
         data_dir = Path(e.get("XDG_DATA_HOME", "").strip() or home / ".local" / "share") / "superclaw"
         config_dir = Path(e.get("XDG_CONFIG_HOME", "").strip() or home / ".config") / "superclaw"
+        saved = read_env_file(config_dir / CREDENTIALS_FILE)
+        if env is None:
+            for key, value in saved.items():
+                os.environ.setdefault(key, value)
+        e = {**saved, **e}
         db_override = e.get("SUPERCLAW_DB_PATH", "").strip()
         skills_override = e.get("SUPERCLAW_SKILLS_DIR", "").strip()
         return cls(
@@ -168,6 +202,18 @@ class Settings:
     @property
     def user_hooks(self) -> Path:
         return self.config_dir / "hooks.json"
+
+    @property
+    def credentials(self) -> Path:
+        return self.config_dir / CREDENTIALS_FILE
+
+    def save_credentials(self, provider: Provider, key: str, model: str) -> None:
+        values = {**read_env_file(self.credentials), provider.env: key, "SUPERCLAW_MODEL": model}
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.credentials.write_text("".join(f"{k}={v}\n" for k, v in values.items()))
+        self.credentials.chmod(CREDENTIALS_MODE)
+        os.environ[provider.env] = key
+        os.environ["SUPERCLAW_MODEL"] = model
 
     def model_info(self):
         from superclaw.models import lookup

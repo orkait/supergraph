@@ -44,7 +44,7 @@ class Runtime:
     memory: Memory
     registry: Registry
     policy: Policy
-    provider: Provider
+    provider: Provider | None
     workspace: Path
     model: str
     settings: Settings = field(default_factory=Settings.from_env)
@@ -125,10 +125,11 @@ def build_runtime(
     max_turns: int = 12,
     intent_gate: bool = False,
     hooks: Dispatcher | None = None,
+    require_provider: bool = True,
 ) -> Runtime:
-    chain = build_provider_chain([settings.model], free_first=False)
-    if not chain:
-        raise NoProviderKey(f"no API key resolved for model {settings.model!r}; set the provider's key (for example OPENROUTER_API_KEY)")
+    provider = connect_provider(settings.model)
+    if provider is None and require_provider:
+        raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     settings.db_path.mkdir(parents=True, exist_ok=True)
     gs = SuperGraph(path=str(settings.db_path))
     memory = Memory(gs)
@@ -137,10 +138,15 @@ def build_runtime(
     kernel = build_kernel(workspace, backend, observations, gs)
     return Runtime(
         gs=gs, store=SessionStore(gs), memory=memory, registry=build_registry(memory, observations, workspace, backend, settings, kernel),
-        policy=Policy(workspace, mode, sandboxed=backend is not None), provider=LitellmProvider(chain),
+        policy=Policy(workspace, mode, sandboxed=backend is not None), provider=provider,
         workspace=workspace, model=settings.model, settings=settings, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel,
     )
+
+
+def connect_provider(model: str) -> Provider | None:
+    chain = build_provider_chain([model], free_first=False)
+    return LitellmProvider(chain) if chain else None
 
 
 def system_prompt_for(rt: Runtime, prompt: str) -> str:
@@ -170,6 +176,8 @@ class Callbacks:
 def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = None, *, require_completion: bool = False, verify: bool = False,
              cancelled: Callable[[], bool] | None = None) -> Result:
     cb = callbacks or Callbacks()
+    if rt.provider is None:
+        raise NoProviderKey("no provider connected; run setup first")
     if rt.intent_gate:
         rt.policy.request_kind = classify(rt.provider, prompt)
         if cb.on_event:

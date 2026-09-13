@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import secrets
 import sys
@@ -12,7 +13,7 @@ from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_
 from superclaw.policy import Mode
 from superclaw.report import context_report
 from superclaw.runtime import clip
-from superclaw.settings import LIMITS, Settings
+from superclaw.settings import LIMITS, PROVIDERS, Settings
 from superclaw.skills import load_skills
 
 SCHEMA_VERSION = 1
@@ -113,7 +114,21 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("skills", help="list discovered skills")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
+    setup = sub.add_parser("setup", help="store a provider key and default model")
+    setup.add_argument("--provider", choices=[p.name for p in PROVIDERS], default=PROVIDERS[0].name)
+    setup.add_argument("--key", default="", help="the API key; prompted when omitted")
     return parser
+
+
+def cmd_setup(settings: Settings, args: argparse.Namespace) -> int:
+    provider = next(p for p in PROVIDERS if p.name == args.provider)
+    key = args.key or getpass.getpass(f"{provider.name} API key ({provider.console}): ")
+    if not key.strip():
+        sys.exit("superclaw: no key entered")
+    model = settings.model if settings.model.startswith(provider.name + "/") or provider.name == PROVIDERS[0].name else provider.default_model
+    settings.save_credentials(provider, key.strip(), model)
+    print(f"saved {provider.env} and SUPERCLAW_MODEL={model} to {settings.credentials}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -126,9 +141,11 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit('superclaw: the interactive shell needs a terminal (stdin is not a TTY); for non-interactive use run: superclaw exec "<prompt>"')
     settings = replace(defaults, model=args.model, mode=args.mode, context_window=args.context_window,
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
+    if args.command == "setup":
+        return cmd_setup(settings, args)
     try:
         rt = build_runtime(settings, workspace, Mode(args.mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
-                           hooks=build_hooks(settings, workspace, args.trust_workspace))
+                           hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None)
     except NoProviderKey as e:
         sys.exit(f"superclaw: {e}")
     handler = {"exec": cmd_exec, "sessions": cmd_sessions, "skills": cmd_skills, "context": cmd_context}.get(args.command, cmd_tui)
