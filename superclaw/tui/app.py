@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +30,10 @@ from superclaw.compaction import SUMMARY_INSTRUCTIONS
 from superclaw.compaction import compact as compact_context
 from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
+from superclaw import clipboard
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching, user_entries
+from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
@@ -49,7 +52,7 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "up down history", "shift+tab mode", "esc cancel", "ctrl+c quit")
+HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "esc cancel", "ctrl+c quit")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
@@ -165,6 +168,7 @@ class SuperclawApp(App[None]):
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
         self.streaming: Static | None = None
         self.stream_text = ""
+        self.counts = {"Image": 0, "File": 0, "Pasted text": 0}
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -177,7 +181,7 @@ class SuperclawApp(App[None]):
         yield WorkingLine()
         with Horizontal(id="composer"):
             yield Static(self.glyphs.prompt, classes="gutter")
-            yield Input(placeholder=PROMPT_PLACEHOLDER, id="prompt", select_on_focus=False)
+            yield Composer(placeholder=PROMPT_PLACEHOLDER, id="prompt", select_on_focus=False)
         yield StatusBar(id="status")
         yield OptionList(id="palette", classes="hidden")
 
@@ -516,18 +520,62 @@ class SuperclawApp(App[None]):
         self.query_one("#hints").remove_class("hidden")
         self.note(text, error=error)
 
-    def attach(self, raw: str) -> None:
+    def attach(self, raw: str, quiet: bool = False) -> str:
         if not raw:
             self.note("usage: /attach <path>", error=True)
-            return
-        found = read_attachments([raw], (self.rt.workspace, *self.rt.extra_dirs))
+            return ""
+        found = read_attachments([raw], (self.rt.workspace, *self.rt.extra_dirs, self.rt.settings.clipboard_dir))
         for problem in found.problems:
             self.note(f"attachment {problem}", error=True)
         if not found.text:
-            return
+            return ""
         self.pending.text = f"{self.pending.text}\n\n{found.text}".strip()
         self.pending.images += found.images
-        self.note(f"attached {raw}{' as an image' if found.images else ''}; it goes with your next message")
+        kind = "Image" if found.images else "File"
+        if not quiet:
+            self.note(f"attached {raw}{' as an image' if found.images else ''}; it goes with your next message")
+        return kind
+
+    def placeholder(self, kind: str, extra: str = "") -> str:
+        self.counts[kind] += 1
+        return f"[{kind} #{self.counts[kind]}{extra}]"
+
+    def take_paste(self, text: str) -> bool:
+        prompt = self.query_one("#prompt", Input)
+        dropped = clipboard.parse_drop(text)
+        if dropped:
+            for path in dropped:
+                kind = self.attach(str(path), quiet=True)
+                if kind:
+                    prompt.insert_text_at_cursor(self.placeholder(kind) + " ")
+            self.note(f"attached {len(dropped)} dropped file(s); they go with your next message")
+            return True
+        lines = text.count("\n") + 1
+        if lines >= LIMITS.paste_lines_threshold or len(text) > LIMITS.paste_chars_threshold:
+            label = self.placeholder("Pasted text", f" +{lines} lines")
+            self.pending.text = f"{self.pending.text}\n\n<attachment path=\"{label.strip('[]')}\">\n{text.rstrip()}\n</attachment>".strip()
+            prompt.insert_text_at_cursor(label + " ")
+            return True
+        return False
+
+    def paste_clipboard(self) -> None:
+        prompt = self.query_one("#prompt", Input)
+        image = clipboard.image_bytes()
+        if image is not None:
+            data, mime = image
+            folder = self.rt.settings.clipboard_dir
+            folder.mkdir(parents=True, exist_ok=True)
+            for stale in sorted(folder.glob("*.*"), key=lambda p: p.stat().st_mtime)[: -LIMITS.clipboard_keep]:
+                stale.unlink(missing_ok=True)
+            target = folder / f"clip-{int(time.time() * 1000)}.{mime.split('/')[1]}"
+            target.write_bytes(data)
+            if self.attach(str(target), quiet=True):
+                prompt.insert_text_at_cursor(self.placeholder("Image") + " ")
+                self.note(f"pasted an image ({len(data):,} bytes); it goes with your next message")
+            return
+        pasted = clipboard.text()
+        if pasted and not self.take_paste(pasted):
+            prompt.insert_text_at_cursor(pasted.splitlines()[0] if pasted else "")
 
     def use_agent(self, name: str) -> None:
         profiles = load_agents(self.rt.settings.agent_roots(self.rt.workspace))

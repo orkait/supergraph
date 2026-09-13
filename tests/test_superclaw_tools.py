@@ -9,6 +9,7 @@ from supergraph import SuperGraph
 
 from superclaw import checks, review
 from superclaw.attach import read as read_attachments
+from superclaw.clipboard import parse_drop
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS
@@ -98,6 +99,10 @@ def test_file_tools(reg, ws):
     assert reg.run("glob", {"pattern": "**/*.py"}, ctx).output.splitlines() == ["src/a.py"]
     assert reg.run("list_directory", {"path": "src"}, ctx).output.splitlines() == ["a.py", "b.txt"]
     (ws / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 10)
+    spaced = ws / "my notes.txt"
+    spaced.write_text("n")
+    assert parse_drop(f"'{spaced}'") == [spaced] and parse_drop(f"file://{ws}/my%20notes.txt {ws}/shot.png") == [spaced, ws / "shot.png"]
+    assert parse_drop(f"{spaced} {ws}/missing.txt") == [] and parse_drop("just some words") == [] and parse_drop("relative/path.txt") == []
     attached = read_attachments(["src/a.py", "shot.png", "missing.txt", "../escape"], (ws,))
     assert '<attachment path="src/a.py">' in attached.text and "alpha" in attached.text
     assert attached.images[0].startswith("data:image/png;base64,") and '<attachment path="shot.png">\n(attached as an image)' in attached.text

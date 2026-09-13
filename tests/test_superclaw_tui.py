@@ -4,7 +4,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from textual.widgets import Markdown
+from textual.events import Paste
+from textual.widgets import Input, Markdown
 
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
@@ -133,6 +134,26 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.press(*"/attach nope.txt", "enter")
             await pilot.pause(0.05)
             assert "not a file" in str(app.query(".error").last().content)
+            (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 8)
+            prompt = app.query_one("#prompt", Input)
+            prompt.post_message(Paste(f"file://{tmp_path}/shot.png"))
+            await pilot.pause(0.1)
+            assert prompt.value == "[Image #1] " and len(app.pending.images) == 1
+            prompt.post_message(Paste("line one\nline two\nline three\nline four"))
+            await pilot.pause(0.1)
+            assert prompt.value == "[Image #1] [Pasted text #1 +4 lines] " and 'attachment path="Pasted text #1 +4 lines"' in app.pending.text and "line four" in app.pending.text
+            prompt.post_message(Paste("short"))
+            await pilot.pause(0.1)
+            assert prompt.value == "[Image #1] [Pasted text #1 +4 lines] short"
+            monkeypatch.setattr("superclaw.clipboard.image_bytes", lambda: (b"\x89PNG\r\n\x1a\n" + b"1" * 8, "image/png"))
+            app.paste_clipboard()
+            await pilot.pause(0.1)
+            assert prompt.value.endswith("[Image #2] ") and len(app.pending.images) == 2 and list(rt.settings.clipboard_dir.glob("clip-*.png"))
+            monkeypatch.setattr("superclaw.clipboard.image_bytes", lambda: None)
+            monkeypatch.setattr("superclaw.clipboard.text", lambda: "from the clipboard")
+            app.paste_clipboard()
+            await pilot.pause(0.1)
+            assert prompt.value.endswith("[Image #2] from the clipboard")
             assert "write it" in app.history and app.hist_index == len(app.history)
 
     asyncio.run(drive())
