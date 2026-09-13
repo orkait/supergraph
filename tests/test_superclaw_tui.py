@@ -187,8 +187,13 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.press(*" 42", "enter")
             await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 1)
             assert slash_app.history[-1] == "/pr 42"
+            await pilot.press(*"/qu")
+            await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
+            assert "/exit" in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
+            await pilot.press("ctrl+u", *":q", "enter")
 
     asyncio.run(slash())
+    assert slash_app.return_code == 0
     assert [e["payload"]["content"] for e in rt.store.events(sid) if e["type"] == "message" and e["payload"]["role"] == "user"][-1] == "Open a PR for issue 42."
     drawn = {ch for path in Path(SuperclawApp.__module__.replace(".", "/")).parent.glob("*.py") for ch in path.read_text() if not ch.isascii()}
     allowed = {ch for value in vars(UNICODE).values() if isinstance(value, str) for ch in value} | set("".join(WORDMARK_ART)) | {"§"}

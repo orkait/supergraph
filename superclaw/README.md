@@ -156,7 +156,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 | `/permissions` | show the mode, the session tool grants and the remembered command prefixes |
 | `/doctor` | terminal, sandbox, mode, agent, model, store, MCP and connected-provider health, read-only |
 | `/setup` | connect a provider key and model without leaving the TUI |
-| `/clear`, `/help`, `/quit` | housekeeping |
+| `/clear`, `/help`, `/exit` | housekeeping; `/quit` is an alias of `/exit`, and a bare `exit`, `quit`, `:q`, `:q!`, `:wq` or `:wq!` on its own line leaves too, as in Claude Code |
 
 Keys: `up` and `down` recall earlier prompts into the composer (a shell-style history seeded from the session, so it survives resume; a saved draft returns when you step back past the newest); while the command palette is open the same keys move its highlight. `shift+tab` cycles the permission mode through `ask`, `auto` and `plan`; `esc` cancels the current run at the next tool boundary (the result records `cancelled`); `ctrl+c` cancels a running turn first and quits on the second press, also from inside a permission, question or setup dialog, where cancelling closes the dialog as a deny. Permission prompts answer to `a` (once), `s` (for the session), `p` (remember the offered prefix, only shown when the model offered one) or `d` (deny). `/new`, `/resume` and `/clear` wait for the run to finish. A provider failure ends the turn with a `run failed` line plus one next step (a rejected key points at `/setup`, an unknown model at `/model`, a full window at `/new`, rate limits and unreachable hosts say so) and leaves the shell open; `superclaw exec` prints the same line with the command-line equivalents.
 

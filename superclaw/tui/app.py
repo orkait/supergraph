@@ -32,7 +32,7 @@ from superclaw.tools import ToolContext
 from superclaw import clipboard
 from superclaw.clips import Clip, Clips
 from superclaw.tui.cards import ToolCard
-from superclaw.tui.commands import dispatch, matching, user_entries
+from superclaw.tui.commands import EXIT_WORDS, dispatch, matching, user_entries
 from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
@@ -408,6 +408,8 @@ class SuperclawApp(App[None]):
         palette.add_class("hidden")
         if not text:
             return
+        if text in EXIT_WORDS:
+            text = "/exit"
         if text.startswith("/"):
             self.command(text)
             return
