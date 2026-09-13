@@ -1,13 +1,15 @@
+import json
 from types import SimpleNamespace
 
 import pytest
 
+from superclaw.catalog import describe, models_for, resolve
 from superclaw.compaction import PRUNE_MARKER, SUMMARY_LABEL, compact, cut_point, project, prune_tool_results
 from superclaw.meter import ContextMeter
 from superclaw.models import ModelInfo, lookup
-from superclaw.provider import LitellmProvider, parse_response
+from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens
-from superclaw.settings import LIMITS, Settings
+from superclaw.settings import LIMITS, PROVIDERS, Settings
 
 
 def user(text):
@@ -29,10 +31,26 @@ def _resp(content, prompt=10, cached=0):
     )
 
 
-def test_catalog_pricing_and_provider_fallback(monkeypatch):
+def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert approx_tokens("abcd efgh") == 2 and approx_tokens("日本") == 6
     info = lookup("openrouter/deepseek/deepseek-v4-flash")
     assert info.known and info.context_window > LIMITS.context_window_fallback and lookup("nobody/no-such-model").context_window == LIMITS.context_window_fallback
+    ollama = next(p for p in PROVIDERS if p.name == "ollama")
+    payload = json.dumps({"data": [{"id": "glm-5.2", "context_length": 200000, "pricing": {"prompt": "0.000001", "completion": "0.000002"},
+                                    "supported_parameters": ["tools"]}, {"id": "nomic-embed-text"}]}).encode()
+    calls = []
+
+    def fetch(url, headers):
+        calls.append((url, headers.get("Authorization")))
+        return payload
+
+    live = models_for(ollama, "k", tmp_path, fetch=fetch)
+    assert [m.id for m in live] == ["ollama/glm-5.2"] and live[0].tools and calls == [(ollama.models_url, "Bearer k")]
+    assert models_for(ollama, "k", tmp_path, fetch=fetch) == live and len(calls) == 1 and models_for(ollama, "", tmp_path, online=False) == live
+    assert lookup("ollama/glm-5.2", tmp_path).context_window == 200000 and lookup("ollama/glm-5.2", tmp_path).input_per_token == 1e-6
+    assert resolve("glm", live, "ollama").id == "ollama/glm-5.2" and resolve("glm-5.2", live, "ollama") and resolve("zzz", live, "ollama") is None
+    assert describe(live[0], "|") == "200.0K ctx | tools | $1.00/2.00 | live" and lookup("ollama/none", tmp_path).known is False
+    assert "/setup" in hint("OpenrouterException: Invalid API Key", tui=True) and "superclaw models" in hint("x is not a valid model ID", tui=False) and hint("boom", tui=True) == ""
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30

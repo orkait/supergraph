@@ -6,11 +6,9 @@ from dataclasses import dataclass, field
 from rich.text import Text
 from textual.widgets import Static
 
+from superclaw.runtime import compact
 from superclaw.settings import LIMITS
 from superclaw.tui.theme import ACCENT, MUTED
-
-_THOUSAND = 1000
-_MILLION = 1_000_000
 
 
 @dataclass
@@ -70,14 +68,6 @@ class TitleBar(Static):
         right = Text(session if level >= 3 else "", style=MUTED)
         gap = max(1, width - len(left) - len(right) - 2)
         self.update(left + Text(" " * gap) + right)
-
-
-def compact(tokens: int) -> str:
-    if tokens >= _MILLION:
-        return f"{tokens / _MILLION:.1f}M"
-    if tokens >= _THOUSAND:
-        return f"{tokens / _THOUSAND:.1f}K"
-    return str(tokens)
 
 
 class StatusBar(Static):

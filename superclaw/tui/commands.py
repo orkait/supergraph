@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from superclaw.catalog import describe, keyed_providers
 from superclaw.policy import Mode
 
 if TYPE_CHECKING:
@@ -60,6 +61,21 @@ def _recall(app: SuperclawApp, arg: str) -> None:
     app.show_tool_result("recall", args)
 
 
+def _model(app: SuperclawApp, arg: str) -> None:
+    if not arg:
+        app.open_models()
+    elif arg == "list":
+        for provider in keyed_providers():
+            models = [m for m in app.known_models() if m.provider == provider.name]
+            for model in models[: app.limits.model_list_shown]:
+                mark = app.glyphs.prompt if model.id == app.rt.model else " "
+                app.note(f"{mark} {model.id:<{app.limits.model_id_width}} {describe(model, app.glyphs.dot)}")
+            if len(models) > app.limits.model_list_shown:
+                app.note(f"  {app.glyphs.ellipsis} {len(models) - app.limits.model_list_shown} more on {provider.name}; /model searches them")
+    else:
+        app.switch_model(arg)
+
+
 def _clear(app: SuperclawApp, arg: str) -> None:
     app.clear_transcript()
 
@@ -80,6 +96,7 @@ def _quit(app: SuperclawApp, arg: str) -> None:
 
 COMMANDS = (
     Command("/mode", "/mode ask|auto|plan|unsafe", "switch the permission mode", _mode),
+    Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/new", "/new", "start a fresh session", _new),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions", "list recent sessions", _sessions),

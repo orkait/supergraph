@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import os
 import secrets
 import sys
 from dataclasses import replace
@@ -10,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, resolve_session, run_once
+from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.policy import Mode
+from superclaw.provider import hint
 from superclaw.report import context_report
 from superclaw.runtime import clip
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings
@@ -117,7 +120,21 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     setup = sub.add_parser("setup", help="store a provider key and default model")
     setup.add_argument("--provider", choices=[p.name for p in PROVIDERS], default=PROVIDERS[0].name)
     setup.add_argument("--key", default="", help="the API key; prompted when omitted")
+    models = sub.add_parser("models", help="list the models each connected provider serves")
+    models.add_argument("--provider", choices=[p.name for p in PROVIDERS], default="", help="one provider instead of every one with a key")
+    models.add_argument("--refresh", action="store_true", help="ignore the cached listing and ask the provider again")
     return parser
+
+
+def cmd_models(settings: Settings, args: argparse.Namespace) -> int:
+    providers = [p for p in PROVIDERS if p.name == args.provider] if args.provider else keyed_providers()
+    if not providers:
+        sys.exit("superclaw: no provider key found; run `superclaw setup`")
+    for provider in providers:
+        for model in models_for(provider, os.environ.get(provider.env, ""), settings.models_cache, refresh=args.refresh):
+            mark = "*" if model.id == settings.model else " "
+            print(f"{mark} {model.id:<{LIMITS.model_id_width}} {describe(model, ' ')}")
+    return 0
 
 
 def cmd_setup(settings: Settings, args: argparse.Namespace) -> int:
@@ -143,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
                        budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
     if args.command == "setup":
         return cmd_setup(settings, args)
+    if args.command == "models":
+        return cmd_models(settings, args)
     try:
         rt = build_runtime(settings, workspace, Mode(args.mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command is not None)
@@ -153,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
         return handler(rt, args)
     except KeyError as e:
         sys.exit(f"superclaw: {e.args[0]}")
+    except RuntimeError as e:
+        advice = hint(str(e), tui=False)
+        sys.exit(f"superclaw: {e}" + (f"\n  {advice}" if advice else ""))
     finally:
         rt.close()
 

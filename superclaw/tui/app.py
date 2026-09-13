@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -14,14 +15,17 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 
 from superclaw import __version__
-from superclaw.app import Callbacks, Runtime, run_once
+from superclaw.app import Callbacks, NoProviderKey, Runtime, run_once, switch_model
+from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
 from superclaw.loop import Result
 from superclaw.prompt import _git_branch
-from superclaw.runtime import clip
-from superclaw.settings import LIMITS, Glyphs
+from superclaw.provider import hint
+from superclaw.runtime import clip, compact
+from superclaw.settings import LIMITS, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching
+from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
 from superclaw.tui.status import RunStats, StatusBar, TitleBar, WorkingLine, tier
 from superclaw.tui.theme import ACCENT, CSS, MUTED
@@ -41,7 +45,7 @@ EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --
 HINTS = ("/ commands", "tab complete", "esc cancel", "ctrl+c quit", "click a card to expand")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
-BUSY_COMMANDS = ("/new", "/resume", "/clear")
+BUSY_COMMANDS = ("/new", "/resume", "/clear", "/model")
 
 
 def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
@@ -168,15 +172,51 @@ class SuperclawApp(App[None]):
         if self.rt.provider is None:
             self.open_setup()
 
-    def open_setup(self) -> None:
-        self.push_screen(SetupScreen(self.rt), self.after_setup)
+    def open_setup(self, provider: Provider | None = None) -> None:
+        self.push_screen(SetupScreen(self.rt, provider), self.after_setup)
 
     def after_setup(self, connected: bool | None) -> None:
         self.stats = RunStats(window=self.rt.context_window)
         self.refresh_status()
         self.query_one("#welcome", Static).update(self.welcome())
-        if not connected:
+        if connected:
+            self.note(f"model {self.rt.model} {self.glyphs.dot} {compact(self.rt.context_window)} window {self.glyphs.dot} /model switches")
+        else:
             self.note("no provider connected; /setup when you have a key", error=True)
+
+    def known_models(self) -> list[Model]:
+        return [m for p in keyed_providers() for m in models_for(p, os.environ.get(p.env, ""), self.rt.settings.models_cache, online=False)]
+
+    def recent_models(self) -> list[str]:
+        seen = dict.fromkeys([self.rt.model, *(s["model"] for s in self.rt.store.recent())])
+        return list(seen)[: LIMITS.recent_models_shown]
+
+    def open_models(self) -> None:
+        providers = keyed_providers()
+        if not providers:
+            self.open_setup()
+            return
+        self.push_screen(ModelScreen(self.rt, providers, self.rt.model, self.recent_models()), self.after_model)
+
+    def after_model(self, model: str | None) -> None:
+        if model:
+            self.switch_model(model)
+
+    def switch_model(self, text: str) -> None:
+        match = resolve(text, self.known_models(), self.rt.model.split("/")[0])
+        target = match.id if match else text.strip()
+        if provider_of(target) is None:
+            self.note(f"no model matches {text!r}; /model lists them, or name one as provider/id", error=True)
+            return
+        try:
+            switch_model(self.rt, target)
+        except NoProviderKey as e:
+            self.note(f"{e}; connect it first", error=True)
+            self.open_setup(provider_of(target))
+            return
+        self.stats.window = self.rt.context_window
+        self.refresh_status()
+        self.note(f"model {target} {self.glyphs.dot} {compact(self.rt.context_window)} window")
 
     def relayout(self) -> None:
         self.refresh_status()
@@ -388,7 +428,8 @@ class SuperclawApp(App[None]):
         elapsed = self.stats.timer.elapsed()
         sep = f" {self.glyphs.dot} "
         if result is None:
-            self.note(f"run failed after {elapsed:.0f}s: {error}", error=True)
+            advice = hint(error, tui=True)
+            self.note(f"run failed after {elapsed:.0f}s: {error}" + (f"{sep}{advice}" if advice else ""), error=True)
         else:
             summary = sep.join((f"done in {elapsed:.0f}s", f"{result.turns} turns", f"{self.stats.timer.calls} tools",
                                 f"{result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window"))

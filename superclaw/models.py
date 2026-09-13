@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from superclaw.catalog import learned
 from superclaw.runtime import Usage
 from superclaw.settings import LIMITS
-
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 
 @dataclass(frozen=True)
@@ -40,7 +39,7 @@ def _catalog() -> dict[str, dict[str, Any]]:
     return litellm.model_cost
 
 
-def lookup(model: str) -> ModelInfo:
+def lookup(model: str, cache_dir: Path | None = None) -> ModelInfo:
     catalog = _catalog()
     for candidate in _candidates(model):
         entry = catalog.get(candidate)
@@ -54,4 +53,8 @@ def lookup(model: str) -> ModelInfo:
                 cache_read_per_token=float(entry.get("cache_read_input_token_cost") or 0.0),
                 known=True,
             )
+    seen = learned(model, cache_dir) if cache_dir else None
+    if seen and seen.context_window:
+        return ModelInfo(id=model, context_window=seen.context_window, max_output_tokens=LIMITS.max_output_tokens_fallback,
+                         input_per_token=seen.input_per_token, output_per_token=seen.output_per_token, known=True)
     return ModelInfo(id=model, context_window=LIMITS.context_window_fallback, max_output_tokens=LIMITS.max_output_tokens_fallback)
