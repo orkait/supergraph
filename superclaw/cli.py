@@ -52,7 +52,8 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     exit_code = 2 if res.incomplete else 0
     if stream:
         emit({"type": "final", "text": res.final_answer, "incomplete": res.incomplete, "reason": res.incomplete_reason})
-        emit({"type": "run_end", "status": status, "turns": res.turns, "exitCode": exit_code})
+        emit({"type": "run_end", "status": status, "turns": res.turns, "exitCode": exit_code,
+              "savedTokens": res.saved_tokens, "keptOutTokens": res.kept_out_tokens})
     elif args.output_format == "json":
         print(json.dumps({"sessionId": sid, "status": status, "turns": res.turns, "final": res.final_answer,
                           "incomplete": res.incomplete, "reason": res.incomplete_reason}, indent=2))

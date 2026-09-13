@@ -267,9 +267,9 @@ class Registry:
             res.meta["redacted"] = True
         res.diagnostics = Diagnostics(
             category=category.value,
-            original_chars=previous.original_chars if previous else budgeted.original_chars,
+            original_chars=previous.original_chars if previous else max(len(body), budgeted.original_chars),
             model_chars=len(res.output),
-            original_tokens=previous.original_tokens if previous else budgeted.original_tokens,
+            original_tokens=previous.original_tokens if previous else max(approx_tokens(body), budgeted.original_tokens),
             model_tokens=approx_tokens(res.output),
             truncated=res.truncated, redacted=redacted or bool(previous and previous.redacted), reason=budgeted.reason,
         )
