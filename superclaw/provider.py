@@ -21,6 +21,7 @@ def _completion(**kwargs: Any) -> Any:
     import litellm
 
     litellm.suppress_debug_info = True
+    litellm.drop_params = True
     return litellm.completion(**kwargs)
 
 
@@ -56,6 +57,7 @@ class LitellmProvider:
         max_tokens: int = LIMITS.completion_max_tokens,
         temperature: float = 0.0,
         timeout_s: int = LIMITS.completion_timeout_s,
+        effort: str = "",
     ) -> None:
         if not chain:
             raise ValueError("LitellmProvider needs at least one provider in the chain")
@@ -63,6 +65,7 @@ class LitellmProvider:
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._timeout_s = timeout_s
+        self.effort = effort
 
     @property
     def model(self) -> str:
@@ -83,6 +86,8 @@ class LitellmProvider:
             }
             if provider.get("account_id"):
                 kwargs["account_id"] = provider["account_id"]
+            if self.effort:
+                kwargs["reasoning_effort"] = self.effort
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"

@@ -81,6 +81,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Store path | `SUPERCLAW_DB_PATH`, `--db` | `~/.local/share/superclaw/brain` |
 | Model | `SUPERCLAW_MODEL`, `--model`, `/model` in the TUI | `openrouter/deepseek/deepseek-v4-flash`; ids are `provider/slug` for `openrouter`, `groq`, `cerebras`, `ollama` (cloud), `aistudio`, `nvidia_nim`, `opencode` (OpenCode Zen). `/model` and `superclaw models` list what each connected provider serves (prices shown as `$input/output` per million tokens): the provider's live `/models` endpoint (public for OpenRouter and NVIDIA, keyed elsewhere) cached for a day under `~/.cache/superclaw/models`, merged with the bundled catalog for context windows and prices, with embedding, audio, image and moderation models filtered out. A model only the live list knows still gets its window and price from that list |
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
+| Reasoning effort | `SUPERCLAW_EFFORT`, `/effort low\|medium\|high\|off` in the TUI | off; when set it is sent as `reasoning_effort` on every call and shown in the status bar. litellm drops the parameter for models that do not support it, so it is a no-op there rather than an error |
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `0` = resolved from the bundled model catalog (1,000,000 for the default model); `128000` when the model is unknown |
 | Turn limit | `--max-turns` | `12` |
 | Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
@@ -115,6 +116,7 @@ Guideline files are capped at 8 KiB each and 32 KiB in total; the most specific 
 |---|---|
 | `/mode ask\|auto\|plan\|unsafe` | switch the permission mode for the session |
 | `/model [list\|id]` | no argument opens the picker: recent models first, then one group per connected provider, type to filter, enter picks. `list` prints the same rows. An id switches at once, fuzzy when unique (`/model v4-pro`), and a model on a provider without a key opens setup for that provider. The choice is saved as `SUPERCLAW_MODEL` |
+| `/effort low\|medium\|high\|off` | set the model's reasoning effort for the session, saved as `SUPERCLAW_EFFORT` and shown in the status bar |
 | `/new`, `/resume [id\|latest]`, `/sessions` | session lifecycle |
 | `/context [prompt]` | what the next request costs, by category |
 | `/recall <§id\|query>` | bring back or search stored tool results, rendered as a card |

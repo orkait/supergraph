@@ -113,10 +113,14 @@ def _doctor(app: SuperclawApp, arg: str) -> None:
     dot, env = app.glyphs.dot, os.environ
     glyphs = "ascii" if app.glyphs.border == "ascii" else "unicode"
     app.note(f"terminal {env.get('TERM_PROGRAM') or env.get('TERM') or 'unknown'} {dot} vte {env.get('VTE_VERSION') or 'n/a'} {dot} glyphs {glyphs}")
-    app.note(f"sandbox {'on' if app.rt.policy.sandboxed else 'off'} {dot} mode {app.rt.mode.value}")
+    app.note(f"sandbox {'on' if app.rt.policy.sandboxed else 'off'} {dot} mode {app.rt.mode.value} {dot} effort {app.rt.settings.effort or 'off'}")
     catalog = "catalog" if app.rt.model_info.known else "fallback"
     app.note(f"model {app.rt.model} {dot} window {compact(app.rt.context_window)} {dot} {catalog}")
     app.note("providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or "none; /setup"))
+
+
+def _effort(app: SuperclawApp, arg: str) -> None:
+    app.set_effort(arg.strip())
 
 
 def _clear(app: SuperclawApp, arg: str) -> None:
@@ -140,6 +144,7 @@ def _quit(app: SuperclawApp, arg: str) -> None:
 COMMANDS = (
     Command("/mode", "/mode ask|auto|plan|unsafe", "switch the permission mode", _mode),
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
+    Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/new", "/new", "start a fresh session", _new),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
     Command("/sessions", "/sessions", "list recent sessions", _sessions),

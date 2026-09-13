@@ -129,7 +129,7 @@ def build_runtime(
     hooks: Dispatcher | None = None,
     require_provider: bool = True,
 ) -> Runtime:
-    provider = connect_provider(settings.model)
+    provider = connect_provider(settings.model, settings.effort)
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     settings.db_path.mkdir(parents=True, exist_ok=True)
@@ -146,9 +146,9 @@ def build_runtime(
     )
 
 
-def connect_provider(model: str) -> Provider | None:
+def connect_provider(model: str, effort: str = "") -> Provider | None:
     chain = build_provider_chain([model], free_first=False)
-    return LitellmProvider(chain) if chain else None
+    return LitellmProvider(chain, effort=effort) if chain else None
 
 
 def switch_model(rt: Runtime, model: str) -> None:
@@ -160,7 +160,14 @@ def switch_model(rt: Runtime, model: str) -> None:
     rt.settings.save_model(model)
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
-    rt.provider = connect_provider(model)
+    rt.provider = connect_provider(model, rt.settings.effort)
+
+
+def apply_effort(rt: Runtime, effort: str) -> None:
+    rt.settings.save_effort(effort)
+    rt.settings = replace(rt.settings, effort=effort)
+    if rt.provider is not None:
+        rt.provider.effort = effort
 
 
 def system_prompt_for(rt: Runtime, prompt: str) -> str:

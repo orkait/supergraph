@@ -15,7 +15,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 
 from superclaw import __version__
-from superclaw.app import Callbacks, NoProviderKey, Runtime, run_once, switch_model
+from superclaw.app import Callbacks, NoProviderKey, Runtime, apply_effort, run_once, switch_model
 from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
 from superclaw.loop import Result
 from superclaw.policy import next_mode
@@ -24,7 +24,7 @@ from superclaw.provider import hint
 from superclaw.runtime import Message, clip, compact
 from superclaw.compaction import SUMMARY_INSTRUCTIONS
 from superclaw.compaction import compact as compact_context
-from superclaw.settings import LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
+from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching
@@ -415,6 +415,15 @@ class SuperclawApp(App[None]):
             self.note(f"{name} waits for the run to finish; esc cancels it", error=True)
         else:
             dispatch(self, text)
+
+    def set_effort(self, value: str) -> None:
+        value = value.lower()
+        if value not in (EFFORT_OFF, *EFFORTS):
+            self.note(f"usage: /effort {'|'.join(EFFORTS)}|{EFFORT_OFF}", error=True)
+            return
+        apply_effort(self.rt, "" if value == EFFORT_OFF else value)
+        self.refresh_status()
+        self.note(f"effort {value}")
 
     def retry(self) -> None:
         if self.running:
