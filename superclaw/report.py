@@ -69,7 +69,7 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         + (f" {dot} agent {rt.agent.name}" if rt.agent else ""),
         f"model {rt.model} {dot} window {compact(rt.context_window)} {dot} {'catalog' if rt.model_info.known else 'fallback'}"
         + (f" {dot} then {', '.join(rt.settings.fallback_models)}" if rt.settings.fallback_models else ""),
-        f"store {rt.settings.db_path} {dot} workspace {rt.workspace}",
+        f"store {rt.settings.db_path}{f' ({rt.gs.role})' if hasattr(rt.gs, 'role') else ''} {dot} workspace {rt.workspace}",
         f"mcp {len(rt.mcp.tools) if rt.mcp else 0} tools {dot} {len(rt.mcp.clients) if rt.mcp else 0} servers"
         + (f" {dot} {len(rt.mcp.skipped)} skipped" if rt.mcp and rt.mcp.skipped else ""),
         "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),

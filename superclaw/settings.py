@@ -86,6 +86,7 @@ COMMANDS_DIR = "commands"
 REPO_MAP_IGNORED_DIRS = frozenset({".git", ".cache", ".next", ".worktrees", ".superclaw", "build", "coverage", "dist", "node_modules",
                                    "vendor", ".venv", "venv", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "target"})
 SPECS_DIR = "specs"
+SHARE_DIR = "superclaw"
 PLUGINS_DIR = "plugins"
 PLUGIN_MANIFEST = "plugin.json"
 PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
@@ -221,6 +222,10 @@ class Limits:
     recall_preview_chars: int = 120
 
     review_diff_tokens: int = 24_000
+    share_timeout_s: float = 300.0
+    share_key_chars: int = 12
+    share_backlog: int = 16
+    share_message_bytes: int = 16 * 1024 * 1024
     cron_tick_s: float = 30.0
     cron_id_chars: int = 40
     spec_slug_chars: int = 60
