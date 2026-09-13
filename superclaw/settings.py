@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -99,6 +100,32 @@ ERROR_HINTS = (
     ErrorHint(("connection", "timed out", "timeout", "no such host", "name resolution", "unreachable", "tls", "reset by peer", "dns"),
               "provider unreachable; check the network", "provider unreachable; check the network"),
 )
+
+
+OPENCODE_KEY_ENV = "OPENCODE_API_KEY"
+OPENCODE_AUTH_FILE_KEY = "opencode-go"
+OPENCODE_AUTH_TYPE = "api"
+
+
+def opencode_auth_path(e: Mapping[str, str]) -> Path:
+    if override := e.get("OPENCODE_AUTH_PATH", "").strip():
+        return Path(override)
+    if directory := e.get("OPENCODE_DIR", "").strip():
+        return Path(directory) / "auth.json"
+    if xdg := e.get("XDG_DATA_HOME", "").strip():
+        return Path(xdg) / "opencode" / "auth.json"
+    return Path.home() / ".local" / "share" / "opencode" / "auth.json"
+
+
+def read_opencode_key(e: Mapping[str, str]) -> str:
+    try:
+        data = json.loads(opencode_auth_path(e).read_text())
+    except (OSError, ValueError):
+        return ""
+    entry = data.get(OPENCODE_AUTH_FILE_KEY) if isinstance(data, dict) else None
+    if isinstance(entry, dict) and str(entry.get("type", "")).strip().lower() == OPENCODE_AUTH_TYPE:
+        return str(entry.get("key", "")).strip()
+    return ""
 
 
 def read_env_file(path: Path) -> dict[str, str]:
@@ -260,6 +287,8 @@ class Settings:
         config_dir = Path(e.get("XDG_CONFIG_HOME", "").strip() or home / ".config") / "superclaw"
         cache_dir = Path(e.get("XDG_CACHE_HOME", "").strip() or home / ".cache") / "superclaw"
         saved = read_env_file(config_dir / CREDENTIALS_FILE)
+        if not saved.get(OPENCODE_KEY_ENV) and not e.get(OPENCODE_KEY_ENV) and (ambient := read_opencode_key(e)):
+            saved[OPENCODE_KEY_ENV] = ambient
         if env is None:
             for key, value in saved.items():
                 os.environ.setdefault(key, value)

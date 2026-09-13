@@ -1,4 +1,5 @@
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +10,7 @@ from superclaw.meter import ContextMeter
 from superclaw.models import ModelInfo, lookup
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens
-from superclaw.settings import LIMITS, PROVIDERS, Settings
+from superclaw.settings import LIMITS, PROVIDERS, Settings, read_opencode_key
 from supergraph.ingest.llm.resolve import resolve_model
 
 
@@ -59,6 +60,19 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     monkeypatch.setenv("OPENCODE_API_KEY", "sk-oc-test")
     resolved = resolve_model("opencode/deepseek-v4-flash")
     assert resolved["litellm_model"] == "openai/deepseek-v4-flash" and resolved["api_base"].endswith("/zen/v1") and resolved["api_key"] == "sk-oc-test"
+    auth = tmp_path / "opencode" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text(json.dumps({"opencode-go": {"type": "api", "key": "oc-ambient"}}))
+    assert read_opencode_key({"OPENCODE_AUTH_PATH": str(auth)}) == "oc-ambient"
+    assert read_opencode_key({"OPENCODE_AUTH_PATH": str(tmp_path / "none.json")}) == ""
+    auth.write_text(json.dumps({"opencode-go": {"type": "oauth", "key": "z"}}))
+    assert read_opencode_key({"OPENCODE_AUTH_PATH": str(auth)}) == ""
+    auth.write_text(json.dumps({"opencode-go": {"type": "api", "key": "oc-ambient"}}))
+    monkeypatch.delenv("OPENCODE_API_KEY", raising=False)
+    monkeypatch.setenv("OPENCODE_AUTH_PATH", str(auth))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg2"))
+    Settings.from_env()
+    assert os.environ["OPENCODE_API_KEY"] == "oc-ambient" and resolve_model("opencode/deepseek-v4-flash")["api_key"] == "oc-ambient"
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
