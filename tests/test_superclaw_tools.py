@@ -16,7 +16,7 @@ from superclaw.clipboard import parse_drop
 from superclaw.observations import ObservationStore
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, jail, relative, web
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, files, jail, relative, web
 from superclaw.tools.budget import Category
 from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
@@ -203,6 +203,14 @@ def test_file_tools(reg, ws, monkeypatch):
     (ws / "bin.dat").write_bytes(b"beta\0")
     (ws / "huge.txt").write_text("beta\n" + "x" * (LIMITS.read_file_bytes + 1))
     assert reg.run("grep", {"pattern": "beta", "case_insensitive": True}, ctx).output.splitlines() == ["src/a.py:2:BETA", "src/b.txt:1:Beta here", "src/b.txt:2:and beta again"]
+    assert reg.run("grep", {"pattern": "beta", "case_insensitive": True, "output_mode": "count"}, ctx).output.splitlines() == ["src/a.py:1", "src/b.txt:2"]
+    assert reg.run("grep", {"pattern": "beta", "output_mode": "files_with_matches", "path": "src"}, ctx).output == "src/b.txt"
+    assert reg.run("grep", {"pattern": "beta", "glob": "*.txt", "head_limit": 1, "case_insensitive": True}, ctx).output.splitlines() == ["src/b.txt:1:Beta here", "[... more matches; raise head_limit or narrow the pattern ...]"]
+    assert reg.run("grep", {"pattern": "(?<=B)ETA"}, ctx).output == "src/a.py:2:BETA" and reg.run("grep", {"pattern": "beta", "path": "src/a.py", "case_insensitive": True}, ctx).output == "src/a.py:2:BETA"
+    with monkeypatch.context() as plain:
+        plain.setattr(files, "which", lambda name: None)
+        assert reg.run("grep", {"pattern": "beta", "case_insensitive": True}, ctx).output.splitlines() == ["src/a.py:2:BETA", "src/b.txt:1:Beta here", "src/b.txt:2:and beta again"]
+        assert reg.run("grep", {"pattern": "beta", "case_insensitive": True, "output_mode": "count"}, ctx).output.splitlines() == ["src/a.py:1", "src/b.txt:2"]
     assert reg.run("glob", {"pattern": "**/*.py"}, ctx).output.splitlines() == ["src/a.py"]
     assert reg.run("list_directory", {"path": "src"}, ctx).output.splitlines() == ["a.py", "b.txt"]
     (ws / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 10)

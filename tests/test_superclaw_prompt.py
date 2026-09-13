@@ -9,6 +9,7 @@ from superclaw.plugins import install as install_plugin
 from superclaw.plugins import remove as remove_plugin
 from superclaw.agents import resolve as resolve_agent
 from superclaw.policy import Mode
+from superclaw import tooling
 from superclaw.prompt import PromptInputs, build_system_prompt, core_prompt, project_guidelines, skills_block
 from superclaw.repomap import render as render_repo
 from superclaw.repomap import scan as scan_repo
@@ -20,7 +21,7 @@ from superclaw.usercommands import expand, load_commands
 from superclaw.usercommands import find as find_command
 
 
-def test_prompt_assembly_guidelines_and_skills(tmp_path):
+def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     root = tmp_path
     (root / ".git").mkdir()
     (root / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
@@ -57,6 +58,11 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path):
     with_agent = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", agent=loaded[0].prompt))
     assert "<agent>" in with_agent and "Only review." in with_agent and "never widens" in with_agent
     assert "<agent>" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p"))
+    equipped = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", tools=("rg", "fd", "jq")))
+    assert "Host tools present: rg, fd, jq. In bash prefer rg over grep, fd over find." in equipped and "Host tools" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK))
+    assert tooling.guidance(("jq",)) == "Host tools present: jq." and tooling.guidance(()) == ""
+    monkeypatch.setattr(tooling, "which", lambda name: "/usr/bin/" + name if name in ("rg", "uv") else None)
+    assert tooling.detect() == ("rg", "uv")
     commands = tmp_path / "commands"
     commands.mkdir()
     (commands / "pr.md").write_text("---\ndescription: Open a PR.\nagent: reviewer\n---\nOpen a PR titled $1 for $ARGUMENTS; cost $$5")

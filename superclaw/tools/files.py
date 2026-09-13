@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import difflib
 import re
+import shutil
+import subprocess
 from pathlib import Path, PurePath
 from typing import Any
 
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, RG_BIN
 from superclaw.tools import (
     Category,
     Display,
@@ -20,6 +22,7 @@ from superclaw.tools import (
 )
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
+which = shutil.which
 
 
 def _clip_line(line: str) -> str:
@@ -274,21 +277,43 @@ class Grep(Tool):
             return Result.error(f"Error: invalid regex: {e}")
         mode = args.get("output_mode") or "content"
         head = int(args.get("head_limit") or LIMITS.grep_head_limit)
+        rows = self._ripgrep(base, ctx.roots, args["pattern"], bool(args.get("case_insensitive")), args.get("glob"), mode)
+        if rows is None:
+            rows = self._python(base, ctx.roots, rx, args.get("glob"), mode)
+        truncated = mode == "content" and len(rows) > head
+        out = "\n".join(rows[:head] if mode == "content" else rows)
+        if truncated:
+            out += "\n[... more matches; raise head_limit or narrow the pattern ...]"
+        return Result.success(out or "(no matches)", truncated=truncated)
+
+    def _python(self, base: Path, roots: tuple[Path, ...], rx: re.Pattern[str], name_filter: str | None, mode: str) -> list[str]:
         rows: list[str] = []
-        truncated = False
-        for rel, hits in self._matches(base, ctx.roots, rx, args.get("glob")):
+        for rel, hits in self._matches(base, roots, rx, name_filter):
             if mode == "files_with_matches":
                 rows.append(rel)
             elif mode == "count":
                 rows.append(f"{rel}:{len(hits)}")
             else:
-                room = head - len(rows)
-                rows += [f"{rel}:{i}:{line}" for i, line in hits[:room]]
-                truncated = truncated or len(hits) > room
-        out = "\n".join(rows)
-        if truncated:
-            out += "\n[... more matches; raise head_limit or narrow the pattern ...]"
-        return Result.success(out or "(no matches)", truncated=truncated)
+                rows += [f"{rel}:{i}:{line}" for i, line in hits]
+        return rows
+
+    @staticmethod
+    def _ripgrep(base: Path, roots: tuple[Path, ...], pattern: str, ignore_case: bool, name_filter: str | None, mode: str) -> list[str] | None:
+        rg = which(RG_BIN)
+        if not rg:
+            return None
+        cwd = base.parent if base.is_file() else base
+        argv = [rg, "--no-heading", "--with-filename", "--color", "never", "--sort", "path", "--max-filesize", str(LIMITS.read_file_bytes),
+                *(["-i"] if ignore_case else []), *(["-g", name_filter] if name_filter else []),
+                {"files_with_matches": "-l", "count": "-c"}.get(mode, "-n"), "-e", pattern, *(["--", base.name] if base.is_file() else [])]
+        try:
+            proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=LIMITS.grep_timeout_s)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if proc.returncode not in (0, 1):
+            return None
+        prefix = relative(roots, cwd)
+        return [f"{prefix}/{line}" if prefix and prefix != "." else line for line in proc.stdout.splitlines() if line]
 
     @staticmethod
     def _matches(base: Path, roots: tuple[Path, ...], rx: re.Pattern[str], name_filter: str | None):

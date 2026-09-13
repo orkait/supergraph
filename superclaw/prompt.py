@@ -8,6 +8,7 @@ from superclaw.intent import GUIDANCE, Kind
 from superclaw.policy import Mode
 from superclaw.settings import LIMITS
 from superclaw.skills import Skill
+from superclaw.tooling import guidance
 
 PROJECT_FILES = ("AGENTS.md", "SUPERCLAW.md", ".superclaw/AGENTS.md")
 USER_FILE = "SUPERCLAW.md"
@@ -29,6 +30,7 @@ class PromptInputs:
     provider: str = ""
     model: str = ""
     request_kind: Kind | None = None
+    tools: tuple[str, ...] = ()
 
 
 def core_prompt() -> str:
@@ -184,13 +186,15 @@ def agent_block(prompt: str) -> str:
     )
 
 
-def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = ()) -> str:
+def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = (), tools: tuple[str, ...] = ()) -> str:
     lines = [f"Working directory: {cwd}", f"Operating system: {platform.system().lower()}"]
     branch = _git_branch(Path(cwd))
     if branch:
         lines.append(f"Git branch: {branch}")
     if extra_dirs:
         lines.append("Additional directories you may read and write: " + ", ".join(str(d) for d in extra_dirs))
+    if tools:
+        lines.append(guidance(tools))
     return "<environment>\n" + "\n".join(lines) + "\n</environment>"
 
 
@@ -211,7 +215,7 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     user = user_guidelines(inputs.user_guidelines)
     if user:
         sections.append(user)
-    sections.append(environment_block(inputs.cwd, inputs.extra_dirs))
+    sections.append(environment_block(inputs.cwd, inputs.extra_dirs, inputs.tools))
     if inputs.repo_map.strip():
         sections.append("<repo_map>\nA deterministic map of the workspace at launch: counts, the files that usually matter, and paths. "
                         "It is a table of contents, not file contents; read a file before reasoning about it.\n" + inputs.repo_map.strip() + "\n</repo_map>")
