@@ -30,7 +30,8 @@ from superclaw.compaction import compact as compact_context
 from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard
-from superclaw.tui.commands import dispatch, matching
+from superclaw.tui.commands import dispatch, matching, user_entries
+from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
 from superclaw.tui.status import RunStats, StatusBar, TitleBar, WorkingLine, tier
@@ -161,6 +162,7 @@ class SuperclawApp(App[None]):
         self.hist_draft = ""
         self._title = ""
         self.pending = Attachments()
+        self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return {"border-kind": self.glyphs.border}
@@ -340,7 +342,7 @@ class SuperclawApp(App[None]):
         text = event.value
         if text.startswith("/") and " " not in text:
             palette.clear_options()
-            for command in matching(text)[: LIMITS.command_matches_shown]:
+            for command in matching(text, self.user_commands)[: LIMITS.command_matches_shown]:
                 palette.add_option(f"{command.usage:<26} {command.help}")
             palette.highlighted = None
             palette.remove_class("hidden") if palette.option_count else palette.add_class("hidden")
@@ -418,7 +420,22 @@ class SuperclawApp(App[None]):
         if self.running and name in BUSY_COMMANDS:
             self.note(f"{name} waits for the run to finish; esc cancels it", error=True)
         else:
-            dispatch(self, text)
+            dispatch(self, text, self.user_commands)
+
+    def run_user_command(self, command: UserCommand, arg: str) -> None:
+        if self.running:
+            self.note("a run is in progress; esc cancels it", error=True)
+            return
+        if self.rt.provider is None:
+            self.open_setup()
+            return
+        if command.agent:
+            self.use_agent(command.agent)
+        if command.model:
+            self.switch_model(command.model)
+        typed = f"/{command.name} {arg}".strip()
+        self.add(Static(f"{self.glyphs.prompt} {typed}", classes="user"))
+        self.begin_run(expand(command.template, arg), typed)
 
     def set_effort(self, value: str) -> None:
         value = value.lower()
@@ -531,8 +548,8 @@ class SuperclawApp(App[None]):
         self.rt.policy.scope_to(found.tools)
         self.note(f"agent {found.name} {self.glyphs.dot} {', '.join(sorted(found.tools)) or 'all tools'}")
 
-    def begin_run(self, text: str) -> None:
-        self.remember(text)
+    def begin_run(self, text: str, typed: str = "") -> None:
+        self.remember(typed or text)
         pending, self.pending = self.pending, Attachments()
         if pending.text:
             text = f"{text}\n\n{pending.text}"

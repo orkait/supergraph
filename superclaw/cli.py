@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once
+from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
 from supergraph.core.errors import StoreInUse
 
 from superclaw.agents import load_agents
@@ -28,11 +28,13 @@ from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
 from superclaw.skills import load_skills
+from superclaw.usercommands import expand, load_commands
+from superclaw.usercommands import find as find_command
 from superclaw.worktree import WorktreeError
 from superclaw.worktree import prepare as prepare_worktree
 
 SCHEMA_VERSION = 1
-STORELESS = ("doctor", "mcp", "agents", "skills")
+STORELESS = ("doctor", "mcp", "agents", "skills", "commands")
 _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
 _EVENT_TYPE_WIDTH = 12
@@ -58,6 +60,18 @@ def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
 def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     sid = resolve_session(rt, args.resume, args.fork)
     prompt = args.prompt if args.prompt != "-" else sys.stdin.read()
+    if prompt.startswith("/"):
+        name, _, rest = prompt[1:].partition(" ")
+        command = find_command(name, rt.settings.command_roots(rt.workspace))
+        if command is None:
+            print(f"superclaw: no user command /{name}; `superclaw commands` lists them, sending the text as typed", file=sys.stderr)
+        else:
+            if command.agent:
+                rt.agent = resolve_agent(command.agent, rt.settings.agent_roots(rt.workspace))
+                rt.policy.scope_to(rt.agent.tools)
+            if command.model:
+                switch_model(rt, command.model)
+            prompt = expand(command.template, rest)
     attached = read_attachments(args.file, (rt.workspace, *rt.extra_dirs))
     for problem in attached.problems:
         print(f"superclaw: attachment {problem}", file=sys.stderr)
@@ -156,6 +170,17 @@ def cmd_agents(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_commands(rt: Runtime, args: argparse.Namespace) -> int:
+    found = load_commands(rt.settings.command_roots(rt.workspace))
+    for command in found:
+        routing = " ".join(part for part in (f"agent={command.agent}" if command.agent else "", f"model={command.model}" if command.model else "") if part)
+        print(f"/{command.name:<{_NAME_WIDTH}} {command.description}  {routing}({command.path})")
+    if not found:
+        print(f"no user commands; add <name>.md to {rt.settings.command_roots()[0]}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
     for s in load_skills(rt.settings.skill_roots(rt.workspace)):
         print(f"{s.name}: {s.description}")
@@ -222,6 +247,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     sub.add_parser("agents", help="list the agent profiles that --agent can select")
+    sub.add_parser("commands", help="list the user slash commands from .superclaw/commands and the config dir")
     ctx = sub.add_parser("context", help="show what the first request would cost in context tokens")
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
     setup = sub.add_parser("setup", help="store a provider key and default model")
@@ -300,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"superclaw: {e}")
     except StoreInUse as e:
         sys.exit(f"superclaw: {e}\n  close the other superclaw, or give this one its own store with --db <path>")
-    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents,
+    handler = {"exec": cmd_exec, "sessions": cmd_sessions, "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
