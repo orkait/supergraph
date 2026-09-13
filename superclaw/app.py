@@ -219,7 +219,7 @@ class Callbacks:
 
 
 def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = None, *, require_completion: bool = False, verify: bool = False,
-             cancelled: Callable[[], bool] | None = None) -> Result:
+             cancelled: Callable[[], bool] | None = None, images: list[str] | None = None) -> Result:
     cb = callbacks or Callbacks()
     if rt.provider is None:
         raise NoProviderKey("no provider connected; run setup first")
@@ -234,7 +234,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
     if previous and previous.get("hash") != prompt_hash(system_prompt) and cb.on_event:
         cb.on_event({"type": "prompt_drift", "previous": previous.get("hash"), "current": prompt_hash(system_prompt)})
     result = run(prompt, rt.provider, Options(
-        registry=rt.registry, policy=rt.policy, workspace=rt.workspace, extra_dirs=rt.extra_dirs,
+        registry=rt.registry, policy=rt.policy, workspace=rt.workspace, extra_dirs=rt.extra_dirs, images=images or [],
         system_prompt=system_prompt, history=rt.store.replay(sid),
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
         context_window=rt.context_window, model_info=rt.model_info,
