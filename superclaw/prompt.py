@@ -176,6 +176,13 @@ def skills_block(skills: list[Skill]) -> str:
     )
 
 
+def agent_block(prompt: str) -> str:
+    return (
+        "<agent>\nThe operator selected this profile for the session. It narrows what you are here to do; "
+        "it never widens what you are permitted to do.\n\n" + prompt.strip() + "\n</agent>"
+    )
+
+
 def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = ()) -> str:
     lines = [f"Working directory: {cwd}", f"Operating system: {platform.system().lower()}"]
     branch = _git_branch(Path(cwd))
@@ -199,10 +206,7 @@ def build_system_prompt(inputs: PromptInputs) -> str:
         session.append("</session>")
         sections.append("\n".join(session))
     if inputs.agent.strip():
-        sections.append(
-            "<agent>\nThe operator selected this profile for the session. It narrows what you are here to do; "
-            "it never widens what you are permitted to do.\n\n" + inputs.agent.strip() + "\n</agent>"
-        )
+        sections.append(agent_block(inputs.agent))
     user = user_guidelines(inputs.user_guidelines)
     if user:
         sections.append(user)
