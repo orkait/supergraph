@@ -48,6 +48,7 @@ First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 | Reviews a change | `superclaw review` runs a read-only review of the uncommitted changes, a branch or a commit, forced into plan mode, and prints findings with `file:line`, a severity and a verdict |
 | Ships team commands | `<name>.md` under `.superclaw/commands` becomes `/<name>` in the TUI and in `exec`, with `$ARGUMENTS` and `$1`..`$9` expansion, so a repository can check in its own workflows |
 | Streams | text arrives as it is generated and the TUI shows the reply growing; tool calls are merged from their deltas, a `<think>` block never leaks token by token, and `stream-json` carries `text_delta` events |
+| Serves editors | `superclaw acp` speaks the Agent Client Protocol over stdio, so Zed and other ACP clients drive the same loop: sessions, streamed replies, tool calls with status and diffs, and permission prompts routed to the editor as `session/request_permission` |
 | Asks | `ask_user` with options and a recommended default |
 | Stays honest | same-error streaks halt the run, empty turns are capped, identical calls warn at 3 and 42 calls in one turn warn, a final message that promises more work is sent back once, and `--verify` runs a read-only verifier call that must return `{passed, reason, nextAction}` before a headless run counts as done |
 | Fits the window | pressure is measured against the model's real window minus a 16,384-token reserve, anchored on the provider's reported usage rather than a local estimate. Under pressure the harness first prunes older tool results (over 8,192 chars) to a head and tail with no model call, and only if that is not enough summarises everything before the last 20,000 tokens, never cutting between a tool call and its result. The summariser gets a projection that keeps every user message verbatim, assistant text, the last eight tool calls per turn, errors and edits, plus the previous summary; it must answer in nine fixed sections; the plan, loaded skills and edited files ride along verbatim and the model is told to continue without acknowledging the summary. Prunes and compactions are session events, so a resumed session replays the same shortened context |
@@ -243,6 +244,23 @@ Open a pull request titled "$1". Summary: $ARGUMENTS
 <summary>Review</summary>
 
 `superclaw review` picks a diff (`--uncommitted` by default, `--base BRANCH`, or `--commit SHA`), runs the reviewer prompt in plan mode so the model can read any file for context but never edit, and prints findings as `file:line`, `blocker` / `should-fix` / `nit`, problem, fix, then a `Verdict:` line. The diff goes through the same diff-aware budget the tool boundary uses, the prompt says when it was cut, and untracked files are named rather than inlined. An optional argument focuses the reviewer; an empty change exits with `nothing to review`.
+
+</details>
+
+<details>
+<summary>Editor backend (ACP)</summary>
+
+`superclaw acp` is a JSON-RPC 2.0 peer over newline-delimited stdio, the wire shape the Agent Client Protocol specifies, so an editor can run superclaw as its agent. Everything else goes to stderr.
+
+| Method | superclaw behaviour |
+|---|---|
+| `initialize` | protocol version 1, `loadSession`, image and embedded-context prompts, `session/list` |
+| `session/new` `{cwd}` | a new session in the store; `cwd` must be the absolute directory this process serves (start it there or with `-C`), and the editor's `mcpServers` are ignored because superclaw owns its own MCP config |
+| `session/load` | replays the transcript as `user_message_chunk` and `agent_message_chunk` updates |
+| `session/list`, `session/set_mode` | recent sessions; `ask` `auto` `plan` `unsafe` |
+| `session/prompt` | text, image and resource blocks become the prompt; replies stream as `agent_message_chunk`, tool calls arrive as `tool_call` then `tool_call_update` with `read` `edit` `search` `execute` `think` kinds and the diff or output as content; returns `end_turn`, `cancelled` or `max_turn_requests`. One prompt at a time per process |
+| `session/cancel` | a notification; the run stops at the next tool boundary |
+| `session/request_permission` | sent to the client with `allow_once`, `allow_always` (session, and the command prefix when one was offered) and `reject_once` options that map one-to-one onto the TUI's `a` `s` `p` `d`; a cancelled outcome denies and cancels the run |
 
 </details>
 

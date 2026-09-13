@@ -1,14 +1,16 @@
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 import pytest
 
 from supergraph import SuperGraph
 
+from superclaw.acp import serve as acp_serve
 from superclaw.agents import Agent
-from superclaw.app import build_registry
+from superclaw.app import Runtime, build_registry
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
@@ -20,7 +22,7 @@ from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Action, Mode, Policy
 from superclaw.runtime import Completion, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, Settings
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
@@ -107,6 +109,49 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     with pytest.raises(RuntimeError):
         run("again", Scripted(RuntimeError("provider down")), options(ws, session=store, session_id=sid))
     assert store.events(sid)[-1]["type"] == "error"
+
+    acp_gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
+    acp_provider = Scripted(Completion(tool_calls=[call("write_file", "c1", path="acp.txt", description="d", content="hi")]), Completion(text="done"))
+    acp_rt = Runtime(gs=acp_gs, store=SessionStore(acp_gs), memory=Memory(acp_gs), registry=build_registry(Memory(acp_gs), ObservationStore(acp_gs), ws),
+                     policy=Policy(ws, Mode.ASK, sandboxed=True), provider=acp_provider, workspace=ws, model="fake/m",
+                     settings=Settings.from_env({"XDG_CONFIG_HOME": str(ws / "cfg"), "XDG_CACHE_HOME": str(ws / "cache")}))
+    to_server_r, to_server_w = os.pipe()
+    to_client_r, to_client_w = os.pipe()
+    threading.Thread(target=acp_serve, args=(acp_rt, os.fdopen(to_server_r), os.fdopen(to_client_w, "w")), daemon=True).start()
+    client_out, client_in = os.fdopen(to_server_w, "w"), os.fdopen(to_client_r)
+
+    def send(**message):
+        client_out.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
+        client_out.flush()
+
+    def recv():
+        return json.loads(client_in.readline())
+
+    send(id=1, method="initialize", params={"protocolVersion": 1, "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False}}})
+    assert recv()["result"]["protocolVersion"] == 1
+    send(id=2, method="session/new", params={"cwd": str(ws), "mcpServers": []})
+    sid = recv()["result"]["sessionId"]
+    send(id=3, method="session/prompt", params={"sessionId": sid, "prompt": [{"type": "text", "text": "write it"}]})
+    updates, asked = [], None
+    while True:
+        message = recv()
+        if message.get("method") == "session/request_permission":
+            asked = message["params"]
+            send(id=message["id"], result={"outcome": {"outcome": "selected", "optionId": "allow"}})
+        elif message.get("method") == "session/update":
+            updates.append(message["params"]["update"])
+        elif message.get("id") == 3:
+            assert message["result"] == {"stopReason": "end_turn"}
+            break
+    assert asked["toolCall"]["toolCallId"] == "c1" and asked["toolCall"]["kind"] == "edit" and [o["optionId"] for o in asked["options"]] == ["allow", "allow_session", "deny"]
+    assert [u["sessionUpdate"] for u in updates] == ["tool_call", "tool_call_update", "agent_message_chunk"] and (ws / "acp.txt").read_text() == "hi"
+    assert updates[0]["status"] == "in_progress" and updates[1]["status"] == "completed" and updates[2]["content"]["text"] == "done"
+    send(id=4, method="nope", params={})
+    assert recv()["error"]["code"] == -32601
+    send(id=5, method="session/new", params={"cwd": "relative/path", "mcpServers": []})
+    assert recv()["error"]["code"] == -32602
+    client_out.close()
+    acp_gs.close()
 
 
 def test_guards_gates_and_verifier(ws):
