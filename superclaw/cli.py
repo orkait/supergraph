@@ -13,7 +13,7 @@ from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_
 from superclaw.policy import Mode
 from superclaw.report import context_report
 from superclaw.runtime import clip
-from superclaw.settings import LIMITS, PROVIDERS, Settings
+from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings
 from superclaw.skills import load_skills
 
 SCHEMA_VERSION = 1
@@ -21,14 +21,14 @@ _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
 
 
-def _progress_line(event: dict[str, Any]) -> str | None:
+def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
     kind = event["type"]
     if kind == "tool_call":
         args = json.dumps(event["args"])
-        return f"  → {event['name']} {clip(args, LIMITS.preview_args_chars)}"
+        return f"  {glyphs.call} {event['name']} {clip(args, LIMITS.preview_args_chars)}"
     if kind == "tool_result" and not event["ok"]:
         first = event["output"].splitlines()[0] if event["output"] else ""
-        return f"  ✗ {event['name']}: {clip(first, LIMITS.preview_error_chars)}"
+        return f"  {glyphs.failed} {event['name']}: {clip(first, LIMITS.preview_error_chars)}"
     if kind == "compaction":
         return f"  (compacted {event['removed']} messages)"
     return None
@@ -44,7 +44,7 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
         if stream:
             sys.stdout.write(json.dumps({"schemaVersion": SCHEMA_VERSION, "runId": run_id, **event}) + "\n")
             sys.stdout.flush()
-        elif args.output_format == "text" and (line := _progress_line(event)):
+        elif args.output_format == "text" and (line := _progress_line(event, rt.settings.glyphs)):
             print(line, file=sys.stderr)
 
     emit({"type": "run_start", "sessionId": sid, "cwd": str(rt.workspace), "model": rt.model, "mode": rt.mode.value})

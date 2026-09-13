@@ -8,6 +8,7 @@ from typing import Any
 from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
@@ -17,7 +18,7 @@ from superclaw.app import Callbacks, Runtime, run_once
 from superclaw.loop import Result
 from superclaw.prompt import _git_branch
 from superclaw.runtime import clip
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, Glyphs
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard
 from superclaw.tui.commands import dispatch, matching
@@ -25,7 +26,7 @@ from superclaw.tui.setup import SetupScreen
 from superclaw.tui.status import RunStats, StatusBar, TitleBar, WorkingLine, tier
 from superclaw.tui.theme import ACCENT, CSS, MUTED
 
-PROMPT_PLACEHOLDER = "describe a task for superclaw…"
+PROMPT_PLACEHOLDER = "describe a task for superclaw"
 WORDMARK = "superclaw"
 WORDMARK_ART = (
     "███████╗██╗   ██╗██████╗ ███████╗██████╗  ██████╗██╗      █████╗ ██╗    ██╗",
@@ -36,17 +37,17 @@ WORDMARK_ART = (
     "╚══════╝ ╚═════╝ ╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝",
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
-EXAMPLES = 'Try  "explain this codebase"  ·  "fix the failing test"  ·  "add a --json flag"'
-HINT = "/ commands · esc cancel · ctrl+c quit · click a card to expand"
+EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
+HINTS = ("/ commands", "tab complete", "esc cancel", "ctrl+c quit", "click a card to expand")
 PHASE_THINKING = "thinking"
 PHASE_CANCELLING = "cancelling"
 BUSY_COMMANDS = ("/new", "/resume", "/clear")
 
 
-def describe(event: dict[str, Any]) -> str:
+def describe(event: dict[str, Any], glyphs: Glyphs) -> str:
     kind = event["type"]
     if kind == "delegate":
-        return f"↳ delegate {event['child']}: {clip(event['task'], LIMITS.preview_args_chars)}"
+        return f"{glyphs.child} delegate {event['child']}: {clip(event['task'], LIMITS.preview_args_chars)}"
     if kind == "prune":
         return f"pruned {event['results']} older results; recall §id brings any back"
     if kind == "compaction":
@@ -65,6 +66,7 @@ class PermissionScreen(ModalScreen[str]):
         ("p", "choose('allow_prefix')", "Remember prefix"),
         ("d", "choose('deny')", "Deny"),
         ("escape", "choose('deny')", "Deny"),
+        ("ctrl+c", "app.interrupt", "Cancel / quit"),
     ]
 
     def __init__(self, request: dict[str, Any]) -> None:
@@ -77,7 +79,7 @@ class PermissionScreen(ModalScreen[str]):
         with Vertical(id="dialog"):
             yield Label(f"Permission: {self.request['tool']}", classes="title")
             yield Static(clip(args, LIMITS.dialog_args_chars), classes="args")
-            yield Static(f"{self.request['reason']}  ·  risk {self.request['risk']} ({', '.join(self.request['categories'])})", classes="reason")
+            yield Static(f"{self.request['reason']}  {self.app.glyphs.dot}  risk {self.request['risk']} ({', '.join(self.request['categories'])})", classes="reason")
             with Horizontal(classes="buttons"):
                 yield Button("Allow once (a)", id="allow", variant="primary")
                 yield Button("Allow for session (s)", id="allow_session")
@@ -95,7 +97,7 @@ class PermissionScreen(ModalScreen[str]):
 
 
 class QuestionScreen(ModalScreen[str]):
-    BINDINGS = [("escape", "skip", "Skip")]
+    BINDINGS = [("escape", "skip", "Skip"), ("ctrl+c", "app.interrupt", "Cancel / quit")]
 
     def __init__(self, question: dict[str, Any]) -> None:
         super().__init__()
@@ -123,10 +125,17 @@ class QuestionScreen(ModalScreen[str]):
 
 class SuperclawApp(App[None]):
     CSS = CSS
-    BINDINGS = [("ctrl+c", "interrupt", "Cancel / quit"), ("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        ("ctrl+c", "interrupt", "Cancel / quit"),
+        ("escape", "cancel", "Cancel"),
+        Binding("down", "palette_move(1)", "Next command", show=False, priority=True),
+        Binding("up", "palette_move(-1)", "Previous command", show=False, priority=True),
+        Binding("tab", "palette_complete", "Complete command", show=False, priority=True),
+    ]
     limits = LIMITS
 
     def __init__(self, rt: Runtime, session_id: str) -> None:
+        self.glyphs = rt.settings.glyphs
         super().__init__()
         self.rt = rt
         self.session_id = session_id
@@ -134,16 +143,20 @@ class SuperclawApp(App[None]):
         self.cards: dict[str, ToolCard] = {}
         self.cancel_flag = threading.Event()
         self.running = False
+        self.closing = False
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        return {"border-kind": self.glyphs.border}
 
     def compose(self) -> ComposeResult:
         yield TitleBar(id="title")
         yield Static(self.welcome(), id="welcome")
-        yield VerticalScroll(id="transcript")
-        yield Static(HINT, id="hints")
+        yield VerticalScroll(id="transcript", can_focus=False)
+        yield Static(f" {self.glyphs.dot} ".join(HINTS), id="hints")
         yield WorkingLine()
         with Horizontal(id="composer"):
-            yield Static("❯", classes="gutter")
-            yield Input(placeholder=PROMPT_PLACEHOLDER, id="prompt")
+            yield Static(self.glyphs.prompt, classes="gutter")
+            yield Input(placeholder=PROMPT_PLACEHOLDER, id="prompt", select_on_focus=False)
         yield StatusBar(id="status")
         yield OptionList(id="palette", classes="hidden")
 
@@ -165,17 +178,18 @@ class SuperclawApp(App[None]):
         if not connected:
             self.note("no provider connected; /setup when you have a key", error=True)
 
-    def on_resize(self) -> None:
+    def relayout(self) -> None:
         self.refresh_status()
         self.query_one("#welcome", Static).update(self.welcome())
 
     def welcome(self) -> Text:
         width = self.size.width or LIMITS.tui_tier_full
         parts = (f"v{__version__}", self.short_cwd(width), _git_branch(self.rt.workspace), self.rt.model)
-        mark = [Text(row, style=ACCENT) for row in WORDMARK_ART] if tier(width) >= 2 else [Text(WORDMARK, style=ACCENT)]
-        lines = [*mark, Text(""), Text(TAGLINE, style=MUTED), Text(""), Text("  ·  ".join(p for p in parts if p), style=MUTED), Text("")]
+        sep = f"  {self.glyphs.dot}  "
+        mark = [Text(row, style=ACCENT) for row in WORDMARK_ART] if tier(width) >= 2 and self.glyphs.block_art else [Text(WORDMARK, style=ACCENT)]
+        lines = [*mark, Text(""), Text(TAGLINE, style=MUTED), Text(""), Text(sep.join(p for p in parts if p), style=MUTED), Text("")]
         if tier(width) >= 2:
-            lines += [Text(EXAMPLES, style=MUTED), Text("")]
+            lines += [Text(sep.join(EXAMPLES), style=MUTED), Text("")]
         return Text("\n").join(lines)
 
     def refresh_status(self) -> None:
@@ -233,37 +247,58 @@ class SuperclawApp(App[None]):
             palette.clear_options()
             for command in matching(text)[: LIMITS.command_matches_shown]:
                 palette.add_option(f"{command.usage:<26} {command.help}")
+            palette.highlighted = None
             palette.remove_class("hidden") if palette.option_count else palette.add_class("hidden")
         else:
             palette.add_class("hidden")
 
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option_list.id != "palette":
-            return
+    def palette_open(self) -> bool:
+        return not self.query_one("#palette", OptionList).has_class("hidden")
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return self.palette_open() if action.startswith("palette_") else True
+
+    def action_palette_move(self, step: int) -> None:
+        palette = self.query_one("#palette", OptionList)
+        current = -1 if palette.highlighted is None and step > 0 else (palette.highlighted or 0)
+        palette.highlighted = (current + step) % palette.option_count
+
+    def action_palette_complete(self) -> None:
+        palette = self.query_one("#palette", OptionList)
+        self.pick(palette.highlighted or 0)
+
+    def pick(self, index: int) -> None:
+        palette = self.query_one("#palette", OptionList)
         prompt = self.query_one("#prompt", Input)
-        usage = str(event.option.prompt).split("  ")[0].strip()
+        usage = str(palette.get_option_at_index(index).prompt).split("  ")[0].strip()
         name = usage.split()[0]
-        self.query_one("#palette", OptionList).add_class("hidden")
+        palette.add_class("hidden")
         prompt.focus()
         if usage == name:
             prompt.value = ""
-            dispatch(self, name)
+            self.command(name)
         else:
             prompt.value = name + " "
+            prompt.cursor_position = len(prompt.value)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option_list.id == "palette":
+            self.pick(event.option_index)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "prompt":
             return
+        palette = self.query_one("#palette", OptionList)
+        if self.palette_open() and palette.highlighted is not None:
+            self.pick(palette.highlighted)
+            return
         text = event.value.strip()
         event.input.value = ""
-        self.query_one("#palette", OptionList).add_class("hidden")
+        palette.add_class("hidden")
         if not text:
             return
         if text.startswith("/"):
-            if self.running and text.split()[0] in BUSY_COMMANDS:
-                self.note(f"{text.split()[0]} waits for the run to finish; esc cancels it", error=True)
-            else:
-                dispatch(self, text)
+            self.command(text)
             return
         if self.running:
             self.note("a run is in progress; esc cancels it", error=True)
@@ -271,8 +306,15 @@ class SuperclawApp(App[None]):
         if self.rt.provider is None:
             self.open_setup()
             return
-        self.add(Static(f"❯ {text}", classes="user"))
+        self.add(Static(f"{self.glyphs.prompt} {text}", classes="user"))
         self.begin_run(text)
+
+    def command(self, text: str) -> None:
+        name = text.split()[0]
+        if self.running and name in BUSY_COMMANDS:
+            self.note(f"{name} waits for the run to finish; esc cancels it", error=True)
+        else:
+            dispatch(self, text)
 
     def begin_run(self, text: str) -> None:
         self.running = True
@@ -301,11 +343,13 @@ class SuperclawApp(App[None]):
 
     @work(thread=True, exclusive=True)
     def run_prompt(self, text: str) -> None:
-        result = run_once(self.rt, text, self.session_id, Callbacks(
-            on_event=lambda event: self.call_from_thread(self.render_event, event),
-            on_permission=self.ask_permission,
-            on_ask_user=self.ask_questions,
-        ), cancelled=self.cancel_flag.is_set)
+        callbacks = Callbacks(on_event=lambda event: self.call_from_thread(self.render_event, event),
+                              on_permission=self.ask_permission, on_ask_user=self.ask_questions)
+        try:
+            result = run_once(self.rt, text, self.session_id, callbacks, cancelled=self.cancel_flag.is_set)
+        except Exception as e:
+            self.call_from_thread(self.finish, None, clip(str(e), LIMITS.preview_error_chars))
+            return
         self.call_from_thread(self.finish, result)
 
     def render_event(self, event: dict[str, Any]) -> None:
@@ -319,7 +363,7 @@ class SuperclawApp(App[None]):
             self.stats.tokens, self.stats.cost = event["run_total"], event["run_cost_usd"]
             self.stats.saved, self.stats.kept_out = event["saved_tokens"], event["kept_out_tokens"]
             self.refresh_status()
-        elif line := describe(event):
+        elif line := describe(event, self.glyphs):
             self.note(line)
 
     def render_tool(self, event: dict[str, Any], child: bool) -> None:
@@ -337,16 +381,21 @@ class SuperclawApp(App[None]):
             card.finish(event["ok"], event["output"], event.get("display") or {}, event.get("ref", ""))
         working.start(PHASE_THINKING)
 
-    def finish(self, result: Result) -> None:
+    def finish(self, result: Result | None, error: str = "") -> None:
         self.running = False
         self.query_one(WorkingLine).stop()
         self.query_one("#hints").remove_class("hidden")
         elapsed = self.stats.timer.elapsed()
-        summary = f"done in {elapsed:.0f}s · {result.turns} turns · {self.stats.timer.calls} tools · {result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window"
-        if result.stop_reason or result.incomplete:
-            self.note(f"stopped: {result.stop_reason or result.incomplete_reason} · {summary}", error=True)
+        sep = f" {self.glyphs.dot} "
+        if result is None:
+            self.note(f"run failed after {elapsed:.0f}s: {error}", error=True)
         else:
-            self.note(summary)
+            summary = sep.join((f"done in {elapsed:.0f}s", f"{result.turns} turns", f"{self.stats.timer.calls} tools",
+                                f"{result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window"))
+            if result.stop_reason or result.incomplete:
+                self.note(f"stopped: {result.stop_reason or result.incomplete_reason}{sep}{summary}", error=True)
+            else:
+                self.note(summary)
         prompt = self.query_one("#prompt", Input)
         prompt.placeholder = PROMPT_PLACEHOLDER
         prompt.focus()
@@ -362,9 +411,16 @@ class SuperclawApp(App[None]):
 
         self.stats.timer.pause()
         self.call_from_thread(self.push_screen, screen, settle)
-        done.wait()
+        while not done.wait(LIMITS.timer_interval_s):
+            if self.closing:
+                return ""
+            if self.cancel_flag.is_set():
+                self.call_from_thread(screen.dismiss, None)
         self.stats.timer.resume()
         return answer["value"]
+
+    def on_unmount(self) -> None:
+        self.closing = True
 
     def ask_permission(self, request: dict[str, Any]) -> str:
         return self.modal(PermissionScreen(request)) or "deny"

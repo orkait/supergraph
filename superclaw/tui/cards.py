@@ -12,9 +12,6 @@ from superclaw.runtime import clip
 from superclaw.settings import LIMITS
 from superclaw.tui.theme import ACCENT, ADD, ADD_ROW, DEL, DEL_ROW, MUTED
 
-GLYPH_RUNNING = "◐"
-GLYPH_OK = "✓"
-GLYPH_FAILED = "✗"
 TARGET_KEYS = ("path", "pattern", "command", "code", "name", "query", "ref", "task")
 DIFF_TOOLS = {"edit_file", "write_file"}
 
@@ -55,7 +52,7 @@ class ToolCard(Vertical):
         self.lines: list[Text] = []
         self.counts = (0, 0)
         self.expanded = False
-        self.status = GLYPH_RUNNING
+        self.ok: bool | None = None
         self.add_class("running")
 
     def compose(self) -> ComposeResult:
@@ -64,7 +61,9 @@ class ToolCard(Vertical):
         yield Static("", classes="more")
 
     def head(self) -> Text:
-        text = Text(f"{self.status} ")
+        glyphs = self.app.glyphs
+        status = glyphs.running if self.ok is None else (glyphs.ok if self.ok else glyphs.failed)
+        text = Text(f"{status} ")
         text.append(self.tool, style=ACCENT)
         if self.target:
             text.append(f"  {self.target}", style=MUTED)
@@ -74,13 +73,17 @@ class ToolCard(Vertical):
 
     def finish(self, ok: bool, output: str, display: dict[str, Any], ref: str) -> None:
         self.remove_class("running")
-        self.status = GLYPH_OK if ok else GLYPH_FAILED
+        self.ok = ok
         if not ok:
             self.add_class("failed")
         self.counts = diff_counts(display) if self.tool in DIFF_TOOLS else (0, 0)
         self.lines = body_lines(self.tool, output, display)
         if ref:
             self.lines.append(Text(f"§{ref}", style=MUTED))
+        if self.is_mounted:
+            self.render_body()
+
+    def on_mount(self) -> None:
         self.render_body()
 
     def render_body(self) -> None:
@@ -89,7 +92,7 @@ class ToolCard(Vertical):
         body = Text("\n").join(shown) if shown else Text("")
         self.query_one(".body", Static).update(body)
         hidden = len(self.lines) - len(shown)
-        more = f"… {hidden} more lines, click to expand" if hidden > 0 else ("click to collapse" if self.expanded and len(self.lines) > LIMITS.card_body_lines else "")
+        more = f"{self.app.glyphs.ellipsis} {hidden} more lines, click to expand" if hidden > 0 else ("click to collapse" if self.expanded and len(self.lines) > LIMITS.card_body_lines else "")
         self.query_one(".more", Static).update(more)
 
     def on_click(self) -> None:
