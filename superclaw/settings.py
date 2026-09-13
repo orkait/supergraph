@@ -78,6 +78,7 @@ NONCODING_TERMS = ("audio", "dall-e", "deep-research", "embed", "image", "imagen
 MODEL_SOURCE_LIVE = "live"
 MODEL_SOURCE_CATALOG = "catalog"
 MODELS_CACHE_DIR = "models"
+WORKTREES_DIR = "worktrees"
 
 
 @dataclass(frozen=True)
@@ -247,6 +248,8 @@ class Limits:
     models_fetch_timeout_s: float = 15.0
     models_fetch_bytes: int = 8 * 1024 * 1024
     models_cache_ttl_s: int = 86_400
+    worktree_name_chars: int = 80
+    worktree_key_hash_chars: int = 10
     model_id_width: int = 44
     model_list_shown: int = 40
     tool_name_width: int = 16
@@ -331,6 +334,10 @@ class Settings:
     @property
     def models_cache(self) -> Path:
         return self.cache_dir / MODELS_CACHE_DIR
+
+    @property
+    def worktrees_dir(self) -> Path:
+        return self.data_dir / WORKTREES_DIR
 
     def save_credentials(self, provider: Provider, key: str, model: str) -> None:
         self._save({provider.env: key, "SUPERCLAW_MODEL": model})

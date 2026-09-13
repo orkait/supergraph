@@ -18,6 +18,8 @@ from superclaw.report import context_report, doctor_lines
 from superclaw.runtime import clip
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings
 from superclaw.skills import load_skills
+from superclaw.worktree import WorktreeError
+from superclaw.worktree import prepare as prepare_worktree
 
 SCHEMA_VERSION = 1
 _NAME_WIDTH = 18
@@ -122,6 +124,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("-C", "--cwd", default=".", help="workspace root (default: current directory)")
     parser.add_argument("--add-dir", action="append", default=[], metavar="PATH",
                         help="allow reads and writes in an extra directory, and bind it into the sandbox (repeatable)")
+    parser.add_argument("-w", "--worktree", nargs="?", const="", default=None, metavar="NAME",
+                        help="run in an isolated git worktree on branch superclaw/<name> (default name: task-<utc timestamp>)")
+    parser.add_argument("--worktree-dir", default="", metavar="PATH", help="base directory for created worktrees")
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
@@ -200,6 +205,13 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_setup(settings, args)
     if args.command == "models":
         return cmd_models(settings, args)
+    if args.worktree is not None:
+        try:
+            tree = prepare_worktree(workspace, Path(args.worktree_dir) if args.worktree_dir else settings.worktrees_dir, args.worktree)
+        except WorktreeError as e:
+            sys.exit(f"superclaw: {e}")
+        print(f"superclaw: {'reusing' if tree.reused else 'created'} worktree {tree.path} on {tree.branch}", file=sys.stderr)
+        workspace = tree.path
     try:
         rt = build_runtime(settings, workspace, Mode(mode), max_turns=args.max_turns, intent_gate=args.intent_gate,
                            hooks=build_hooks(settings, workspace, args.trust_workspace), require_provider=args.command not in (None, "doctor"),
