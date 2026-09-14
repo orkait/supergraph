@@ -10,6 +10,7 @@ from supergraph.core.errors import SuperGraphError
 
 from superclaw import __version__
 from superclaw.compaction import SUMMARY_LABEL
+from superclaw.dsl import lit as _lit
 from superclaw.runtime import Message, ToolCall
 from superclaw.settings import LIMITS
 
@@ -19,10 +20,6 @@ EXPORT_SCHEMA_VERSION = 1
 
 def prompt_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
-
-
-def _lit(value: Any) -> str:
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 class SessionStore:

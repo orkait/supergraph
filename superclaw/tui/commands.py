@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from superclaw.catalog import describe, keyed_providers
+from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
 from superclaw.usercommands import UserCommand, load_commands
 
@@ -93,6 +94,28 @@ def _recall(app: SuperclawApp, arg: str) -> None:
         return
     args = {"ref": arg} if arg.lstrip("§").isalnum() and len(arg.lstrip("§")) >= app.limits.ref_hex_chars else {"query": arg}
     app.show_tool_result("recall", args)
+
+
+def _facts(app: SuperclawApp, arg: str) -> None:
+    facts = app.rt.memory.facts
+    words = arg.split()
+    if words[:1] == ["retract"] and len(words) >= 2:
+        facts.retract(words[1], " ".join(words[2:]) or "retracted by the user")
+        app.note(f"retracted {words[1]}")
+        return
+    as_of = None
+    if words[:1] == ["as-of"] and len(words) >= 2:
+        as_of = as_of_ms(words[1])
+        if as_of is None:
+            app.note("usage: /facts as-of YYYY-MM-DD [query]", error=True)
+            return
+        words = words[2:]
+    query = " ".join(words)
+    found = facts.search(query, as_of=as_of) if query else facts.recent(as_of=as_of)
+    for fact in found:
+        app.note(f"{fact.id}  {fact.line()}")
+    if not found:
+        app.note("no facts yet; web_fetch with a prompt learns them, memory_note with origin web files one")
 
 
 def _model(app: SuperclawApp, arg: str) -> None:
@@ -207,6 +230,7 @@ COMMANDS = (
     Command("/permissions", "/permissions", "show the mode and remembered grants", _permissions),
     Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
+    Command("/facts", "/facts [query|as-of DATE [query]|retract ID [reason]]", "facts learned from sources, with age and URL", _facts),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
     Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),

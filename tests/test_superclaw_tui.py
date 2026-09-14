@@ -227,7 +227,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     rt.memory.note("The user's name is Kai.")
     rt.provider, events = Scripted(Completion(text="you are Kai")), []
     run_once(rt, "what is my name", sid, Callbacks(on_event=events.append))
-    assert events[0]["type"] == "context" and events[0]["memories"] == 1 and events[0]["history"] == 4 and events[0]["prompt_tokens"] > 0 and {"skills", "repo_files"} <= set(events[0])
+    assert events[0]["type"] == "context" and events[0]["memories"] == 1 and events[0]["history"] == 4 and events[0]["prompt_tokens"] > 0 and events[0]["facts"] == 0 and {"skills", "repo_files"} <= set(events[0])
     assert context_overview({"type": "context", "memories": 0, "skills": 0, "repo_files": 0, "history": 0, "prompt_tokens": 1}, UNICODE) == "fresh context"
     assert context_overview({"type": "context", "memories": 1, "skills": 1, "repo_files": 1, "history": 1, "prompt_tokens": 1}, UNICODE) == "1 memory · 1 skill · repo map 1 file · 1 earlier message"
     commands = tmp_path / ".superclaw" / "commands"

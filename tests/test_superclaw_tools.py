@@ -14,6 +14,7 @@ from superclaw import checks, review
 from superclaw.attach import read as read_attachments
 from superclaw.clipboard import parse_drop
 from superclaw.delegate import SPAWN_KEY
+from superclaw.facts import Facts
 from superclaw.observations import ObservationStore, ref_in
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
@@ -129,9 +130,13 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     assert "First para" not in summary.output and "First para with [a link](https://x.y/z)" in store.load(ref).body and "full" not in summary.meta
     unread = web_fetch.run({"url": "https://public.example/page", "prompt": "what is it"}, ctx)
     assert "No child agent" in unread.output and "First para" not in unread.output
-    ctx.state[SPAWN_KEY] = lambda a: Result.success(f"child read {a['refs'][0]} for: {a['task'].splitlines()[0]}")
-    answered = web_fetch.run({"url": "https://public.example/page", "prompt": "what is it"}, ctx)
-    assert answered.ok and answered.output.endswith(f"\n\nchild read {ref} for: what is it") and f"Stored: §{ref}" in answered.output
+    ctx.state[SPAWN_KEY] = lambda a: Result.success(f"child read {a['refs'][0]} for: {a['task'].splitlines()[0]}\n\nFacts:\n- Hello world is the heading | \"Hello world\"\n- The key is sk-proj-abcdefghijklmnopqrstuvwxyz0123456789")
+    answered = WebFetch(store, None, Facts(gs)).run({"url": "https://public.example/page", "prompt": "what is it"}, ctx)
+    assert answered.ok and f"\n\nchild read {ref} for: what is it" in answered.output and f"Stored: §{ref}" in answered.output
+    learned = Facts(gs).recent()
+    assert "Learned: 1 fact kept with source and date: fact:" in answered.output and [f.text for f in learned] == ["Hello world is the heading"] and learned[0].source == "https://public.example/page"
+    assert any(e["target"] == f"obs:{ref}" for e in gs.execute(f'EDGES FROM "{learned[0].id}"', namespace="superclaw").data)
+    assert "Learned" not in web_fetch.run({"url": "https://public.example/page", "prompt": "what is it"}, ctx).output
     page = web_fetch.run({"url": "https://public.example/page", "inline": True}, ctx)
     assert page.output.split("\n\n", 1)[1] == "[Docs](/docs)\n\n# Hello world\n\nFirst para with [a link](https://x.y/z) and anchor.\n\n- one\n- two\n\n```\ncode  here\n```"
     assert page.meta["full"] == page.output and "<h1>" in web_fetch.run({"url": "https://public.example/page", "format": "raw", "inline": True}, ctx).output

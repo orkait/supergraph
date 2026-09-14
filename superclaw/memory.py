@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import re
-import time
 from typing import Any
 
 from supergraph.core.errors import SuperGraphError
 
+from superclaw.dsl import age as _age
+from superclaw.dsl import lit as _lit
+from superclaw.dsl import now_ms as _now_ms
+from superclaw.dsl import rows as _rows
+from superclaw.facts import Facts
 from superclaw.redaction import redact
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, ORIGIN_WEB
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 
-ORIGINS = ("user_stated", "user_selected", "inferred")
-_MS_PER_SECOND = 1000
-_MS_PER_DAY = 86_400_000
-_DAYS_PER_MONTH = 30
-_DAYS_PER_YEAR = 365
+ORIGINS = ("user_stated", "user_selected", "inferred", ORIGIN_WEB)
 _HONESTY_TRAPS = re.compile(
     r"(?i)\b(never|don't|do not|stop|avoid)\s+(disagree|question|challenge|push back|raise|mention|flag|verify|check|test|warn|correct)\b"
     r"|\b(always|just)\s+(agree|comply|approve|say yes)\b"
@@ -24,34 +24,11 @@ _HONESTY_TRAPS = re.compile(
 )
 
 
-def _lit(value: str) -> str:
-    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
-
-
-def _rows(result: Any) -> list[dict]:
-    data = getattr(result, "data", None)
-    return data if isinstance(data, list) else []
-
-
-def _now_ms() -> int:
-    return int(time.time() * _MS_PER_SECOND)
-
-
-def _age(stated_at_ms: int, now_ms: int | None = None) -> str:
-    now = now_ms if now_ms is not None else _now_ms()
-    days = max(0, (now - stated_at_ms) // _MS_PER_DAY)
-    if days == 0:
-        return "today"
-    if days < _DAYS_PER_MONTH:
-        return f"{days}d ago"
-    if days < _DAYS_PER_YEAR:
-        return f"{days // _DAYS_PER_MONTH}mo ago"
-    return f"{days // _DAYS_PER_YEAR}y ago"
-
-
 def refusal(text: str, origin: str) -> str:
     if origin not in ORIGINS:
         return f"origin must be one of {', '.join(ORIGINS)}"
+    if origin == ORIGIN_WEB:
+        return "a web fact is filed with its source URL through memory_note, not as a memory"
     if origin == "inferred":
         return "only what the user stated is filed; a choice they made among options counts, your inference or advice does not"
     if _HONESTY_TRAPS.search(text):
@@ -64,6 +41,7 @@ def refusal(text: str, origin: str) -> str:
 class Memory:
     def __init__(self, gs: Any) -> None:
         self._gs = gs
+        self.facts = Facts(gs)
 
     def note(self, text: str, *, origin: str = "user_stated", expires_days: int | None = None) -> str:
         if problem := refusal(text, origin):
@@ -131,8 +109,9 @@ class _MemorySearch(Tool):
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         limit = int(args.get("limit") or LIMITS.memory_recall_limit)
-        hits = self._m.hits(str(args.get("query") or ""), limit)
-        lines = [f"{node_id} ({_age(stated_at) if stated_at else 'undated'}): {text}" for node_id, text, stated_at in hits]
+        query = str(args.get("query") or "")
+        lines = [f"{node_id} ({_age(stated_at) if stated_at else 'undated'}): {text}" for node_id, text, stated_at in self._m.hits(query, limit)]
+        lines += [f"{fact.id} ({_age(fact.observed_at)}, {fact.source}): {fact.text}" for fact in self._m.facts.search(query, limit)]
         return Result.success("\n".join(lines) if lines else "No matching memories.")
 
 
@@ -148,7 +127,8 @@ class _MemoryNote(Tool):
         "type": "object",
         "properties": {
             "text": {"type": "string", "description": "The fact, as one self-contained sentence in the user's terms."},
-            "origin": {"type": "string", "enum": list(ORIGINS), "description": "user_stated: they said it. user_selected: they picked it among options you offered. inferred: you concluded it (refused)."},
+            "origin": {"type": "string", "enum": list(ORIGINS), "description": "user_stated: they said it. user_selected: they picked it among options you offered. inferred: you concluded it (refused). web: read at a source URL, which you must pass."},
+            "source": {"type": "string", "description": "The URL a web fact was read at; required for origin web."},
             "expires_days": {"type": "integer", "minimum": 1, "description": "Optional lifetime in days for facts that go stale, such as a temporary setup."},
         },
         "required": ["text", "origin"],
@@ -161,9 +141,12 @@ class _MemoryNote(Tool):
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         text = str(args.get("text") or "").strip()
+        origin = str(args.get("origin") or "")
         if not text:
             return Result.error("Error: text must not be empty")
         try:
-            return Result.success(self._m.note(text, origin=str(args.get("origin") or ""), expires_days=args.get("expires_days")))
+            if origin == ORIGIN_WEB:
+                return Result.success(self._m.facts.assert_(text, str(args.get("source") or "").strip(), session_id=ctx.session_id).id)
+            return Result.success(self._m.note(text, origin=origin, expires_days=args.get("expires_days")))
         except ValueError as e:
             return Result.error(f"Error: {e}")

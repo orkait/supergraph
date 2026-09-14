@@ -61,6 +61,8 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     equipped = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", tools=("rg", "fd", "jq")))
     assert "Host tools present: rg, fd, jq. In bash prefer rg over grep, fd over find." in equipped and "Host tools" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK))
     assert tooling.guidance(("jq",)) == "Host tools present: jq." and tooling.guidance(()) == ""
+    known = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, facts="- (today, https://x.example/) Fact one"))
+    assert "<facts>\nFacts learned from sources" in known and "Fact one" in known and "<facts>\nFacts learned" not in equipped
     monkeypatch.setattr(tooling, "which", lambda name: "/usr/bin/" + name if name in ("rg", "uv") else None)
     assert tooling.host_tools() == ("rg", "uv")
     commands = tmp_path / "commands"
