@@ -7,6 +7,8 @@ from typing import Protocol
 
 DENY_READ = ("~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.docker/config.json", "~/.kube")
 DENY_WRITE = (".env", ".git/hooks")
+DENY_SOCKETS = ("/run/docker.sock", "/var/run/docker.sock", "/run/podman/podman.sock", "/run/user/*/podman/podman.sock",
+                "/var/run/containerd/containerd.sock", "/run/containerd/containerd.sock", "/var/run/crio/crio.sock")
 
 
 @dataclass
@@ -35,6 +37,8 @@ class Bubblewrap:
                 cmd += ["--tmpfs", str(p)]
             elif p.is_file():
                 cmd += ["--ro-bind", "/dev/null", str(p)]
+        for socket in sockets():
+            cmd += ["--ro-bind", "/dev/null", str(socket)]
         for protected in DENY_WRITE:
             p = workspace / protected
             if p.exists():
@@ -43,6 +47,16 @@ class Bubblewrap:
         if not grant.network:
             cmd.append("--unshare-net")
         return [*cmd, "--", *argv]
+
+
+def sockets() -> list[Path]:
+    found: dict[Path, None] = {}
+    for pattern in DENY_SOCKETS:
+        matches = sorted(Path("/").glob(pattern.lstrip("/"))) if "*" in pattern else [Path(pattern)]
+        for match in matches:
+            if match.is_socket():
+                found[match.resolve()] = None
+    return list(found)
 
 
 def detect() -> Backend | None:
