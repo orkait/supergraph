@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from supergraph.core.errors import SuperGraphError
+
 from superclaw.catalog import describe, keyed_providers
 from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
@@ -121,6 +123,20 @@ def _facts(app: SuperclawApp, arg: str) -> None:
         app.note("no facts yet; web_fetch with a prompt learns them, memory_note with origin web files one")
 
 
+def _ask(app: SuperclawApp, arg: str) -> None:
+    if not arg:
+        app.note("usage: /ask <question>", error=True)
+        return
+    try:
+        answer = app.rt.memory.facts.ask(arg)
+    except SuperGraphError as e:
+        app.note(str(e), error=True)
+        return
+    app.note(answer.text or "no information available")
+    if answer.cited:
+        app.note("cited: " + ", ".join(answer.cited))
+
+
 def _model(app: SuperclawApp, arg: str) -> None:
     if not arg:
         app.open_models()
@@ -234,6 +250,7 @@ COMMANDS = (
     Command("/doctor", "/doctor", "terminal, sandbox, model and provider health", _doctor),
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
     Command("/facts", "/facts [query|as-of DATE [query]|retract ID [reason]]", "facts learned from sources, with age and URL", _facts),
+    Command("/ask", "/ask <question>", "answer from stored facts and results with the substrate's reader, no agent loop", _ask),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
     Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),

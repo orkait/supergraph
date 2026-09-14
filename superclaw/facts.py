@@ -11,7 +11,7 @@ from supergraph.core.errors import SuperGraphError
 from superclaw.dsl import MS_PER_SECOND, age, edge, lit, now_ms, rows
 from superclaw.redaction import redact
 from superclaw.session import NAMESPACE
-from superclaw.settings import FACT_KIND, FROM_EDGE, LEARNED_EDGE, LIMITS, SUPERSEDES_EDGE
+from superclaw.settings import ANSWER_KINDS, FACT_KIND, FROM_EDGE, LEARNED_EDGE, LIMITS, SUPERSEDES_EDGE
 
 FACT_LINE = re.compile(r"^\s*[-*]\s*(?P<text>[^|]+?)\s*(?:\|\s*(?P<quote>.+?))?\s*$")
 FACTS_HEADING = "Facts:"
@@ -25,6 +25,12 @@ def as_of_ms(text: str) -> int | None:
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
     return int(when.timestamp() * MS_PER_SECOND)
+
+
+@dataclass(frozen=True)
+class Answer:
+    text: str
+    cited: list[str]
 
 
 @dataclass(frozen=True)
@@ -114,12 +120,33 @@ class Facts:
             found = rows(self._x(f"REMEMBER {lit(query)} LIMIT {int(limit)} WHERE kind = {lit(FACT_KIND)}{window}"))
         except SuperGraphError:
             return []
-        return [fact for row in found if (fact := self.load(str(row["id"]))) is not None]
+        facts = [fact for row in found if (fact := self.load(str(row["id"]))) is not None]
+        return facts + self.neighbours(facts, limit - len(facts), as_of)
+
+    def neighbours(self, seeds: list[Fact], room: int, as_of: int | None = None) -> list[Fact]:
+        seen = {fact.id for fact in seeds}
+        found: list[Fact] = []
+        window = f" AND observed_at <= {int(as_of)}" if as_of else ""
+        for seed in seeds[: LIMITS.fact_expand_seeds]:
+            if len(found) >= room:
+                break
+            near = rows(self._x(f"RECALL FROM {lit(seed.id)} DEPTH {LIMITS.fact_expand_depth} LIMIT {LIMITS.fact_expand_limit} WHERE kind = {lit(FACT_KIND)}{window}"))
+            for row in near:
+                node = str(row["id"])
+                if node not in seen and len(found) < room and (fact := self.load(node)) is not None:
+                    seen.add(node)
+                    found.append(fact)
+        return found
 
     def recent(self, limit: int = LIMITS.fact_list_limit, as_of: int | None = None) -> list[Fact]:
         window = f" AND observed_at <= {int(as_of)}" if as_of else ""
         found = rows(self._x(f"NODES WHERE kind = {lit(FACT_KIND)}{window} ORDER BY observed_at DESC LIMIT {int(limit)}"))
         return [fact for row in found if (fact := self.load(str(row["id"]))) is not None]
+
+    def ask(self, question: str, tokens: int = LIMITS.answer_tokens) -> Answer:
+        kinds = ", ".join(lit(kind) for kind in ANSWER_KINDS)
+        data = self._x(f"ANSWER {lit(question)} TOKENS {int(tokens)} WHERE kind IN ({kinds})").data or {}
+        return Answer(str(data.get("answer") or ""), [str(node) for node in data.get("cited_slots") or []])
 
     @staticmethod
     def render(facts: list[Fact]) -> str:

@@ -5,7 +5,9 @@ import pytest
 from supergraph import SuperGraph
 
 from superclaw.compaction import SUMMARY_LABEL
-from superclaw.facts import as_of_ms, parse
+from supergraph.core.errors import SuperGraphError
+
+from superclaw.facts import Facts, as_of_ms, parse
 from superclaw.memory import Memory, refusal
 from superclaw.observations import ObservationStore
 from superclaw.session import NAMESPACE, SessionStore
@@ -87,6 +89,20 @@ def test_memory_files_only_stated_facts(gs, tmp_path):
     assert parse('answer\n\nFacts:\n- Textual is a TUI framework | "a TUI framework"\n- Made by Textualize\n* starred line\nno dash') == [
         ("Textual is a TUI framework", '"a TUI framework"'), ("Made by Textualize", ""), ("starred line", "")] and parse("no heading") == []
     assert as_of_ms("2026-09-01") == 1_788_220_800_000 and as_of_ms("not a date") is None
+    page = ObservationStore(gs).save("s1", "web_fetch", "", "the page about a niche zebra library " * 20)
+    zebra = facts.assert_("Zebra renders stripes fast.", "https://zebra.example/", session_id="s1", page_ref=page, observed_at=5_000_000)
+    sibling = facts.assert_("Zebra has no external dependencies.", "https://zebra.example/", session_id="s1", page_ref=page, observed_at=5_000_000)
+    expanded = [f.id for f in facts.search("stripes")]
+    assert expanded[0] == zebra.id and sibling.id in expanded and sibling.id not in [f.id for f in facts.search("stripes", limit=1)]
+    assert sibling.id not in [f.id for f in facts.search("stripes", as_of=4_999_999)]
+    reading = SuperGraph(embedder="none", enable_sentence_nodes=False, reader=lambda prompt: "Zebra, per the context.")
+    told = Facts(reading)
+    told.assert_("Zebra renders stripes fast.", "https://zebra.example/")
+    answer = told.ask("what renders stripes")
+    assert answer.text == "Zebra, per the context." and answer.cited and answer.cited[0].startswith("fact:")
+    reading.close()
+    with pytest.raises(SuperGraphError):
+        facts.ask("who")
     with pytest.raises(ValueError):
         facts.assert_("The key is sk-proj-abcdefghijklmnopqrstuvwxyz0123456789", "https://x.example/")
     assert not gs.execute('NODES WHERE kind = "memory"', namespace=NAMESPACE).data and gs.execute('NODES WHERE kind = "fact"', namespace=NAMESPACE).data

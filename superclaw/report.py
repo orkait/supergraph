@@ -61,6 +61,15 @@ def context_report(rt: Runtime, prompt: str = "") -> ContextReport:
     return ContextReport(window=rt.context_window, categories=categories)
 
 
+def graph_line(gs: Any, dot: str) -> str:
+    if gs is None:
+        return "graph not opened by this command; /doctor inside the TUI shows the embedder and the counts"
+    embedders = [e for e in (gs.execute("SYS EMBEDDERS").data or []) if e.get("status") == "active"]
+    stats = gs.execute("SYS STATS").data or {}
+    embedder = f"{embedders[0]['name']} {embedders[0].get('dims', '?')}d" if embedders else "no embedder, lexical recall only"
+    return f"graph {embedder} {dot} {int(stats.get('node_count', 0)):,} nodes {dot} {int(stats.get('edge_count', 0)):,} edges"
+
+
 def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
     dot, env, glyphs = rt.settings.glyphs.dot, os.environ, rt.settings.glyphs
     return [
@@ -73,6 +82,7 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         f"store {rt.settings.db_path}{f' ({rt.gs.role})' if hasattr(rt.gs, 'role') else ''} {dot} workspace {rt.workspace}",
         f"mcp {len(rt.mcp.tools) if rt.mcp else 0} tools {dot} {len(rt.mcp.clients) if rt.mcp else 0} servers"
         + (f" {dot} {len(rt.mcp.skipped)} skipped" if rt.mcp and rt.mcp.skipped else ""),
+        graph_line(rt.gs, dot),
         "host tools " + (" ".join(host_tools()) or "none of the modern set"),
         "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),
     ]

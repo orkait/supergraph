@@ -23,7 +23,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.repomap import render, scan
-from superclaw.runtime import Provider, approx_tokens
+from superclaw.runtime import Message, Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
@@ -165,7 +165,7 @@ def build_runtime(
     registry = Registry()
     if open_store:
         settings.db_path.mkdir(parents=True, exist_ok=True)
-        gs = open_shared(settings.db_path)
+        gs = open_shared(settings.db_path, reader_for(provider))
         memory = Memory(gs)
         observations = ObservationStore(gs)
         sessions = SessionStore(gs)
@@ -180,6 +180,12 @@ def build_runtime(
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
     )
+
+
+def reader_for(provider: Provider | None) -> Callable[[str], str] | None:
+    if provider is None:
+        return None
+    return lambda prompt: provider.complete([Message(role="user", content=prompt)], []).text
 
 
 def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = (), stream: bool = True) -> Provider | None:
