@@ -197,27 +197,26 @@ class _Run:
         return self.provider.complete(request, []).text
 
     def flush_state(self) -> int:
-        if not self.o.flush_before_compaction:
+        if not self.o.flush_before_compaction or not any(m.role == "tool" for m in self.messages):
             return 0
-        names = {t.name for t in self.o.registry.tools()}
-        if FLUSH_ANCHOR not in names:
+        if FLUSH_ANCHOR not in {t.name for t in self.o.registry.tools()}:
             return 0
         tools = [t.definition() for t in self.o.registry.tools() if t.name in FLUSH_TOOLS]
-        self.append(Message(role="user", content=FLUSH_PROMPT))
+        aside = [*self.messages, Message(role="user", content=FLUSH_PROMPT)]
         saved = 0
         for _ in range(LIMITS.compaction_flush_calls):
-            completion = self.provider.complete(self.messages, tools)
+            completion = self.provider.complete(aside, tools)
             self.account(completion.usage)
-            self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
+            aside.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
             if not completion.tool_calls:
                 break
             for call in completion.tool_calls:
                 if call.name not in FLUSH_TOOLS:
-                    self.append(Message(role="tool", content=f"Error: {call.name} is not available during a state flush.", tool_call_id=call.id, is_error=True))
+                    aside.append(Message(role="tool", content=f"Error: {call.name} is not available during a state flush.", tool_call_id=call.id, is_error=True))
                     continue
                 res, _ = self.execute(call)
                 saved += 1 if res.ok else 0
-                self.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
+                aside.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "flush", "saved": saved})
         return saved
 
