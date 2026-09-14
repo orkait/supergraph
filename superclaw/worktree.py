@@ -30,7 +30,7 @@ class Worktree:
 
 
 def _git(cwd: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         raise WorktreeError(done.stderr.strip() or done.stdout.strip() or f"git {' '.join(args)} failed")
     return done.stdout.strip()
@@ -75,7 +75,7 @@ def prepare(cwd: Path, base_dir: Path, name: str = "") -> Worktree:
 
     target.parent.mkdir(parents=True, exist_ok=True)
     known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", branch], cwd=repo_root,
-                           capture_output=True, text=True).returncode == 0
+                           capture_output=True, text=True, check=False).returncode == 0
     add = ["worktree", "add", str(target), branch] if known else ["worktree", "add", "-b", branch, str(target), "HEAD"]
     _git(repo_root, *add)
     return Worktree(name, target, repo_root, branch, reused=False)

@@ -9,8 +9,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from superclaw.runtime import clip, count
 from superclaw.settings import LIMITS
+from superclaw.text import clip, count
 from superclaw.tui.theme import ACCENT, ADD, ADD_ROW, DEL, DEL_ROW, MUTED
 
 TARGET_KEYS = ("path", "pattern", "command", "code", "name", "query", "ref", "task")

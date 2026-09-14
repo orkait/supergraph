@@ -77,12 +77,12 @@ def expand(template: str, args: str) -> str:
         return f"{template}\n\n{args}" if args else template
 
     def fill(match: re.Match[str]) -> str:
-        token = match.group(1)
-        if token == "$":
+        placeholder = match.group(1)
+        if placeholder == "$":
             return "$"
-        if token == "ARGUMENTS":
+        if placeholder == "ARGUMENTS":
             return args
-        index = int(token) - 1
+        index = int(placeholder) - 1
         return positional[index] if index < len(positional) else ""
 
     return _PLACEHOLDER.sub(fill, template)

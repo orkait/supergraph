@@ -4,8 +4,8 @@ import json
 import os
 import threading
 import time
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from rich.text import Text
@@ -16,32 +16,32 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
 
-from superclaw import __version__
+from superclaw import __version__, clipboard
 from superclaw.agents import load_agents
 from superclaw.app import Callbacks, NoProviderKey, Runtime, apply_effort, run_once, switch_model
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import Model, keyed_providers, models_for, provider_of, resolve
+from superclaw.clips import Clip, Clips
+from superclaw.compaction import TRANSCRIPT_NOTE, summary_instructions
+from superclaw.compaction import compact as compact_context
 from superclaw.loop import Result
+from superclaw.meter import ContextMeter
 from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
-from superclaw.runtime import Message, clip, compact, count
-from superclaw.compaction import TRANSCRIPT_NOTE, summary_instructions
-from superclaw.compaction import compact as compact_context
+from superclaw.runtime import Message
 from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, SESSION_END_CLEAR, TRANSCRIPT_TEMPLATE, Glyphs, Provider
+from superclaw.text import clip, compact, count
 from superclaw.tools import ToolContext
-from superclaw import clipboard
-from superclaw.clips import Clip, Clips
 from superclaw.tui.cards import ToolCard, target_of
 from superclaw.tui.commands import EXIT_WORDS, dispatch, matching, user_entries
 from superclaw.tui.composer import Composer
-from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.sessions import ResumeScreen
 from superclaw.tui.setup import SetupScreen
-from superclaw.meter import ContextMeter
 from superclaw.tui.status import RunStats, StatusBar, Where, WorkingLine, tier
 from superclaw.tui.theme import ACCENT, CSS, MUTED
+from superclaw.usercommands import UserCommand, expand
 
 PROMPT_PLACEHOLDER = "describe a task for superclaw"
 WORDMARK = "superclaw"
@@ -525,7 +525,7 @@ class SuperclawApp(App[None]):
         self.begin_run(text)
 
     def command(self, text: str) -> None:
-        name = text.split()[0]
+        name = text.split(maxsplit=1)[0]
         if self.running and name in BUSY_COMMANDS:
             self.note(f"{name} waits for the run to finish; esc cancels it", error=True)
         else:

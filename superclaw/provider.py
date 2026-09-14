@@ -187,7 +187,7 @@ class LitellmProvider:
                 kwargs["tool_choice"] = "auto"
             deadline = time.monotonic() + self._timeout_s
             try:
-                response = with_deadline(lambda: _completion(**kwargs), self._timeout_s)
+                response = with_deadline(lambda sent=kwargs: _completion(**sent), self._timeout_s)
                 return collect(response, on_text, cancelled, deadline) if streaming else parse_response(response)
             except Cancelled:
                 raise

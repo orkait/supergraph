@@ -3,11 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
-from superclaw.dsl import MS_PER_DAY, age, lit, now_ms, rows
+from superclaw.dsl import MS_PER_DAY, Store, age, lit, now_ms, rows
 from superclaw.session import NAMESPACE
 from superclaw.settings import FACT_KIND, LIMITS, MAINT_KIND, MAINT_NODE
+from supergraph.core.errors import SuperGraphError
 
 
 @dataclass
@@ -25,11 +24,11 @@ class Report:
         return f" {dot} ".join(parts)
 
 
-def expire(gs: Any) -> int:
+def expire(gs: Store) -> int:
     return int((gs.execute("SYS EXPIRE").data or {}).get("expired", 0))
 
 
-def decay(gs: Any) -> tuple[int, int]:
+def decay(gs: Store) -> tuple[int, int]:
     cutoff = now_ms() - LIMITS.fact_decay_days * MS_PER_DAY
     decayed = retracted = 0
     query = f"NODES WHERE kind = {lit(FACT_KIND)} AND observed_at < NOW() - {LIMITS.fact_decay_days}d LIMIT {LIMITS.maintain_batch}"
@@ -47,11 +46,11 @@ def decay(gs: Any) -> tuple[int, int]:
     return decayed, retracted
 
 
-def health(gs: Any) -> dict[str, Any]:
+def health(gs: Store) -> dict[str, Any]:
     return dict(gs.execute("SYS HEALTH").data or {})
 
 
-def maintain(gs: Any, *, optimize: bool = True) -> Report:
+def maintain(gs: Store, *, optimize: bool = True) -> Report:
     report = Report(expired=expire(gs))
     report.decayed, report.retracted = decay(gs)
     if optimize:
@@ -65,7 +64,7 @@ def maintain(gs: Any, *, optimize: bool = True) -> Report:
     return report
 
 
-def last(gs: Any) -> dict[str, Any] | None:
+def last(gs: Store) -> dict[str, Any] | None:
     try:
         data = gs.execute(f"NODE {lit(MAINT_NODE)}", namespace=NAMESPACE).data
     except SuperGraphError:
@@ -73,12 +72,12 @@ def last(gs: Any) -> dict[str, Any] | None:
     return dict(data) if data else None
 
 
-def stale(gs: Any) -> bool:
+def stale(gs: Store) -> bool:
     previous = last(gs)
     return previous is None or int(previous.get("at") or 0) < now_ms() - LIMITS.maintain_stale_days * MS_PER_DAY
 
 
-def health_line(gs: Any, dot: str) -> str:
+def health_line(gs: Store, dot: str) -> str:
     if gs is None:
         return "health not opened by this command"
     metrics = health(gs)
@@ -88,16 +87,16 @@ def health_line(gs: Any, dot: str) -> str:
             f"{dot} dead vectors {int(metrics.get('dead_vectors') or 0)} {dot} last maintain {when}")
 
 
-def snapshots(gs: Any) -> list[str]:
+def snapshots(gs: Store) -> list[str]:
     return [str(name) for name in (gs.execute("SYS SNAPSHOTS").data or [])]
 
 
-def snapshot(gs: Any, name: str) -> bool:
+def snapshot(gs: Store, name: str) -> bool:
     if name in snapshots(gs):
         return False
     gs.execute(f"SYS SNAPSHOT {lit(name)}")
     return True
 
 
-def rollback(gs: Any, name: str) -> None:
+def rollback(gs: Store, name: str) -> None:
     gs.execute(f"SYS ROLLBACK TO {lit(name)}")

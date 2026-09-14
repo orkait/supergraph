@@ -15,8 +15,9 @@ from typing import Any
 from superclaw.delegate import SPAWN_KEY
 from superclaw.facts import FACTS_HEADING, Facts, parse
 from superclaw.observations import ObservationStore
-from superclaw.runtime import approx_tokens, clip, count
+from superclaw.runtime import approx_tokens
 from superclaw.settings import BLOCKED_CODES, IMPERSONATE, LIMITS, READER_ENV, REDIRECT_CODES, Settings
+from superclaw.text import clip, count
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
 

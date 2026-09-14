@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import secrets
 import time
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
 from superclaw import __version__
 from superclaw.compaction import SUMMARY_LABEL
-from superclaw.dsl import edge, now_ms
+from superclaw.dsl import Result, Store, edge, now_ms
 from superclaw.dsl import lit as _lit
 from superclaw.runtime import Message, ToolCall
 from superclaw.settings import FILE_KIND, LIMITS
+from superclaw.text import oneline
+from supergraph.core.errors import SuperGraphError
 
 NAMESPACE = "superclaw"
 PROMPT_KIND = "prompt"
@@ -26,10 +27,10 @@ def prompt_hash(text: str) -> str:
 
 
 class SessionStore:
-    def __init__(self, gs: Any) -> None:
+    def __init__(self, gs: Store) -> None:
         self._gs = gs
 
-    def _x(self, query: str):
+    def _x(self, query: str) -> Result:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def create(self, *, cwd: str, model: str, title: str = "", parent: str = "", branch: str = "") -> str:
@@ -43,7 +44,7 @@ class SessionStore:
 
     @staticmethod
     def file_id(path: str) -> str:
-        return f"{FILE_KIND}:" + hashlib.sha1(path.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
+        return f"{FILE_KIND}:" + hashlib.sha1(path.encode("utf-8"), usedforsecurity=False).hexdigest()[:LIMITS.id_hash_chars]
 
     def touch(self, sid: str, path: str, verb: str) -> None:
         node = self.file_id(path)
@@ -110,7 +111,7 @@ class SessionStore:
             payload = json.loads(doc)
             text = payload.get("content") or payload.get("output") or payload.get("summary") or doc
             hits.append({"id": r["sid"], "seq": r["seq"], "type": r["etype"],
-                         "text": " ".join(text.split())[:LIMITS.session_search_preview_chars]})
+                         "text": oneline(text)[:LIMITS.session_search_preview_chars]})
         return hits
 
     def append(self, sid: str, etype: str, payload: dict[str, Any]) -> int:
@@ -164,10 +165,8 @@ class SessionStore:
     def keep_prompt(self, text: str) -> str:
         digest = prompt_hash(text)
         node = PROMPT_NODE.format(hash=digest)
-        try:
+        with contextlib.suppress(SuperGraphError):
             self._x(f'CREATE NODE {_lit(node)} kind = {_lit(PROMPT_KIND)} at = {now_ms()} DOCUMENT {_lit(text)}')
-        except SuperGraphError:
-            pass
         return digest
 
     def prompt_text(self, digest: str) -> str:
@@ -204,7 +203,7 @@ class SessionStore:
         meta = self.get(sid)
         if meta is None or str(meta.get("title") or "").strip():
             return str(meta.get("title") or "") if meta else ""
-        title = " ".join(text.split())[: LIMITS.session_title_chars].strip()
+        title = oneline(text)[: LIMITS.session_title_chars].strip()
         if not title:
             return ""
         self.rename(sid, title)

@@ -6,20 +6,13 @@ from dataclasses import dataclass, field
 
 from superclaw.app import Runtime, repo_map_text
 from superclaw.catalog import keyed_providers
-from superclaw.prompt import (
-    PromptInputs,
-    confirmation_policy,
-    core_prompt,
-    environment_block,
-    find_git_root,
-    project_guidelines,
-    skills_block,
-    user_guidelines,
-)
-from superclaw.runtime import approx_tokens, compact
+from superclaw.dsl import Store
+from superclaw.maintain import health_line
+from superclaw.prompt import PromptInputs, confirmation_policy, core_prompt, environment_block, find_git_root, project_guidelines, skills_block, user_guidelines
+from superclaw.runtime import approx_tokens
 from superclaw.settings import ASCII, EFFORT_OFF, LIMITS
 from superclaw.skills import load_skills
-from superclaw.maintain import health_line
+from superclaw.text import compact
 from superclaw.tooling import host_tools
 
 _PERCENT = 100
@@ -62,7 +55,7 @@ def context_report(rt: Runtime, prompt: str = "") -> ContextReport:
     return ContextReport(window=rt.context_window, categories=categories)
 
 
-def graph_line(gs: Any, dot: str) -> str:
+def graph_line(gs: Store, dot: str) -> str:
     if gs is None:
         return "graph not opened by this command; /doctor inside the TUI shows the embedder and the counts"
     embedders = [e for e in (gs.execute("SYS EMBEDDERS").data or []) if e.get("status") == "active"]

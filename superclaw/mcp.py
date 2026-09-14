@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
 import re
 import signal
-
-from superclaw.hooks import substitute
 import subprocess
 import threading
 import time
@@ -18,6 +17,7 @@ from typing import Any
 import httpx
 
 from superclaw import __version__
+from superclaw.hooks import substitute
 from superclaw.settings import CLAUDE_MCP_FILE, LIMITS
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
 
@@ -216,8 +216,8 @@ class Client:
 
     def _read_loop(self) -> None:
         assert self._proc is not None and self._proc.stdout is not None
-        for line in self._proc.stdout:
-            line = line.strip()
+        for raw in self._proc.stdout:
+            line = raw.strip()
             if not line or len(line) > LIMITS.mcp_message_bytes:
                 continue
             try:
@@ -287,10 +287,8 @@ class Client:
                 proc.stdin.close()
             proc.wait(timeout=LIMITS.mcp_shutdown_wait_s)
         except (OSError, subprocess.TimeoutExpired):
-            try:
+            with contextlib.suppress(OSError):
                 os.killpg(proc.pid, signal.SIGKILL)
-            except OSError:
-                pass
             proc.wait()
 
 

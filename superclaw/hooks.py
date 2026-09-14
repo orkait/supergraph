@@ -149,7 +149,7 @@ class Dispatcher:
                 continue
             env = {**os.environ, "CLAUDE_PROJECT_DIR": str(self.cwd), **({var: str(hook.root) for var in PLUGIN_ROOT_VARS} if hook.root else {})}
             try:
-                proc = subprocess.run(hook.command, input=stdin[hook.claude], cwd=self.cwd, env=env, capture_output=True, timeout=hook.timeout_s)
+                proc = subprocess.run(hook.command, input=stdin[hook.claude], cwd=self.cwd, env=env, capture_output=True, timeout=hook.timeout_s, check=False)
             except (OSError, subprocess.TimeoutExpired) as e:
                 outcome.errors.append(f"{hook.id}: {type(e).__name__}: {e}")
                 continue

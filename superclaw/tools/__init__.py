@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol
-from collections.abc import Callable, Sequence
 
 from superclaw.redaction import redact
 from superclaw.runtime import approx_tokens

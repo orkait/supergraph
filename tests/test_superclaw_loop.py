@@ -1,5 +1,7 @@
 import json
 import os
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -242,6 +244,15 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     with pytest.raises(NotServing, match="predates store sharing"):
         open_shared(ws / "old-brain")
     legacy.close()
+    frozen = ws / "stopped-brain"
+    hold = f"import time; from supergraph.core.path_lock import acquire_path_lock; acquire_path_lock({str(frozen)!r}); print(1, flush=True); time.sleep(60)"
+    held = subprocess.Popen([sys.executable, "-c", hold], stdout=subprocess.PIPE, text=True)
+    held.stdout.readline()
+    os.kill(held.pid, signal.SIGSTOP)
+    with pytest.raises(NotServing, match=f"suspended; resume that terminal with fg, or end it with kill {held.pid}"):
+        open_shared(frozen)
+    os.kill(held.pid, signal.SIGKILL)
+    held.wait()
 
 
 def test_guards_gates_and_verifier(ws):

@@ -45,7 +45,7 @@ class RepoMap:
 
 
 def _git_files(root: Path) -> list[str] | None:
-    done = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True)
+    done = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root, capture_output=True, check=False)
     if done.returncode != 0:
         return None
     return [f for f in done.stdout.decode("utf-8", errors="replace").split("\0") if f]

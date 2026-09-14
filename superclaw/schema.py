@@ -62,9 +62,7 @@ def problems(value: Any, schema: dict[str, Any], where: str = "$") -> list[str]:
         if problem:
             return [problem]
     if isinstance(value, dict):
-        for key in schema.get("required") or []:
-            if key not in value:
-                found.append(f"{where}: missing required property {key!r}")
+        found.extend(f"{where}: missing required property {key!r}" for key in schema.get("required") or [] if key not in value)
         for key, sub in (schema.get("properties") or {}).items():
             if key in value and isinstance(sub, dict):
                 found += problems(value[key], sub, f"{where}.{key}")

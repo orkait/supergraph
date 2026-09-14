@@ -165,9 +165,9 @@ def is_git(source: str) -> bool:
 def clone(source: str, scratch: str, ref: str = "") -> Path:
     sha = bool(_SHA.match(ref))
     command = ["git", "clone", "--quiet", *([] if sha else ["--depth", "1"]), *(["--branch", ref] if ref and not sha else []), source, scratch]
-    done = subprocess.run(command, capture_output=True, text=True)
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode == 0 and sha:
-        done = subprocess.run(["git", "-C", scratch, "checkout", "--quiet", ref], capture_output=True, text=True)
+        done = subprocess.run(["git", "-C", scratch, "checkout", "--quiet", ref], capture_output=True, text=True, check=False)
     if done.returncode != 0:
         raise PluginError(done.stderr.strip() or f"git clone {source} failed")
     return Path(scratch)

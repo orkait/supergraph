@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -297,12 +297,12 @@ def user_entries(roots: list[Path], skill_roots: list[Path | tuple[Path, str]] |
     return [Command(f"/{c.name}", f"/{c.name} [args]", f"{SKILL_TAG} {c.description}" if c.skill else c.description, runner(c)) for c in load_commands(roots, skill_roots)]
 
 
-def matching(prefix: str, extra: list[Command] = []) -> list[Command]:
-    head = prefix.split()[0] if prefix.strip() else "/"
+def matching(prefix: str, extra: Sequence[Command] = ()) -> list[Command]:
+    head = prefix.split(maxsplit=1)[0] if prefix.strip() else "/"
     return [c for c in (*COMMANDS, *extra) if c.offers(head)]
 
 
-def dispatch(app: SuperclawApp, text: str, extra: list[Command] = []) -> None:
+def dispatch(app: SuperclawApp, text: str, extra: Sequence[Command] = ()) -> None:
     name, _, arg = text.strip().partition(" ")
     for command in (*COMMANDS, *extra):
         if command.answers_to(name):

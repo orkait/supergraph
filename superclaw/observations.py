@@ -5,13 +5,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
-from superclaw.dsl import edge
+from superclaw.dsl import Result as DslResult
+from superclaw.dsl import Store, edge
 from superclaw.runtime import approx_tokens
 from superclaw.session import NAMESPACE, _lit
 from superclaw.settings import LEARNED_EDGE, LIMITS, PRODUCED_EDGE
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
+from supergraph.core.errors import SuperGraphError
 
 REF = re.compile(r"§([0-9a-f]{8,})")
 KIND = "obs"
@@ -41,10 +41,10 @@ class Observation:
 
 
 class ObservationStore:
-    def __init__(self, gs: Any) -> None:
+    def __init__(self, gs: Store) -> None:
         self._gs = gs
 
-    def _x(self, query: str):
+    def _x(self, query: str) -> DslResult:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def _document(self, ref: str) -> str | None:

@@ -1,37 +1,52 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import socket
+import tempfile
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from superclaw.dsl import Store
+from superclaw.settings import LIMITS, PROC_DIR, SHARE_DIR, STOPPED_STATES
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse, SuperGraphError
+from supergraph.core.path_lock import LOCK_FILENAME
 from supergraph.core.types import Result, encode_json
 
-from superclaw.settings import LIMITS, SHARE_DIR
+
+def holder(lock_path: Path) -> tuple[int, str]:
+    try:
+        pid = int(lock_path.read_text().split()[0])
+        stat = (Path(PROC_DIR) / str(pid) / "stat").read_text()
+    except (OSError, ValueError, IndexError):
+        return 0, ""
+    return pid, stat.rpartition(")")[2].split()[0]
 
 
 class NotServing(StoreInUse):
     def __init__(self, lock_path: Path, sock: Path) -> None:
-        SuperGraphError.__init__(self, f"{lock_path} is held by a superclaw that is not serving it at {sock}; "
-                                       "it predates store sharing, so restart that session")
+        pid, state = holder(lock_path)
+        advice = (f"superclaw {pid} holds it but is suspended; resume that terminal with fg, or end it with kill {pid}"
+                  if state.startswith(STOPPED_STATES) else "it predates store sharing, so restart that session")
+        SuperGraphError.__init__(self, f"{lock_path} is not being served at {sock}; {advice}")
         self.lock_path = str(lock_path)
 
 
 def socket_path(db_path: Path) -> Path:
-    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "").strip() or f"/tmp/superclaw-{os.getuid()}")
+    fallback = Path(tempfile.gettempdir()) / f"superclaw-{os.getuid()}"
+    runtime = Path(os.environ.get("XDG_RUNTIME_DIR", "").strip() or fallback)
     key = hashlib.sha256(str(Path(db_path).resolve()).encode()).hexdigest()[: LIMITS.share_key_chars]
     return runtime / SHARE_DIR / f"{key}.sock"
 
 
 class Server:
-    def __init__(self, gs: Any, path: Path) -> None:
+    def __init__(self, gs: Store, path: Path) -> None:
         self.gs = gs
         self.path = path
         self._listener: socket.socket | None = None
@@ -79,10 +94,8 @@ class Server:
     def close(self) -> None:
         self._closed.set()
         if self._listener is not None:
-            try:
+            with contextlib.suppress(OSError):
                 self._listener.close()
-            except OSError:
-                pass
         with self._guard:
             connections, self._connections = list(self._connections), set()
         for conn in connections:
@@ -127,10 +140,8 @@ class RemoteGraph:
     def close(self) -> None:
         sock, self._sock = self._sock, None
         if sock is not None:
-            try:
+            with contextlib.suppress(OSError):
                 sock.close()
-            except OSError:
-                pass
 
 
 class SharedGraph:
@@ -160,6 +171,7 @@ class SharedGraph:
 
     def _attach(self) -> RemoteGraph:
         path = socket_path(self.db_path)
+        lock = self.db_path / LOCK_FILENAME
         deadline = time.monotonic() + LIMITS.share_attach_timeout_s
         while True:
             if path.exists():
@@ -169,8 +181,8 @@ class SharedGraph:
                     return remote
                 except (OSError, ConnectionError):
                     remote.close()
-            if time.monotonic() >= deadline:
-                raise NotServing(self.db_path / ".supergraph.lock", path) from None
+            if holder(lock)[1].startswith(STOPPED_STATES) or time.monotonic() >= deadline:
+                raise NotServing(lock, path) from None
             time.sleep(LIMITS.share_attach_poll_s)
 
     def _takeover(self) -> None:

@@ -3,13 +3,11 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
-from superclaw.dsl import edge, lit, rows
+from superclaw.dsl import Result, Store, edge, lit, rows
 from superclaw.session import NAMESPACE
 from superclaw.settings import CHUNK_KIND, DOCUMENT_KIND, INGESTED_EDGE, LIMITS
+from supergraph.core.errors import SuperGraphError
 
 
 @dataclass(frozen=True)
@@ -30,14 +28,14 @@ class Chunk:
 
 def ident(path: Path) -> str:
     stamp = f"{path}\0{path.stat().st_size}\0{path.stat().st_mtime_ns}"
-    return f"{DOCUMENT_KIND[:3]}:" + hashlib.sha1(stamp.encode("utf-8")).hexdigest()[: LIMITS.id_hash_chars]
+    return f"{DOCUMENT_KIND[:3]}:" + hashlib.sha1(stamp.encode("utf-8"), usedforsecurity=False).hexdigest()[: LIMITS.id_hash_chars]
 
 
 class Documents:
-    def __init__(self, gs: Any) -> None:
+    def __init__(self, gs: Store) -> None:
         self._gs = gs
 
-    def _x(self, query: str) -> Any:
+    def _x(self, query: str) -> Result:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def ingest(self, path: Path, *, session_id: str = "", ttl_days: int = LIMITS.ingest_ttl_days, pin: bool = False) -> Document:

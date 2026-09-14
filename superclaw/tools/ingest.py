@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
 from superclaw.documents import Documents
-from superclaw.runtime import clip, count
 from superclaw.settings import LIMITS
+from superclaw.text import clip, count
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
+from supergraph.core.errors import SuperGraphError
 
 
 def describe(doc: Any, shown: str, pinned: bool, ttl_days: int) -> str:

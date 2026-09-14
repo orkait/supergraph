@@ -4,8 +4,7 @@ import hashlib
 import re
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
+from superclaw.dsl import Store
 from superclaw.dsl import age as _age
 from superclaw.dsl import lit as _lit
 from superclaw.dsl import now_ms as _now_ms
@@ -14,6 +13,7 @@ from superclaw.facts import Facts
 from superclaw.redaction import redact
 from superclaw.settings import LIMITS, ORIGIN_WEB
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
+from supergraph.core.errors import SuperGraphError
 
 ORIGINS = ("user_stated", "user_selected", "inferred", ORIGIN_WEB)
 _HONESTY_TRAPS = re.compile(
@@ -39,14 +39,14 @@ def refusal(text: str, origin: str) -> str:
 
 
 class Memory:
-    def __init__(self, gs: Any) -> None:
+    def __init__(self, gs: Store) -> None:
         self._gs = gs
         self.facts = Facts(gs)
 
     def note(self, text: str, *, origin: str = "user_stated", expires_days: int | None = None) -> str:
         if problem := refusal(text, origin):
             raise ValueError(problem)
-        node_id = "mem:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
+        node_id = "mem:" + hashlib.sha1(text.encode("utf-8"), usedforsecurity=False).hexdigest()[:LIMITS.id_hash_chars]
         expires = f" EXPIRES IN {int(expires_days)}d" if expires_days else ""
         try:
             self._gs.execute(
