@@ -17,7 +17,7 @@ from superclaw.delegate import SPAWN_KEY
 from superclaw.documents import Documents
 from superclaw.facts import Facts
 from superclaw.observations import ObservationStore, Recall, ref_in
-from superclaw.sandbox import Bubblewrap, Grant, detect
+from superclaw.sandbox import Bubblewrap, Grant, detect, sockets
 from superclaw.settings import LIMITS, Settings
 from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, files, jail, relative, web
 from superclaw.tools.budget import Category
@@ -363,9 +363,15 @@ def test_bash(tmp_path, monkeypatch):
     gs.close()
     argv = Bubblewrap().wrap(["bash", "-c", "x"], tmp_path, tmp_path, Grant(network=True, paths=["/opt/extra"]))
     assert argv[0] == "bwrap" and "--unshare-net" not in argv and "/opt/extra" in argv
+    masked = sockets()
+    assert masked == [p.resolve() for p in masked] and len(masked) == len(set(masked)) and all(p.is_socket() for p in masked)
+    assert all(argv[argv.index(str(p)) - 1] == "/dev/null" and argv[argv.index(str(p)) - 2] == "--ro-bind" for p in masked)
     if detect():
         tool = Bash(detect())
         assert tool.run({"command": "echo in > made.txt && cat made.txt"}, ctx).output == "in"
+        if masked:
+            probe = tool.run({"command": f"test -S {masked[0]} && echo socket || echo masked"}, ctx)
+            assert probe.output == "masked"
         assert not tool.run({"command": "touch /etc/superclaw-probe"}, ctx).ok
         assert not tool.run({"command": "curl -sm2 https://example.com"}, ctx).ok
         ctx.state["approval"] = {"escalated": True, "network": False}
