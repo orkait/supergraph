@@ -17,7 +17,7 @@ def lit(value: Any) -> str:
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def rows(result: Any) -> list[dict]:
+def rows(result: Any) -> list[dict[str, Any]]:
     data = getattr(result, "data", None)
     return data if isinstance(data, list) else []
 

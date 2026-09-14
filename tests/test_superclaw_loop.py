@@ -35,6 +35,7 @@ from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, a
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
+from superclaw.stages import Intent, decompose, parse_intent
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
@@ -430,6 +431,32 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
 
 def test_intent_hooks_and_deferral(ws, gs):
     assert parse_kind("garbage") is Kind.CHANGE
+    assert parse_intent("") == Intent() and parse_intent("no json here") == Intent() and parse_intent("[1,2]") == Intent()
+    assert parse_intent('{"goal": 5, "subgoals": "nope", "queries": {"a": 1}, "unknowns": 7}') == Intent()
+    assert parse_intent('{"goal": "first"} then {"goal": "second"}').goal == "first"
+    assert parse_intent('{} then {"goal": "real", "subgoals": ["a"]}').goal == "real"
+    fenced = parse_intent('sure:\n```json\n{"goal": "add  retry", "subgoals": ["", " ", "wrap"], "queries": ["where"], "unknowns": ["how many?"]}\n```')
+    assert fenced.goal == "add retry" and fenced.subgoals == ("wrap",) and fenced.blocked
+    assert len(parse_intent('{"subgoals": [' + ",".join(f'"s{i}"' for i in range(99)) + "]}").subgoals) == LIMITS.intent_items_max
+    assert len(parse_intent('{"goal": "' + "g" * 999 + '"}').goal) == LIMITS.intent_goal_chars
+    settled = fenced.settled(["three"])
+    assert settled.answered == (("how many?", "three"),) and not settled.blocked and "Settled by the user" in settled.block()
+    assert fenced.settled([""]).blocked and "did not settle" in fenced.settled([""]).block() and Intent().block() == ""
+
+    class Mute:
+        def complete(self, messages, tools, **kw):
+            raise AssertionError("a short request must not reach the model")
+
+    assert decompose(Mute(), "hi") == Intent()
+    asked: list[str] = []
+
+    class Decomposer:
+        def complete(self, messages, tools, **kw):
+            asked.append(messages[0].content)
+            return Completion(text='{"goal": "map the seam", "queries": ["where is the bridge"], "unknowns": ["which adapter?"]}')
+
+    heard = decompose(Decomposer(), "map the resolve bridge for me please")
+    assert heard.queries == ("where is the bridge",) and heard.blocked and "intent stage" in asked[0]
     reg = options(ws).registry
     p = Policy(ws, Mode.AUTO, sandboxed=True)
     p.request_kind = Kind.ANSWER
