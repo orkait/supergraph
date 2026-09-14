@@ -123,6 +123,7 @@ NONCODING_TERMS = ("audio", "dall-e", "deep-research", "embed", "image", "imagen
 MODEL_SOURCE_LIVE = "live"
 MODEL_SOURCE_CATALOG = "catalog"
 MODELS_CACHE_DIR = "models"
+PRICED_FILE = "priced.json"
 WORKTREES_DIR = "worktrees"
 CLIPBOARD_DIR = "clipboard"
 MCP_FILE = "mcp.json"

@@ -8,10 +8,10 @@ from superclaw.catalog import describe, models_for, resolve
 from superclaw.compaction import PRUNE_MARKER, SUMMARY_LABEL, compact, cut_point, project, prune_tool_results
 from superclaw.meter import ContextMeter
 from superclaw.tui.status import RunStats
-from superclaw.models import ModelInfo, lookup
+from superclaw.models import ModelInfo, lookup, priced
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens, message_tokens, to_wire
-from superclaw.settings import LIMITS, PROVIDERS, Settings, read_opencode_key
+from superclaw.settings import LIMITS, PRICED_FILE, PROVIDERS, Settings, read_opencode_key
 from supergraph.ingest.llm.resolve import build_provider_chain, resolve_model
 
 
@@ -38,6 +38,20 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert approx_tokens("abcd efgh") == 2 and approx_tokens("日本") == 6
     info = lookup("openrouter/deepseek/deepseek-v4-flash")
     assert info.known and info.context_window > LIMITS.context_window_fallback and lookup("nobody/no-such-model").context_window == LIMITS.context_window_fallback
+    priced_dir = tmp_path / "priced"
+    assert priced(info.id, priced_dir) is None and lookup(info.id, priced_dir) == info
+    import superclaw.models as models_mod
+
+    real_catalog = models_mod._catalog
+    models_mod._catalog = lambda: (_ for _ in ()).throw(AssertionError("catalog must not load when priced"))
+    try:
+        assert lookup(info.id, priced_dir) == info and priced(info.id, priced_dir) == info
+    finally:
+        models_mod._catalog = real_catalog
+    stale = json.loads((priced_dir / PRICED_FILE).read_text())
+    stale[info.id]["at"] = 0
+    (priced_dir / PRICED_FILE).write_text(json.dumps(stale))
+    assert priced(info.id, priced_dir) is None
     ollama = next(p for p in PROVIDERS if p.name == "ollama")
     payload = json.dumps({"data": [{"id": "glm-5.2", "context_length": 200000, "pricing": {"prompt": "0.000001", "completion": "0.000002"},
                                     "supported_parameters": ["tools"]}, {"id": "nomic-embed-text"}]}).encode()
@@ -131,8 +145,15 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     import superclaw.app as app_mod
 
     asked: list[list[str]] = []
-    monkeypatch.setattr(app_mod, "build_provider_chain", lambda models, **kw: asked.append(list(models)) or [])
+    import supergraph.ingest.llm.resolve as resolve_mod
+
+    monkeypatch.setattr(resolve_mod, "build_provider_chain", lambda models, **kw: asked.append(list(models)) or [])
     assert app_mod.connect_provider("m/a", "", ("m/b", "m/c")) is None and asked == [["m/a", "m/b", "m/c"]]
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    keyed = app_mod.connect_provider("openrouter/x/y")
+    assert keyed is not None and asked == [["m/a", "m/b", "m/c"]]
+    monkeypatch.setattr(resolve_mod, "build_provider_chain", lambda models, **kw: asked.append(list(models)) or [{"litellm_model": "x/y"}])
+    assert keyed.model == "x/y" and asked[-1] == ["openrouter/x/y"]
 
     def part(index, cid, name, args):
         return SimpleNamespace(index=index, id=cid, function=SimpleNamespace(name=name, arguments=args))

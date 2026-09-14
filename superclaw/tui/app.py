@@ -188,6 +188,7 @@ class SuperclawApp(App[None]):
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace), rt.settings.skill_roots(rt.workspace))
         self.streaming: Static | None = None
         self.stream_text = ""
+        self.stream_dirty = False
         self.verbose = False
         self.current_tool = ("", "")
 
@@ -380,8 +381,14 @@ class SuperclawApp(App[None]):
     def short_cwd(self, width: int) -> str:
         return clip(str(self.rt.workspace).replace(str(Path.home()), "~", 1), max(LIMITS.card_arg_chars // 2, width // 3))
 
+    def flush_stream(self) -> None:
+        if self.stream_dirty and self.streaming is not None:
+            self.streaming.update(self.stream_text)
+            self.stream_dirty = False
+
     def tick(self) -> None:
         if self.running:
+            self.flush_stream()
             self.query_one(WorkingLine).tick(self.stats.timer.elapsed(), self.stats.timer.calls, self.stats.tokens)
 
     def phase(self, label: str, detail: str = "") -> None:
@@ -765,7 +772,7 @@ class SuperclawApp(App[None]):
                 self.streaming = Static("", markup=False)
                 self.add(self.streaming)
                 self.phase(PHASE_WRITING)
-            self.streaming.update(self.stream_text)
+            self.stream_dirty = True
         elif kind == "text" and not child:
             self.drop_stream()
             self.add(Markdown(event["text"]))
@@ -805,7 +812,7 @@ class SuperclawApp(App[None]):
     def drop_stream(self) -> None:
         if self.streaming is not None:
             self.streaming.remove()
-        self.streaming, self.stream_text = None, ""
+        self.streaming, self.stream_text, self.stream_dirty = None, "", False
 
     def finish(self, result: Result | None, error: str = "") -> None:
         self.running = False
