@@ -18,6 +18,9 @@ from superclaw.settings import (
     COMMANDS_DIR,
     FORMAT_CLAUDE,
     FORMAT_SUPERCLAW,
+    GITHUB_URL,
+    MARKETPLACE_MANIFEST,
+    MARKETPLACE_SEP,
     MCP_FILE,
     PLUGIN_MANIFEST,
     WORKSPACE_DIR,
@@ -26,6 +29,8 @@ from superclaw.settings import (
 
 _ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _GIT = ("http://", "https://", "git@", "ssh://", "git://")
+_SHA = re.compile(r"^[0-9a-f]{7,40}$")
+_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SKILLS_DIR = "skills"
 HOOKS_FILE = "hooks.json"
 
@@ -153,23 +158,40 @@ def locate(root: Path) -> Path:
     return found[0]
 
 
-def install(source: str, root: Path, link: bool = False) -> Plugin:
+def is_git(source: str) -> bool:
+    return source.startswith(_GIT) or source.endswith(".git")
+
+
+def clone(source: str, scratch: str, ref: str = "") -> Path:
+    sha = bool(_SHA.match(ref))
+    command = ["git", "clone", "--quiet", *([] if sha else ["--depth", "1"]), *(["--branch", ref] if ref and not sha else []), source, scratch]
+    done = subprocess.run(command, capture_output=True, text=True)
+    if done.returncode == 0 and sha:
+        done = subprocess.run(["git", "-C", scratch, "checkout", "--quiet", ref], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise PluginError(done.stderr.strip() or f"git clone {source} failed")
+    return Path(scratch)
+
+
+def fetch(source: str, scratch: str, link: bool = False, ref: str = "", subdir: str = "") -> Path:
+    if is_git(source):
+        if link:
+            raise PluginError("--link needs a local directory, not a git URL")
+        fetched = clone(source, scratch, ref)
+    else:
+        fetched = Path(source).expanduser()
+    fetched = fetched / subdir if subdir else fetched
+    if not fetched.is_dir():
+        raise PluginError(f"not a directory: {fetched}")
+    return fetched
+
+
+def install(source: str, root: Path, link: bool = False, ref: str = "", subdir: str = "") -> Plugin:
     source = source.strip()
     if not source:
-        raise PluginError("a plugin source is required: a directory or a git URL")
+        raise PluginError("a plugin source is required: a directory, a git URL, or <plugin>@<marketplace>")
     with tempfile.TemporaryDirectory(prefix="superclaw-plugin-") as scratch:
-        if source.startswith(_GIT) or source.endswith(".git"):
-            if link:
-                raise PluginError("--link needs a local directory, not a git URL")
-            done = subprocess.run(["git", "clone", "--depth", "1", "--quiet", source, scratch], capture_output=True, text=True)
-            if done.returncode != 0:
-                raise PluginError(done.stderr.strip() or f"git clone {source} failed")
-            fetched = Path(scratch)
-        else:
-            fetched = Path(source).expanduser()
-            if not fetched.is_dir():
-                raise PluginError(f"not a directory: {source}")
-        plugin_dir = locate(fetched)
+        plugin_dir = locate(fetch(source, scratch, link, ref, subdir))
         plugin = manifest(plugin_dir)
         target = root / plugin.id
         if target.exists() or target.is_symlink():
@@ -180,6 +202,95 @@ def install(source: str, root: Path, link: bool = False) -> Plugin:
         else:
             shutil.copytree(plugin_dir, target, ignore=shutil.ignore_patterns(".git"))
     return manifest(target)
+
+
+@dataclass(frozen=True)
+class Marketplace:
+    name: str
+    description: str
+    path: Path
+    plugins: dict[str, Any]
+
+
+def read_marketplace(path: Path) -> Marketplace:
+    raw = _read(path / MARKETPLACE_MANIFEST) if (path / MARKETPLACE_MANIFEST).is_file() else None
+    if raw is None:
+        raise PluginError(f"{path}: no {MARKETPLACE_MANIFEST}")
+    name = str(raw.get("name") or "").strip().lower()
+    if not _ID.match(name):
+        raise PluginError(f"{path / MARKETPLACE_MANIFEST}: `name` must match [a-z0-9][a-z0-9._-]*, got {name!r}")
+    entries = {str(p.get("name") or "").strip().lower(): p for p in raw.get("plugins") or [] if isinstance(p, dict) and p.get("name")}
+    return Marketplace(name, str(raw.get("description") or (raw.get("metadata") or {}).get("description") or ""), path, entries)
+
+
+def load_marketplaces(root: Path) -> list[Marketplace]:
+    found = []
+    for entry in sorted(root.iterdir(), key=lambda p: p.name) if root.is_dir() else []:
+        try:
+            found.append(read_marketplace(entry))
+        except PluginError:
+            continue
+    return found
+
+
+def add_marketplace(source: str, root: Path, link: bool = False) -> Marketplace:
+    source = source.strip()
+    if _REPO.match(source) and not Path(source).expanduser().is_dir():
+        source = GITHUB_URL.format(repo=source)
+    with tempfile.TemporaryDirectory(prefix="superclaw-marketplace-") as scratch:
+        fetched = fetch(source, scratch, link)
+        market = read_marketplace(fetched)
+        target = root / market.name
+        if target.exists() or target.is_symlink():
+            raise PluginError(f"marketplace {market.name!r} already exists at {target}; remove it first")
+        root.mkdir(parents=True, exist_ok=True)
+        if link:
+            target.symlink_to(fetched.resolve(), target_is_directory=True)
+        else:
+            shutil.copytree(fetched, target, ignore=shutil.ignore_patterns(".git"))
+    return read_marketplace(target)
+
+
+def remove_marketplace(name: str, root: Path) -> Path:
+    target = root / name
+    if not _ID.match(name) or not (target / MARKETPLACE_MANIFEST).is_file():
+        raise PluginError(f"no marketplace {name!r} under {root}")
+    if target.is_symlink():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+    return target
+
+
+def resolve_source(market: Marketplace, plugin: str) -> tuple[str, str, str]:
+    entry = market.plugins.get(plugin.strip().lower())
+    if entry is None:
+        raise PluginError(f"marketplace {market.name!r} has no plugin {plugin!r}; it offers {', '.join(sorted(market.plugins)) or 'nothing'}")
+    source = entry.get("source")
+    if isinstance(source, str):
+        return str((market.path / source).resolve()) if not is_git(source) else source, "", ""
+    if isinstance(source, dict):
+        kind = str(source.get("source") or "")
+        if kind == "url" and source.get("url"):
+            return str(source["url"]), "", ""
+        if kind == "github" and source.get("repo"):
+            return GITHUB_URL.format(repo=source["repo"]), "", ""
+        if kind == "git-subdir" and source.get("url") and source.get("path"):
+            return str(source["url"]), str(source.get("ref") or ""), str(source["path"]).strip("/")
+    raise PluginError(f"marketplace {market.name!r}: plugin {plugin!r} has an unsupported source {source!r}")
+
+
+def is_marketplace_ref(source: str) -> bool:
+    return MARKETPLACE_SEP in source and not is_git(source) and not Path(source).expanduser().exists()
+
+
+def install_from_marketplace(spec: str, marketplaces: Path, root: Path) -> Plugin:
+    plugin, _, market_name = spec.partition(MARKETPLACE_SEP)
+    market = next((m for m in load_marketplaces(marketplaces) if m.name == market_name.strip().lower()), None)
+    if market is None:
+        raise PluginError(f"no marketplace {market_name!r}; add one with `superclaw plugin marketplace add <owner/repo|url|dir>`")
+    source, ref, subdir = resolve_source(market, plugin)
+    return install(source, root, ref=ref, subdir=subdir)
 
 
 def remove(plugin_id: str, root: Path) -> Path:

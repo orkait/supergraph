@@ -524,10 +524,17 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     plg = sub.add_parser("plugin", help="list, install or remove plugins: directories that bundle skills, agents, commands, hooks and MCP servers")
     plg_sub = plg.add_subparsers(dest="plugin_command")
     plg_sub.add_parser("list", help="plugins found under the workspace and the config dir")
-    plg_install = plg_sub.add_parser("install", help="copy a plugin directory, or clone a git URL, into the config dir; superclaw and Claude Code plugin formats")
+    plg_install = plg_sub.add_parser("install", help="copy a plugin directory, clone a git URL, or fetch <plugin>@<marketplace> into the config dir; superclaw and Claude Code plugin formats")
     plg_install.add_argument("source")
     plg_install.add_argument("--link", action="store_true", help="symlink a local directory instead of copying it, so a checkout stays live")
     plg_sub.add_parser("remove", help="delete an installed plugin by id").add_argument("id")
+    market = plg_sub.add_parser("marketplace", help="list, add or remove plugin marketplaces: checkouts with a .claude-plugin/marketplace.json catalogue")
+    market_sub = market.add_subparsers(dest="marketplace_command")
+    market_sub.add_parser("list", help="known marketplaces and the plugins they offer")
+    market_add = market_sub.add_parser("add", help="clone owner/repo or a git URL, or copy a directory, into the config dir")
+    market_add.add_argument("source")
+    market_add.add_argument("--link", action="store_true", help="symlink a local directory instead of copying it")
+    market_sub.add_parser("remove", help="delete a marketplace by name").add_argument("name")
     upd = sub.add_parser("update", help="check for a newer superclaw, and install it with --apply")
     upd.add_argument("--apply", action="store_true", help="run the install command for this install method")
     setup = sub.add_parser("setup", help="store a provider key and default model")
@@ -584,10 +591,33 @@ def cmd_mcp_edit(settings: Settings, workspace: Path, args: argparse.Namespace) 
     return 0
 
 
+def cmd_marketplace(settings: Settings, args: argparse.Namespace) -> int:
+    if args.marketplace_command == "add":
+        market = plugins.add_marketplace(args.source, settings.user_marketplaces, link=args.link)
+        print(f"added marketplace {market.name} ({len(market.plugins)} plugins) at {market.path}; install one with `superclaw plugin install <plugin>@{market.name}`")
+        return 0
+    if args.marketplace_command == "remove":
+        print(f"removed {plugins.remove_marketplace(args.name, settings.user_marketplaces)}")
+        return 0
+    found = plugins.load_marketplaces(settings.user_marketplaces)
+    for market in found:
+        print(f"{market.name:<{_NAME_WIDTH}} {market.description}  ({market.path})")
+        print(f"{'':<{_NAME_WIDTH}} {', '.join(sorted(market.plugins)) or 'no plugins'}")
+    if not found:
+        print(f"no marketplaces; add one with `superclaw plugin marketplace add <owner/repo|git url|dir>` into {settings.user_marketplaces}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_plugin(settings: Settings, workspace: Path, args: argparse.Namespace) -> int:
     try:
+        if args.plugin_command == "marketplace":
+            return cmd_marketplace(settings, args)
         if args.plugin_command == "install":
-            plugin = plugins.install(args.source, settings.user_plugins, link=args.link)
+            if plugins.is_marketplace_ref(args.source):
+                plugin = plugins.install_from_marketplace(args.source, settings.user_marketplaces, settings.user_plugins)
+            else:
+                plugin = plugins.install(args.source, settings.user_plugins, link=args.link)
             print(f"installed {plugin.id} {plugin.version} ({plugin.format} format{', linked' if args.link else ''}) to {plugin.path}; provides {', '.join(plugin.parts) or 'nothing yet'}")
             return 0
         if args.plugin_command == "remove":
