@@ -21,6 +21,7 @@ from superclaw.agents import resolve as resolve_agent
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.facts import as_of_ms
+from supergraph.core.errors import SuperGraphError
 from superclaw.policy import Mode
 from superclaw.provider import hint
 from superclaw import checks, cron, plugins, repomap, review, spec, update
@@ -311,6 +312,18 @@ def cmd_facts(rt: Runtime, args: argparse.Namespace) -> int:
     return 0 if found else 1
 
 
+def cmd_ask(rt: Runtime, args: argparse.Namespace) -> int:
+    try:
+        answer = rt.memory.facts.ask(args.question)
+    except SuperGraphError as e:
+        print(f"superclaw: {e}", file=sys.stderr)
+        return 1
+    print(answer.text)
+    if answer.cited:
+        print("cited: " + ", ".join(answer.cited))
+    return 0
+
+
 def cmd_mcp(rt: Runtime, args: argparse.Namespace) -> int:
     bridge = rt.mcp
     for tool in bridge.tools if bridge else []:
@@ -463,6 +476,8 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     exp.add_argument("-o", "--output", default="", metavar="FILE", help="write here instead of stdout")
     imp = sub.add_parser("import", help="create a new session from an exported JSON file")
     imp.add_argument("file", help="the export, or - for stdin")
+    ask = sub.add_parser("ask", help="answer a question from stored facts and results with the substrate's reader, no agent loop")
+    ask.add_argument("question")
     facts = sub.add_parser("facts", help="facts learned from sources, with age and URL; search, view as of a date, or retract one")
     facts.add_argument("query", nargs="?", default="", help="search text; omit to list the newest")
     facts.add_argument("--as-of", default="", help="only facts observed on or before this ISO date")
@@ -626,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
         remedy = "" if isinstance(e, NotServing) else "\n  close the other superclaw, or give this one its own store with --db <path>"
         sys.exit(f"superclaw: {e}{remedy}")
     handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "cron": cmd_cron, "review": cmd_review,
-               "sessions": cmd_sessions, "facts": cmd_facts, "export": cmd_export, "import": cmd_import,
+               "sessions": cmd_sessions, "facts": cmd_facts, "ask": cmd_ask, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:

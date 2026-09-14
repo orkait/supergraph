@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -132,8 +133,9 @@ class RemoteGraph:
 
 
 class SharedGraph:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, reader: Callable[[str], str] | None = None) -> None:
         self.db_path = Path(db_path)
+        self._reader = reader
         self._owned: Any = None
         self._server: Server | None = None
         self._remote: RemoteGraph | None = None
@@ -144,7 +146,7 @@ class SharedGraph:
         return "owner" if self._owned is not None else "attached"
 
     def _own(self) -> None:
-        self._owned = SuperGraph(path=str(self.db_path), queued=True)
+        self._owned = SuperGraph(path=str(self.db_path), queued=True, reader=self._reader)
         self._server = Server(self._owned, socket_path(self.db_path))
         self._server.start()
 
@@ -193,5 +195,5 @@ class SharedGraph:
             self._owned = None
 
 
-def open_shared(db_path: Path) -> SharedGraph:
-    return SharedGraph(db_path).open()
+def open_shared(db_path: Path, reader: Callable[[str], str] | None = None) -> SharedGraph:
+    return SharedGraph(db_path, reader).open()

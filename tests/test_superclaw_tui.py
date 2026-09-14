@@ -63,7 +63,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     locked = tmp_path / "locked"
     holder = SuperGraph(path=str(locked), embedder="none", enable_sentence_nodes=False)
     lean = build_runtime(replace(rt.settings, db_path=locked), tmp_path, Mode.ASK, require_provider=False, open_store=False)
-    assert lean.gs is None and lean.store is None and doctor_lines(lean, "/setup")[3].startswith(f"store {locked}")
+    assert lean.gs is None and lean.store is None and doctor_lines(lean, "/setup")[3].startswith(f"store {locked}") and doctor_lines(lean, "/setup")[5].startswith("graph not opened")
     lean.close()
     full = build_runtime(replace(rt.settings, db_path=tmp_path / "full"), tmp_path, Mode.ASK, require_provider=False)
     assert full.registry.run("bash", {"command": "echo ok"}, ToolContext(workspace=tmp_path)).output == "ok"
@@ -84,6 +84,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     lines = doctor_lines(rt, "/setup")
     assert lines[1].startswith("sandbox ") and f"model {rt.model}" in lines[2]
     assert str(rt.settings.db_path) in lines[3] and lines[4] == "mcp 0 tools · 0 servers" and lines[-1].endswith("none; /setup")
+    assert lines[5].startswith("graph no embedder, lexical recall only · ") and lines[5].endswith(" edges")
     monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)
