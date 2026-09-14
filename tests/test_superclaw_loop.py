@@ -314,6 +314,28 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     provider = Scripted(read("c0", "big0.txt"), read("c1", "big0.txt"), read("c2", "big1.txt"), read("c3", "big2.txt"), read("c4", "big0.txt"), Completion(text="ok"))
     res = run("go", provider, options(ws, store=store, context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=events.append))
     assert {e["type"] for e in events if e["type"] in ("prune", "compaction")} == {"prune", "compaction"} and res.final_answer == "ok"
+    memory = Memory(gs)
+    reg = options(ws).registry
+    reg.register(memory.note_tool())
+    flushed = Scripted(read("f0", "big0.txt"), read("f1", "big1.txt"),
+                       Completion(tool_calls=[call("memory_note", "m1", text="autojob uses a leased worker", origin="user_stated"), call("update_plan", "p1", plan=[{"content": "map the api", "status": "in_progress"}])]),
+                       Completion(text="NOTHING"), Completion(text="ok"))
+    fevents = []
+    fres = run("go", flushed, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="SYS",
+                                      context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=fevents.append))
+    flush = next(e for e in fevents if e["type"] == "flush")
+    assert flush["saved"] == 2 and fres.final_answer == "ok" and any("about to be compacted" in m.content for m in flushed.requests[2][0] if m.role == "user")
+    assert flushed.requests[2][1] == ["memory_note", "update_plan"] and any("leased worker" in text for _, text, _ in memory.hits("leased worker"))
+    quiet = Scripted(read("q0", "big0.txt"), read("q1", "big1.txt"), Completion(text="NOTHING"), Completion(text="ok"))
+    qevents = []
+    run("go", quiet, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="SYS", context_window=20_000,
+                             reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=qevents.append))
+    assert next(e for e in qevents if e["type"] == "flush")["saved"] == 0
+    off = Scripted(read("o0", "big0.txt"), read("o1", "big1.txt"), Completion(text="ok"))
+    oevents = []
+    run("go", off, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="SYS", context_window=20_000,
+                           reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", flush_before_compaction=False, on_event=oevents.append))
+    assert not [e for e in oevents if e["type"] == "flush"] and [e["type"] for e in oevents if e["type"] == "compaction"]
     outputs = {e["id"]: e["output"] for e in events if e["type"] == "tool_result"}
     assert "1→y0" in outputs["c0"] and "already in your context" in outputs["c1"] and "1→y0" in outputs["c4"]
     ref = next(e["ref"] for e in events if e["type"] == "tool_result" and e["id"] == "c0")

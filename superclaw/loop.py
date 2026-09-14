@@ -15,6 +15,7 @@ from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
     FINISH_LENGTH,
+    FLUSH_PROMPT,
     MAX_TURNS_FINAL_ANSWER_PROMPT,
     FailureOutcome,
     Guards,
@@ -42,6 +43,8 @@ from superclaw.verifier import verify
 
 ABORTED_TOOL_RESULT = "Aborted: an earlier tool call halted the run."
 OWN_STATE_TOOLS = {"update_plan", "ask_user", "memory_note", "write_file", "edit_file", "submit_spec"}
+FLUSH_ANCHOR = "memory_note"
+FLUSH_TOOLS = frozenset({FLUSH_ANCHOR, "update_plan"})
 
 
 def label_untrusted(tool: str, output: str) -> str:
@@ -68,6 +71,7 @@ class Options:
     keep_tokens: int = LIMITS.compaction_keep_tokens
     require_completion_signal: bool = False
     verify: bool = False
+    flush_before_compaction: bool = True
     on_event: Callable[[dict[str, Any]], None] | None = None
     on_permission: Callable[[dict[str, Any]], str] | None = None
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
@@ -190,11 +194,37 @@ class _Run:
         request = [Message(role="system", content=summary_instructions(self.compact_notes)), Message(role="user", content=brief)]
         return self.provider.complete(request, []).text
 
+    def flush_state(self) -> int:
+        if not self.o.flush_before_compaction:
+            return 0
+        names = {t.name for t in self.o.registry.tools()}
+        if FLUSH_ANCHOR not in names:
+            return 0
+        tools = [t.definition() for t in self.o.registry.tools() if t.name in FLUSH_TOOLS]
+        self.append(Message(role="user", content=FLUSH_PROMPT))
+        saved = 0
+        for _ in range(LIMITS.compaction_flush_calls):
+            completion = self.provider.complete(self.messages, tools)
+            self.account(completion.usage)
+            self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
+            if not completion.tool_calls:
+                break
+            for call in completion.tool_calls:
+                if call.name not in FLUSH_TOOLS:
+                    self.append(Message(role="tool", content=f"Error: {call.name} is not available during a state flush.", tool_call_id=call.id, is_error=True))
+                    continue
+                res, _ = self.execute(call)
+                saved += 1 if res.ok else 0
+                self.append(Message(role="tool", content=res.output, tool_call_id=call.id, is_error=not res.ok))
+        self.emit({"type": "flush", "saved": saved})
+        return saved
+
     def maybe_compact(self, exposed: list[dict[str, Any]]) -> None:
         if not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
         if self.prune() and not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
+        self.flush_state()
         plan = self.ctx.state.get("plan", [])
         if self.o.hooks:
             self.compact_notes = self.o.hooks.dispatch("preCompact", {"session": self.o.session_id, "trigger": "auto", "custom_instructions": ""}, "auto").context

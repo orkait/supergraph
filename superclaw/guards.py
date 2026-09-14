@@ -27,6 +27,12 @@ def truncated_stop_answer(cap: int) -> str:
     )
 
 
+FLUSH_PROMPT = (
+    "Your conversation is about to be compacted: everything before the last few turns becomes a summary, and the detail is gone. "
+    "Persist now, with tool calls only, anything a later turn would have to rediscover: durable findings with memory_note, "
+    "and the current state of the work with update_plan. Save what the repository does not already record, nothing you merely guessed, "
+    "and nothing that will be in the summary anyway. Call no other tools. If there is nothing worth saving, reply with the single word NOTHING."
+)
 MAX_TURNS_FINAL_ANSWER_PROMPT = (
     "You have reached the tool-turn limit. Do not call tools. Give a concise final answer now: "
     "summarize what you completed, what you found, and any remaining blockers."
