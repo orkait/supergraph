@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SKILL_FILE = "SKILL.md"
+BLOCK_SCALARS = ("|", ">", "|-", ">-")
 
 
 @dataclass(frozen=True)
@@ -22,11 +23,16 @@ def frontmatter(text: str) -> tuple[dict[str, str], str]:
     for i in range(1, len(lines)):
         if lines[i].strip() == "---":
             fields: dict[str, str] = {}
+            block = ""
             for line in lines[1:i]:
+                if block and line[:1].isspace():
+                    fields[block] += line.strip() + " "
+                    continue
                 key, sep, value = line.partition(":")
+                block = key.strip().lower() if sep and value.strip() in BLOCK_SCALARS else ""
                 if sep:
-                    fields[key.strip().lower()] = value.strip().strip("\"'")
-            return fields, "\n".join(lines[i + 1:])
+                    fields[key.strip().lower()] = "" if block else value.strip().strip("\"'")
+            return {k: v.strip() for k, v in fields.items()}, "\n".join(lines[i + 1:])
     return {}, text
 
 

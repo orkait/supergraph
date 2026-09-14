@@ -110,8 +110,8 @@ def load_plugins(roots: list[Path]) -> list[Plugin]:
     return sorted(seen.values(), key=lambda p: p.id)
 
 
-def claude_installed(home: Path | None = None) -> list[Path]:
-    registry = (home or Path.home()) / CLAUDE_INSTALLED_FILE
+def claude_installed(claude_dir: Path) -> list[Path]:
+    registry = claude_dir / CLAUDE_INSTALLED_FILE
     if not registry.is_file():
         return []
     try:
@@ -130,9 +130,9 @@ def claude_installed(home: Path | None = None) -> list[Path]:
 def discover(settings: Settings, workspace: Path | None = None, trusted: bool = True) -> list[Plugin]:
     roots = settings.plugin_roots(workspace) if trusted else [settings.user_plugins]
     found = load_plugins(roots)
-    if settings.claude_plugins:
+    if settings.claude_config:
         known = {plugin.id for plugin in found}
-        for path in claude_installed():
+        for path in claude_installed(settings.claude_dir):
             try:
                 plugin = manifest(path)
             except PluginError:

@@ -17,7 +17,7 @@ from superclaw.intent import classify
 from superclaw.kernel import READ_VERBS, Kernel, Python
 from superclaw import maintain
 from superclaw.loop import Options, Result, run
-from superclaw.mcp import Bridge, connect_all, load_config
+from superclaw.mcp import Bridge, Source, claude_sources, connect_all, load_config
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
@@ -123,15 +123,18 @@ def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> D
     entries: list[Path | tuple[Path, Path | None]] = [settings.user_hooks]
     if trust_workspace:
         entries.append(workspace / WORKSPACE_DIR / "hooks.json")
+    entries += settings.claude_settings(workspace, trust_workspace)
     entries += [(plugin.hooks, plugin.path) for plugin in settings.plugins(workspace, trusted=trust_workspace) if plugin.hooks]
     hooks = load_hooks(entries)
     return Dispatcher(hooks, workspace) if hooks else None
 
 
-def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> list[Path]:
-    paths = [settings.user_mcp]
+def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> list[Path | Source]:
+    paths: list[Path | Source] = [settings.user_mcp]
     if trust_workspace:
         paths.append(workspace / WORKSPACE_DIR / MCP_FILE)
+    if settings.claude_config:
+        paths += claude_sources(settings.claude_state, workspace, trust_workspace)
     return paths + [plugin.mcp for plugin in settings.plugins(workspace, trusted=trust_workspace) if plugin.mcp]
 
 
@@ -161,7 +164,7 @@ def build_runtime(
     allow_tools: frozenset[str] = frozenset(),
     deny_tools: frozenset[str] = frozenset(),
     extra_dirs: tuple[Path, ...] = (),
-    mcp_config: list[Path] | None = None,
+    mcp_config: list[Path | Source] | None = None,
     agent: Agent | None = None,
     open_store: bool = True,
 ) -> Runtime:
@@ -249,7 +252,7 @@ def context_for(rt: Runtime, prompt: str) -> Context:
         memory=rt.memory.render(hits), facts=rt.memory.facts.render(facts), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
         agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
-        tools=host_tools(),
+        tools=host_tools(), claude_config=rt.settings.claude_config,
     ))
     return Context(system_prompt, len(hits), len(facts), len(skills), len(found.files) if found else 0)
 
