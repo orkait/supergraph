@@ -54,6 +54,9 @@ def _resume(app: SuperclawApp, arg: str) -> None:
 
 
 def _sessions(app: SuperclawApp, arg: str) -> None:
+    if arg.startswith("touching "):
+        app.show_tool_result("recall", {"path": arg.removeprefix("touching ").strip()})
+        return
     if arg:
         hits = app.rt.store.search(arg)
         if not hits:
@@ -215,7 +218,7 @@ COMMANDS = (
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
     Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
-    Command("/sessions", "/sessions [query]", "list recent sessions, or search their events", _sessions),
+    Command("/sessions", "/sessions [query|touching <path>]", "list recent sessions, search their events, or see who touched a file", _sessions),
     Command("/fork", "/fork [id|latest]", "copy a session into a new one and continue it", _fork),
     Command("/usage", "/usage", "tokens and cost spent in this session", _usage),
     Command("/context", "/context [prompt]", "what the next request costs", _context),

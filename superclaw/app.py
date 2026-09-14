@@ -130,12 +130,12 @@ def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> lis
 
 
 def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,
-                   settings: Settings | None = None, kernel: Kernel | None = None) -> Registry:
+                   settings: Settings | None = None, kernel: Kernel | None = None, sessions: SessionStore | None = None) -> Registry:
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
     for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts), Download(),
-                 memory.search_tool(), memory.note_tool(), Recall(observations), Delegate(), *([Python(kernel)] if kernel else [])):
+                 memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts), Delegate(), *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))
     return registry
@@ -161,21 +161,22 @@ def build_runtime(
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     backend = detect()
-    gs = memory = kernel = None
+    gs = memory = kernel = sessions = None
     registry = Registry()
     if open_store:
         settings.db_path.mkdir(parents=True, exist_ok=True)
         gs = open_shared(settings.db_path)
         memory = Memory(gs)
         observations = ObservationStore(gs)
+        sessions = SessionStore(gs)
         kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
-        registry = build_registry(memory, observations, workspace, backend, settings, kernel)
+        registry = build_registry(memory, observations, workspace, backend, settings, kernel, sessions)
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
     policy = Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs)
     if agent:
         policy.scope_to(agent.tools)
     return Runtime(
-        gs=gs, store=SessionStore(gs) if gs is not None else None, memory=memory, registry=registry, policy=policy,
+        gs=gs, store=sessions, memory=memory, registry=registry, policy=policy,
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
     )

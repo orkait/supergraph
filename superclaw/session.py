@@ -10,9 +10,10 @@ from supergraph.core.errors import SuperGraphError
 
 from superclaw import __version__
 from superclaw.compaction import SUMMARY_LABEL
+from superclaw.dsl import edge, now_ms
 from superclaw.dsl import lit as _lit
 from superclaw.runtime import Message, ToolCall
-from superclaw.settings import LIMITS
+from superclaw.settings import FILE_KIND, LIMITS
 
 NAMESPACE = "superclaw"
 EXPORT_SCHEMA_VERSION = 1
@@ -37,6 +38,37 @@ class SessionStore:
             f'created = {time.time_ns()} event_count = 0'
         )
         return sid
+
+    @staticmethod
+    def file_id(path: str) -> str:
+        return f"{FILE_KIND}:" + hashlib.sha1(path.encode("utf-8")).hexdigest()[:LIMITS.id_hash_chars]
+
+    def touch(self, sid: str, path: str, verb: str) -> None:
+        node = self.file_id(path)
+        try:
+            self._x(f'CREATE NODE {_lit(node)} kind = {_lit(FILE_KIND)} path = {_lit(path)}')
+        except SuperGraphError as e:
+            if "exist" not in str(e).lower():
+                raise
+        edge(self._gs, f"session:{sid}", node, verb, NAMESPACE, at=now_ms())
+
+    def files_of(self, sid: str) -> list[tuple[str, str]]:
+        found = []
+        for row in self._x(f'EDGES FROM {_lit("session:" + sid)}').data or []:
+            if str(row.get("target", "")).startswith(f"{FILE_KIND}:"):
+                node = self._x(f'NODE {_lit(row["target"])}').data or {}
+                found.append((str(node.get("path", "")), str(row.get("kind", ""))))
+        return sorted(set(found))
+
+    def touching(self, path: str) -> list[dict[str, Any]]:
+        sids = {str(row["source"]).removeprefix("session:") for row in self._x(f'EDGES TO {_lit(self.file_id(path))}').data or []}
+        return sorted((s for s in (self.get(sid) for sid in sids) if s), key=lambda s: s.get("created", 0), reverse=True)
+
+    def around(self, sid: str) -> dict[str, list[str]]:
+        linked: dict[str, list[str]] = {}
+        for row in self._x(f'EDGES TO {_lit("session:" + sid)}').data or []:
+            linked.setdefault(str(row.get("kind", "")), []).append(str(row.get("source", "")))
+        return linked
 
     def get(self, sid: str) -> dict[str, Any] | None:
         try:
