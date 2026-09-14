@@ -20,6 +20,7 @@ from superclaw.agents import load_agents
 from superclaw.agents import resolve as resolve_agent
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
+from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
 from superclaw.provider import hint
 from superclaw import checks, cron, plugins, repomap, review, spec, update
@@ -286,6 +287,22 @@ def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_facts(rt: Runtime, args: argparse.Namespace) -> int:
+    facts = rt.memory.facts
+    if args.retract:
+        facts.retract(args.retract, args.reason or "retracted by the user")
+        print(f"retracted {args.retract}")
+        return 0
+    as_of = as_of_ms(args.as_of) if args.as_of else None
+    if args.as_of and as_of is None:
+        print("--as-of takes an ISO date such as 2026-09-01", file=sys.stderr)
+        return 2
+    found = facts.search(args.query, as_of=as_of) if args.query else facts.recent(as_of=as_of)
+    for fact in found:
+        print(f"{fact.id}  {fact.line()}")
+    return 0 if found else 1
+
+
 def cmd_mcp(rt: Runtime, args: argparse.Namespace) -> int:
     bridge = rt.mcp
     for tool in bridge.tools if bridge else []:
@@ -438,6 +455,11 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     exp.add_argument("-o", "--output", default="", metavar="FILE", help="write here instead of stdout")
     imp = sub.add_parser("import", help="create a new session from an exported JSON file")
     imp.add_argument("file", help="the export, or - for stdin")
+    facts = sub.add_parser("facts", help="facts learned from sources, with age and URL; search, view as of a date, or retract one")
+    facts.add_argument("query", nargs="?", default="", help="search text; omit to list the newest")
+    facts.add_argument("--as-of", default="", help="only facts observed on or before this ISO date")
+    facts.add_argument("--retract", default="", help="fact id to retract")
+    facts.add_argument("--reason", default="", help="why it is retracted")
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
@@ -595,7 +617,7 @@ def main(argv: list[str] | None = None) -> int:
         remedy = "" if isinstance(e, NotServing) else "\n  close the other superclaw, or give this one its own store with --db <path>"
         sys.exit(f"superclaw: {e}{remedy}")
     handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "cron": cmd_cron, "review": cmd_review,
-               "sessions": cmd_sessions, "export": cmd_export, "import": cmd_import,
+               "sessions": cmd_sessions, "facts": cmd_facts, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
                "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
     try:

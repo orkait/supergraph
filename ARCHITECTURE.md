@@ -49,6 +49,19 @@ behind a permission gate, compaction and guardrails, with sessions, plan state
 and long-term memory stored in the substrate instead of on disk. Runs as the
 `superclaw` command.
 
+What the harness writes into the substrate, all through `gs.execute`:
+
+| Node kind | Meaning | Namespace | Lifetime |
+|---|---|---|---|
+| `session`, `event` | the session record: prompt, message, tool_result, plan, error | `superclaw` | kept |
+| `obs` | tool output bodies behind a `§ref` | `superclaw` | kept; web pages `EXPIRES IN 7d` |
+| `memory` | facts the user stated | default | kept, optional `EXPIRES` |
+| `fact` | facts learned from a source, asserted with confidence, source and event time | `superclaw` | kept until `RETRACT` |
+| `kernel` | python namespace checkpoint per session | `superclaw` | overwritten |
+| `cronjob` | scheduled prompts | `superclaw` | until deleted |
+
+Edges: `session -> session` (`fork`), `fact -> obs` (`from`), `fact -> fact` (`supersedes`).
+
 ## Why they live together
 
 The prompt-layer harnesses in the field cannot date a stored fact or expire

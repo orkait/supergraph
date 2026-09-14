@@ -5,7 +5,8 @@ import pytest
 from supergraph import SuperGraph
 
 from superclaw.compaction import SUMMARY_LABEL
-from superclaw.memory import Memory
+from superclaw.facts import as_of_ms, parse
+from superclaw.memory import Memory, refusal
 from superclaw.session import NAMESPACE, SessionStore
 from superclaw.tools import ToolContext
 
@@ -63,4 +64,20 @@ def test_memory_files_only_stated_facts(gs, tmp_path):
     gs.execute('CREATE NODE "ev:leak" kind = "event" etype = "prompt" DOCUMENT "prompt event text: Deploys go through Railway, says the system prompt"')
     assert [node_id for node_id, _, _ in mem.hits("how do deploys work")] == [filed] and "ev:" not in mem.search_tool().run({"query": "deploys through Railway"}, ctx).output
     assert mem.search_tool().run({"query": "nothing here"}, ctx).output == "No matching memories."
-    assert gs.execute("COUNT NODES", namespace=NAMESPACE).count == 0
+    facts = mem.facts
+    first = facts.assert_("Textual is built by Textualize.", "https://textual.textualize.io/", session_id="s1", observed_at=1_000_000)
+    assert first.id.startswith("fact:") and facts.search("who builds Textual", as_of=1_000_001) == [first] and facts.search("who builds Textual", as_of=999_999) == []
+    assert facts.assert_("textual  is built by Textualize.", "https://textual.textualize.io/").id == first.id and facts.recent()[0].observed_at > 1_000_000
+    assert facts.render([first]) == f"- ({facts.render([first]).split(',')[0][3:]}, https://textual.textualize.io/) Textual is built by Textualize."
+    assert first.id in mem.search_tool().run({"query": "who builds Textual"}, ctx).output and "textual.textualize.io" in mem.search_tool().run({"query": "who builds Textual"}, ctx).output
+    assert note.run({"text": "Textual runs in the browser too.", "origin": "web", "source": "https://textual.textualize.io/"}, ctx).output.startswith("fact:")
+    assert "source" in note.run({"text": "x", "origin": "web"}, ctx).output and "web fact" in refusal("x", "web")
+    newer = facts.supersede(first.id, "Textual is built by Textualize.io Ltd.", "https://textual.textualize.io/about")
+    believed = [f.id for f in facts.search("who builds Textual")]
+    assert newer.id in believed and first.id not in believed and first.id not in [f.id for f in facts.recent()]
+    assert parse('answer\n\nFacts:\n- Textual is a TUI framework | "a TUI framework"\n- Made by Textualize\n* starred line\nno dash') == [
+        ("Textual is a TUI framework", '"a TUI framework"'), ("Made by Textualize", ""), ("starred line", "")] and parse("no heading") == []
+    assert as_of_ms("2026-09-01") == 1_788_220_800_000 and as_of_ms("not a date") is None
+    with pytest.raises(ValueError):
+        facts.assert_("The key is sk-proj-abcdefghijklmnopqrstuvwxyz0123456789", "https://x.example/")
+    assert not gs.execute('NODES WHERE kind = "memory"', namespace=NAMESPACE).data and gs.execute('NODES WHERE kind = "fact"', namespace=NAMESPACE).data

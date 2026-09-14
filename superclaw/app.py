@@ -134,7 +134,7 @@ def build_registry(memory: Memory, observations: ObservationStore, workspace: Pa
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
-    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings), Download(),
+    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts), Download(),
                  memory.search_tool(), memory.note_tool(), Recall(observations), Delegate(), *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))
@@ -213,26 +213,28 @@ def repo_map_text(rt: Runtime) -> str:
 class Context:
     system_prompt: str
     memories: int
+    facts: int
     skills: int
     repo_files: int
 
     def event(self, history: int) -> dict[str, Any]:
-        return {"type": "context", "memories": self.memories, "skills": self.skills, "repo_files": self.repo_files,
+        return {"type": "context", "memories": self.memories, "facts": self.facts, "skills": self.skills, "repo_files": self.repo_files,
                 "history": history, "prompt_tokens": approx_tokens(self.system_prompt)}
 
 
 def context_for(rt: Runtime, prompt: str) -> Context:
     hits = rt.memory.hits(prompt)
+    facts = rt.memory.facts.search(prompt)
     skills = load_skills(rt.settings.skill_roots(rt.workspace))
     found = scan(rt.workspace) if rt.settings.repo_map else None
     system_prompt = build_system_prompt(PromptInputs(
         cwd=rt.workspace, mode=rt.mode, skills=skills,
-        memory=rt.memory.render(hits), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
+        memory=rt.memory.render(hits), facts=rt.memory.facts.render(facts), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
         agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
         tools=host_tools(),
     ))
-    return Context(system_prompt, len(hits), len(skills), len(found.files) if found else 0)
+    return Context(system_prompt, len(hits), len(facts), len(skills), len(found.files) if found else 0)
 
 
 def system_prompt_for(rt: Runtime, prompt: str) -> str:

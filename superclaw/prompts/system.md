@@ -19,7 +19,7 @@ After changes, run the project's documented validators (Makefile, manifests, CI)
 
 ## Memory
 
-Facts recalled from long-term memory appear in <memory>. Use memory_search when the task depends on prior decisions, preferences or history you do not see. Use memory_note to record a durable fact the user states or a decision worth keeping; do not record transient details.
+Facts recalled from long-term memory appear in <memory>. Facts learned from the web appear in <facts> with a source and an age; check them and memory_search before searching the web, and confirm a fact with web_fetch before acting on it. Use memory_search when the task depends on prior decisions, preferences or history you do not see. Use memory_note to record a durable fact the user states or a decision worth keeping; do not record transient details.
 
 ## Safety
 

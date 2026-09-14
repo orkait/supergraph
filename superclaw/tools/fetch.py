@@ -13,8 +13,9 @@ from http import HTTPStatus
 from typing import Any
 
 from superclaw.delegate import SPAWN_KEY
+from superclaw.facts import FACTS_HEADING, Facts, parse
 from superclaw.observations import ObservationStore
-from superclaw.runtime import approx_tokens, clip
+from superclaw.runtime import approx_tokens, clip, count
 from superclaw.settings import BLOCKED_CODES, IMPERSONATE, LIMITS, READER_ENV, REDIRECT_CODES, Settings
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
@@ -273,9 +274,21 @@ class WebFetch(Tool):
     safety = Safety(SideEffect.NETWORK, Permission.PROMPT, "Requests a model-chosen URL from this host and stores the page for a week.")
     output_category = Category.DEFAULT
 
-    def __init__(self, observations: ObservationStore | None = None, settings: Settings | None = None) -> None:
+    def __init__(self, observations: ObservationStore | None = None, settings: Settings | None = None, facts: Facts | None = None) -> None:
         self._store = observations
         self._reader = settings.reader_url if settings else ""
+        self._facts = facts
+
+    def learn(self, child: Result, url: str, ref: str, session_id: str) -> str:
+        if self._facts is None:
+            return ""
+        learned = []
+        for text, quote in parse(str(child.meta.get("full") or child.output)):
+            try:
+                learned.append(self._facts.assert_(text, url, session_id=session_id, quote=quote, page_ref=ref).id)
+            except ValueError:
+                continue
+        return f"Learned: {count(len(learned), 'fact')} kept with source and date: {', '.join(learned)}" if learned else ""
 
     def page(self, url: str, max_bytes: int) -> tuple[Page, str]:
         try:
@@ -317,8 +330,11 @@ class WebFetch(Tool):
         prompt = str(args.get("prompt") or "").strip()
         spawn = ctx.state.get(SPAWN_KEY)
         if prompt and spawn is not None:
-            child = spawn({"task": f"{prompt}\n\nThe page is stored as §{ref}; read all of it with recall before answering, and quote what you rely on.", "refs": [ref]})
-            return Result(child.ok, "\n".join([*head, "", child.output]), truncated=page.truncated)
+            task = (f"{prompt}\n\nThe page is stored as §{ref}; read all of it with recall before answering, and quote what you rely on. "
+                    f"End with a line reading {FACTS_HEADING} followed by the facts you relied on, one per line as `- fact | exact quote`, at most {LIMITS.facts_per_page_max}.")
+            child = spawn({"task": task, "refs": [ref]})
+            learned = self.learn(child, page.url, ref, ctx.session_id) if child.ok else ""
+            return Result(child.ok, "\n".join([*head, *([learned] if learned else []), "", child.output]), truncated=page.truncated)
         if prompt:
             head.append("No child agent is available in this run; recall the §ref yourself")
         return Result.success("\n".join([*head, "", *digest(body)]), truncated=page.truncated)
