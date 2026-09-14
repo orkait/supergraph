@@ -34,7 +34,7 @@ from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
-from superclaw.settings import LIMITS, MCP_FILE, MCP_SCOPES, PROVIDERS, WORKSPACE_DIR, Glyphs, Settings, split_models
+from superclaw.settings import LIMITS, MCP_FILE, MCP_SCOPES, PROVIDERS, SESSION_END_EXIT, SESSION_END_OTHER, WORKSPACE_DIR, Glyphs, Settings, split_models
 from superclaw.share import NotServing
 from superclaw.skills import load_skills
 from superclaw.tools import jail
@@ -726,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         advice = hint(str(e), tui=False)
         sys.exit(f"superclaw: {e}" + (f"\n  {advice}" if advice else ""))
     finally:
-        rt.close()
+        rt.close(SESSION_END_EXIT if args.command is None else SESSION_END_OTHER)
 
 
 if __name__ == "__main__":

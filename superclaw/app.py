@@ -29,7 +29,7 @@ from superclaw.runtime import Message, Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
-from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
+from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
@@ -71,6 +71,7 @@ class Runtime:
     kernel: Kernel | None = None
     mcp: Bridge | None = None
     agent: Agent | None = None
+    session_id: str = ""
 
     @property
     def model_info(self) -> ModelInfo:
@@ -88,7 +89,9 @@ class Runtime:
     def mode(self, value: Mode) -> None:
         self.policy.mode = value
 
-    def close(self) -> None:
+    def close(self, reason: str = SESSION_END_OTHER) -> None:
+        if self.hooks:
+            self.hooks.dispatch("sessionEnd", {"session": self.session_id, "reason": reason}, reason)
         if self.mcp:
             self.mcp.close()
         if self.kernel:
@@ -266,13 +269,15 @@ def resolve_session(rt: Runtime, resume: str | None, fork: str | None = None) ->
         source = rt.store.latest() if fork == "latest" else fork
         if not source or rt.store.get(source) is None:
             raise KeyError(f"no session {fork!r}")
-        return rt.store.fork(source)
-    if not resume:
-        return rt.store.create(cwd=str(rt.workspace), model=rt.model)
-    sid = rt.store.latest() if resume == "latest" else resume
-    if not sid or rt.store.get(sid) is None:
-        raise KeyError(f"no session {resume!r}")
-    return sid
+        rt.session_id = rt.store.fork(source)
+    elif not resume:
+        rt.session_id = rt.store.create(cwd=str(rt.workspace), model=rt.model)
+    else:
+        sid = rt.store.latest() if resume == "latest" else resume
+        if not sid or rt.store.get(sid) is None:
+            raise KeyError(f"no session {resume!r}")
+        rt.session_id = sid
+    return rt.session_id
 
 
 @dataclass

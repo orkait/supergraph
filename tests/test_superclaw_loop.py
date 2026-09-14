@@ -21,13 +21,15 @@ from superclaw.cli import cmd_spec, cmd_verify, draft_spec
 from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
-from superclaw.loop import Options, run
+from superclaw.compaction import TRANSCRIPT_NOTE
+from superclaw.compaction import compact as compact_messages
+from superclaw.loop import Options, _Run, run
 from superclaw.mcp import MCPError, add_server, connect_all, load_config, remove_server
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Action, Mode, Policy
-from superclaw.runtime import Completion, ToolCall, Usage, approx_tokens
+from superclaw.runtime import Completion, Message, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
@@ -114,6 +116,11 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     around = Recall(store=ObservationStore(gs), sessions=store).run({"path": "a.txt"}, ToolContext(workspace=ws)).output
     assert around.startswith("a.txt: touched by 1 session(s)\n") and f"{sid} '(untitled)': read" in around
     assert "No earlier session touched" in Recall(store=ObservationStore(gs), sessions=store).run({"path": "zz.txt"}, ToolContext(workspace=ws)).output
+    edit = Completion(tool_calls=[call("edit_file", "e1", path="a.txt", description="d", old_string="IGNORE", new_string="OBEY")])
+    carried = run("edit a.txt", Scripted(edit, Completion(text="edited")), options(ws, session=store, session_id=sid))
+    assert carried.final_answer == "edited" and (ws / "a.txt").read_text().startswith("OBEY") and (touched, "wrote") in store.files_of(sid)
+    fresh = run("edit a.txt", Scripted(edit, Completion(text="edited")), options(ws, session=store, session_id=store.create(cwd=str(ws), model="m")))
+    assert "read the file before editing" in next(m.content for m in fresh.messages if m.role == "tool")
     write = Completion(tool_calls=[call("write_file", path="b.txt", description="d", content="x")])
     assert "denied" in run("write", Scripted(write, Completion(text="done")), options(ws, mode="ask")).messages[3].content
     seen = []
@@ -383,6 +390,39 @@ def test_intent_hooks_and_deferral(ws, gs):
     (ws / "z.txt").write_text("zed\n")
     redirected = run("go", Scripted(read("c9"), Completion(text="ok")), options(ws, hooks=claude_dispatch, session_start=False))
     assert "zed" in next(m.content for m in redirected.messages if m.role == "tool")
+    marks = ws / "marks.txt"
+    more = ws / "more-hooks.json"
+    more.write_text(json.dumps({"hooks": {
+        "PermissionRequest": [{"matcher": "Write", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"hookEventName\": \"PermissionRequest\", \"decision\": {\"behavior\": \"allow\"}}}'"}]},
+                              {"matcher": "Edit", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"hookEventName\": \"PermissionRequest\", \"decision\": {\"behavior\": \"deny\", \"message\": \"edits are frozen\"}}}'"}]}],
+        "Notification": [{"hooks": [{"type": "command", "command": f"jq -r .notification_type >> {marks}"}]}],
+        "PreCompact": [{"hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"hookEventName\": \"PreCompact\", \"additionalContext\": \"FOCUS ON TESTS\"}}'"}]}],
+        "SubagentStop": [{"hooks": [{"type": "command", "command": "printf '{\"decision\": \"block\", \"reason\": \"child keep going\"}'"}]}],
+        "SessionEnd": [{"hooks": [{"type": "command", "command": f"jq -r .reason >> {marks}"}]}],
+    }}))
+    more_dispatch = Dispatcher(load_hooks([more]), ws)
+    assert sorted({h.event for h in more_dispatch.hooks}) == ["notification", "permissionRequest", "preCompact", "sessionEnd", "subagentStop"]
+    (ws / "a.txt").write_text("hello\n")
+    allowed = run("write", Scripted(Completion(tool_calls=[call("write_file", path="hooked.txt", description="d", content="x")]), Completion(text="done")), options(ws, mode="ask", hooks=more_dispatch))
+    assert (ws / "hooked.txt").read_text() == "x" and allowed.final_answer == "done"
+    frozen = run("edit", Scripted(read("r1"), Completion(tool_calls=[call("edit_file", "e2", path="a.txt", description="d", old_string="hello", new_string="bye")]), Completion(text="done")), options(ws, mode="ask", hooks=more_dispatch))
+    assert "denied by hook" in [m.content for m in frozen.messages if m.role == "tool"][1] and "edits are frozen" in [m.content for m in frozen.messages if m.role == "tool"][1] and (ws / "a.txt").read_text() == "hello\n"
+    prompted = run("write", Scripted(Completion(tool_calls=[call("bash", "b1", command="true", description="d")]), Completion(text="done")), options(ws, mode="ask", hooks=more_dispatch, on_permission=lambda req: "deny"))
+    assert prompted.final_answer == "done" and marks.read_text() == "permission_prompt\n"
+    asked = run("ask", Scripted(Completion(tool_calls=[call("ask_user", "q1", questions=[{"question": "Which?", "options": ["a", "b"]}])]), Completion(text="ok")), options(ws, hooks=more_dispatch, on_ask_user=lambda qs: ["a"]))
+    assert asked.final_answer == "ok" and marks.read_text() == "permission_prompt\nelicitation_dialog\n"
+    compacting = _Run(Scripted(Completion(text="S")), options(ws, hooks=more_dispatch, session_id="s9"))
+    compacting.compact_notes = more_dispatch.dispatch("preCompact", {"trigger": "auto"}, "auto").context
+    assert compacting.summarize("brief") == "S" and compacting.provider.requests[0][0][0].content.endswith("Additional instructions from the user's hooks:\nFOCUS ON TESTS")
+    footed = compact_messages([Message(role="system", content="S"), *[Message(role="user", content="u" * 4000), Message(role="assistant", content="a" * 4000)] * 3], keep_tokens=100, summarize=lambda b: "SUM", footer=TRANSCRIPT_NOTE.format(sid="s9"))
+    assert footed.compacted and footed.messages[1].content.endswith("The full transcript is session s9; `recall` restores any §ref named above in full.")
+    child_texts = [Completion(text=f"child {i}") for i in range(LIMITS.max_continue_nudges + 1)]
+    nested = run("go", Scripted(Completion(tool_calls=[call("delegate", task="look")]), *child_texts, Completion(text="parent done")), options(ws, hooks=more_dispatch))
+    assert nested.final_answer == "parent done" and f"child {LIMITS.max_continue_nudges}" in next(m.content for m in nested.messages if m.role == "tool")
+    rt = Runtime(gs=None, store=None, memory=None, registry=Registry(), policy=Policy(ws, Mode.AUTO, sandboxed=True), provider=None, workspace=ws, model="fake/m",
+                 settings=Settings.from_env({"XDG_CONFIG_HOME": str(ws / "cfg")}), hooks=more_dispatch, session_id="s9")
+    rt.close("clear")
+    assert marks.read_text().endswith("clear\n")
     provider = Scripted(Completion(tool_calls=[call("read_file", "c1", path="a.txt"), call("write_file", "c2", path="b.txt", description="d", content="y")]), Completion(text="final"))
     events, store = [], ObservationStore(gs)
     res = run("go", provider, options(ws, store=store, hooks=Dispatcher(load_hooks([config]), ws), on_event=events.append))

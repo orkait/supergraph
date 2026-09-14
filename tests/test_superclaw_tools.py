@@ -247,6 +247,9 @@ def test_file_tools(reg, ws, monkeypatch):
     edit = {"path": "src/a.py", "description": "d", "old_string": "beta", "new_string": "BETA"}
     (ws / "src" / "a.py").write_text("alpha\nbeta\ngamma\ndelta\n")
     assert "changed on disk" in reg.run("edit_file", edit, ctx).output
+    (ws / "src" / "fresh.py").write_text("one\n")
+    assert "read the file before editing" in reg.run("edit_file", {**edit, "path": "src/fresh.py", "old_string": "one"}, ctx).output and (ws / "src" / "fresh.py").read_text() == "one\n"
+    (ws / "src" / "fresh.py").unlink()
     reg.run("read_file", {"path": "src/a.py"}, ctx)
     res = reg.run("edit_file", edit, ctx)
     assert res.output == "Replaced 1 occurrence(s) in src/a.py" and res.display.kind == "diff" and "-beta\n+BETA" in res.display.preview

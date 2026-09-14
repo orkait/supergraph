@@ -10,16 +10,19 @@ from typing import Any
 
 from superclaw.settings import HOOK_SHELL, LIMITS, PLUGIN_ROOT_VARS
 
-EVENTS = ("sessionStart", "userPrompt", "beforeTool", "afterTool", "stop")
-CLAUDE_EVENTS = {"SessionStart": "sessionStart", "UserPromptSubmit": "userPrompt", "PreToolUse": "beforeTool", "PostToolUse": "afterTool", "Stop": "stop"}
+EVENTS = ("sessionStart", "userPrompt", "beforeTool", "afterTool", "permissionRequest", "notification", "preCompact", "stop", "subagentStop", "sessionEnd")
+CLAUDE_EVENTS = {"SessionStart": "sessionStart", "UserPromptSubmit": "userPrompt", "PreToolUse": "beforeTool", "PostToolUse": "afterTool",
+                 "PermissionRequest": "permissionRequest", "Notification": "notification", "PreCompact": "preCompact", "Stop": "stop",
+                 "SubagentStop": "subagentStop", "SessionEnd": "sessionEnd"}
 CLAUDE_NAMES = {event: name for name, event in CLAUDE_EVENTS.items()}
 CLAUDE_TOOLS = {"bash": "Bash", "read_file": "Read", "write_file": "Write", "edit_file": "Edit", "glob": "Glob", "grep": "Grep", "web_fetch": "WebFetch",
                 "web_search": "WebSearch", "skill": "Skill", "ask_user": "AskUserQuestion", "tool_search": "ToolSearch"}
 CLAUDE_KEYS = {"path": "file_path"}
 SUPERCLAW_KEYS = {claude: ours for ours, claude in CLAUDE_KEYS.items()}
-BLOCKING_EVENTS = ("beforeTool", "stop")
-TOOL_EVENTS = ("beforeTool", "afterTool")
+BLOCKING_EVENTS = ("beforeTool", "stop", "subagentStop")
+TOOL_EVENTS = ("beforeTool", "afterTool", "permissionRequest")
 DENY = "deny"
+ALLOW = "allow"
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,7 @@ class Outcome:
     context: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     updated_args: dict[str, Any] | None = None
+    permission: str = ""
 
 
 def _parse(path: Path, root: Path | None = None) -> list[Hook]:
@@ -166,6 +170,14 @@ class Dispatcher:
                         outcome.context.append(str(reason))
                     if isinstance(specific.get("updatedInput"), dict) and event in TOOL_EVENTS:
                         outcome.updated_args = rekey(specific["updatedInput"], SUPERCLAW_KEYS) if hook.claude else dict(specific["updatedInput"])
+                    verdict = specific.get("decision") if isinstance(specific.get("decision"), dict) else {"behavior": body.get("permission")}
+                    if event == "permissionRequest" and str(verdict.get("behavior") or "").lower() in (ALLOW, DENY) and not outcome.permission:
+                        outcome.permission = str(verdict["behavior"]).lower()
+                        outcome.blocked_by = hook.id
+                        if verdict.get("message"):
+                            outcome.context.append(str(verdict["message"]))
+                        if isinstance(verdict.get("updatedInput"), dict):
+                            outcome.updated_args = rekey(verdict["updatedInput"], SUPERCLAW_KEYS) if hook.claude else dict(verdict["updatedInput"])
             if (proc.returncode == LIMITS.hook_block_exit_code or decided_block) and event in BLOCKING_EVENTS:
                 outcome.blocked = True
                 outcome.blocked_by = hook.id

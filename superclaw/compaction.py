@@ -11,6 +11,7 @@ from superclaw.settings import LIMITS
 SUMMARY_LABEL = "[Summary of earlier conversation]"
 RESUME_NOTE = "Continue from here. Do not acknowledge this summary or restart finished work; the last user message is the current request."
 PRESERVED_LABEL = "## Preserved state (carried across compaction)"
+TRANSCRIPT_NOTE = "The full transcript is session {sid}; `recall` restores any §ref named above in full."
 _WORD = re.compile(r"\S+")
 
 SUMMARY_INSTRUCTIONS = (
@@ -21,6 +22,10 @@ SUMMARY_INSTRUCTIONS = (
     "7. Constraints and security rules stated by the user or the system, verbatim\n8. Open items and unresolved questions\n9. The next concrete step\n"
     "Do not invent details. If the brief begins with [previous summary], treat its facts as established and carry every one of them forward."
 )
+
+
+def summary_instructions(notes: list[str] | None = None) -> str:
+    return SUMMARY_INSTRUCTIONS + ("\nAdditional instructions from the user's hooks:\n" + "\n".join(notes) if notes else "")
 
 
 @dataclass
@@ -189,6 +194,7 @@ def compact(
     keep_tokens: int = LIMITS.compaction_keep_tokens,
     summarize: Callable[[str], str],
     plan_text: str = "",
+    footer: str = "",
 ) -> CompactionResult:
     system_end = _system_end(messages)
     boundary = cut_point(messages, keep_tokens)
@@ -199,6 +205,6 @@ def compact(
     content = f"{SUMMARY_LABEL}\n{summary}"
     if state := preserved_state(middle, plan_text):
         content += f"\n\n{state}"
-    content += f"\n\n{RESUME_NOTE}"
+    content += f"\n\n{RESUME_NOTE}" + (f"\n{footer}" if footer else "")
     compacted = [*messages[:system_end], Message(role="user", content=content), *messages[boundary:]]
     return CompactionResult(messages=compacted, removed=len(middle), preserved=len(messages) - len(middle), summary=summary, compacted=True)
