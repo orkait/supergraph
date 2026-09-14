@@ -346,7 +346,7 @@ class _Run:
         sid = o.session.create(cwd=str(o.workspace), model="", title=task, parent=o.session_id) if o.session else ""
         child_options = replace(
             o, **profile, history=[], session_id=sid, depth=o.depth + 1, on_ask_user=None, verify=False, require_completion_signal=True,
-            max_turns=min(int(args.get("max_turns") or LIMITS.delegate_max_turns), LIMITS.delegate_max_turns),
+            max_turns=int(args.get("max_turns") or LIMITS.max_turns),
             token_budget=max(int(args.get("budget_tokens") or LIMITS.delegate_budget_tokens), LIMITS.delegate_min_budget_tokens),
             on_event=(lambda event: o.on_event({**event, "child": sid})) if o.on_event else None,
         )

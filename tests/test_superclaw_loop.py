@@ -307,6 +307,10 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     assert "Only review." in child_prompt[0].content and child_tools == ["read_file"] and "delegate" not in child_tools
     assert next(e for e in events if e["type"] == "delegate")["agent"] == "reviewer"
     assert "as reviewer] done" in next(m.content for m in res.messages if m.role == "tool") and res.final_answer == "parent done"
+    deep = Scripted(Completion(tool_calls=[call("delegate", task="read a lot")]), *[read(f"d{i}") for i in range(30)], Completion(text="child read 30"), Completion(text="parent done"))
+    assert run("go", deep, options(ws)).final_answer == "parent done" and len(deep.requests) == 33 and "maximum" not in Delegate().parameters["properties"]["max_turns"]
+    capped = Scripted(Completion(tool_calls=[call("delegate", task="read", max_turns=2)]), read("e1"), read("e2"), Completion(text="child cut"), Completion(text="parent done"))
+    assert run("go", capped, options(ws)).final_answer == "parent done" and capped.requests[3][1] == []
     bad = Scripted(Completion(tool_calls=[call("delegate", task="x", agent="ghost")]), Completion(text="fine"))
     run("go", bad, options(ws, agents={"reviewer": reviewer}))
     assert "unknown agent 'ghost'" in bad.requests[1][0][-1].content
