@@ -127,7 +127,7 @@ def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[],
 class LitellmProvider:
     def __init__(
         self,
-        chain: list[dict[str, Any]],
+        chain: list[dict[str, Any]] | Callable[[], list[dict[str, Any]]],
         *,
         max_tokens: int = LIMITS.completion_max_tokens,
         temperature: float = 0.0,
@@ -135,14 +135,21 @@ class LitellmProvider:
         effort: str = "",
         stream: bool = True,
     ) -> None:
-        if not chain:
-            raise ValueError("LitellmProvider needs at least one provider in the chain")
-        self._chain = chain
+        self._source = chain
+        self._resolved: list[dict[str, Any]] | None = chain if isinstance(chain, list) else None
         self._max_tokens = max_tokens
         self._temperature = temperature
         self._timeout_s = timeout_s
         self.effort = effort
         self.streams = stream
+
+    @property
+    def _chain(self) -> list[dict[str, Any]]:
+        if self._resolved is None:
+            self._resolved = self._source() if callable(self._source) else self._source
+        if not self._resolved:
+            raise RuntimeError("no API key resolved for this model; run `superclaw setup` or set the provider's key")
+        return self._resolved
 
     @property
     def model(self) -> str:

@@ -6,8 +6,6 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from supergraph.ingest.llm.resolve import build_provider_chain
-
 from superclaw.agents import Agent, load_agents
 from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
@@ -211,8 +209,17 @@ def reader_for(provider: Provider | None) -> Callable[[str], str] | None:
 
 
 def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = (), stream: bool = True, max_tokens: int = LIMITS.completion_max_tokens) -> Provider | None:
-    chain = build_provider_chain([model, *fallbacks], free_first=False)
-    return LitellmProvider(chain, effort=effort, stream=stream, max_tokens=max_tokens) if chain else None
+    def resolve() -> list[dict[str, Any]]:
+        from supergraph.ingest.llm.resolve import build_provider_chain
+
+        return build_provider_chain([model, *fallbacks], free_first=False)
+
+    known = provider_of(model)
+    if known is not None and not os.environ.get(known.env):
+        return None
+    if known is None and not resolve():
+        return None
+    return LitellmProvider(resolve if known is not None else resolve(), effort=effort, stream=stream, max_tokens=max_tokens)
 
 
 def switch_model(rt: Runtime, model: str) -> None:
