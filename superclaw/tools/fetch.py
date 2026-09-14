@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import ipaddress
 import re
 import socket
@@ -8,12 +9,13 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from http import HTTPStatus
 from typing import Any
 
 from superclaw.delegate import SPAWN_KEY
 from superclaw.observations import ObservationStore
 from superclaw.runtime import approx_tokens, clip
-from superclaw.settings import LIMITS
+from superclaw.settings import BLOCKED_CODES, IMPERSONATE, LIMITS, READER_ENV, REDIRECT_CODES, Settings
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
 
@@ -101,7 +103,41 @@ def open_url(request: urllib.request.Request) -> Any:
     return urllib.request.build_opener(_Redirects()).open(request, timeout=LIMITS.web_fetch_timeout_s)
 
 
+def browser_client() -> Any | None:
+    try:
+        import primp
+    except ImportError:
+        return None
+    return primp.Client(impersonate=IMPERSONATE, follow_redirects=False, timeout=LIMITS.web_fetch_timeout_s)
+
+
+def phrase(status: int) -> str:
+    try:
+        return HTTPStatus(status).phrase
+    except ValueError:
+        return "Error"
+
+
+def fetch_as_browser(client: Any, url: str, max_bytes: int) -> Page:
+    current = validate(url).geturl()
+    for _ in range(LIMITS.web_fetch_redirects + 1):
+        response = client.get(current)
+        headers = {str(k).lower(): str(v) for k, v in dict(response.headers).items()}
+        status = int(response.status_code)
+        if status in REDIRECT_CODES and headers.get("location"):
+            current = validate(urllib.parse.urljoin(current, headers["location"])).geturl()
+            continue
+        if status >= 400:
+            raise urllib.error.HTTPError(current, status, phrase(status), headers, io.BytesIO(bytes(response.content)))
+        raw = bytes(response.content)
+        return Page(current, status, headers.get("content-type", ""), raw[:max_bytes], len(raw) > max_bytes)
+    raise OSError(f"more than {LIMITS.web_fetch_redirects} redirects")
+
+
 def fetch(url: str, max_bytes: int) -> Page:
+    client = browser_client()
+    if client is not None:
+        return fetch_as_browser(client, url, max_bytes)
     parsed = validate(url)
     with open_url(urllib.request.Request(parsed.geturl(), headers=HEADERS)) as response:
         raw = response.read(max_bytes + 1)
@@ -237,8 +273,20 @@ class WebFetch(Tool):
     safety = Safety(SideEffect.NETWORK, Permission.PROMPT, "Requests a model-chosen URL from this host and stores the page for a week.")
     output_category = Category.DEFAULT
 
-    def __init__(self, observations: ObservationStore | None = None) -> None:
+    def __init__(self, observations: ObservationStore | None = None, settings: Settings | None = None) -> None:
         self._store = observations
+        self._reader = settings.reader_url if settings else ""
+
+    def page(self, url: str, max_bytes: int) -> tuple[Page, str]:
+        try:
+            return fetch(url, max_bytes), ""
+        except urllib.error.HTTPError as blocked:
+            if not self._reader or blocked.code not in BLOCKED_CODES:
+                raise
+            try:
+                return fetch(self._reader + url, max_bytes), self._reader
+            except (Unsafe, urllib.error.HTTPError, OSError, ValueError):
+                raise blocked from None
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         url = str(args.get("url") or "").strip()
@@ -249,15 +297,18 @@ class WebFetch(Tool):
             return Result.error(f"Error: format must be one of {', '.join(FORMATS)}")
         max_bytes = max(1, min(int(args.get("max_bytes") or LIMITS.web_fetch_bytes), LIMITS.web_fetch_bytes_max))
         try:
-            page = fetch(url, max_bytes)
+            page, via = self.page(url, max_bytes)
         except Unsafe as e:
             return Result.error(f"Error: {e}")
         except urllib.error.HTTPError as e:
             detail = clip(e.read(LIMITS.web_fetch_bytes).decode("utf-8", errors="replace").strip(), LIMITS.preview_error_chars)
-            return Result.error(f"Error fetching URL: HTTP {e.code} {e.reason}" + (f"\n{detail}" if detail else ""))
+            remedy = f"; a reader proxy in {READER_ENV} (for example https://r.jina.ai/) retries blocked pages" if e.code in BLOCKED_CODES and not self._reader else ""
+            return Result.error(f"Error fetching URL: HTTP {e.code} {e.reason}{remedy}" + (f"\n{detail}" if detail else ""))
         except (OSError, ValueError) as e:
             return Result.error(f"Error fetching URL: {type(e).__name__}: {e}")
         head, body = render(page, format)
+        if via:
+            head.append(f"Via: {via}")
         stored = "\n".join([*head, "", body])
         if args.get("inline") or self._store is None:
             return Result.success(stored, truncated=page.truncated, meta={"full": stored})

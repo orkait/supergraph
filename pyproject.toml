@@ -125,6 +125,8 @@ cloud = [
 superclaw = [
     "supergraphdb[cloud]",
     "textual>=8",
+    "ddgs>=9",
+    "primp>=2",
 ]
 # onnxruntime-gpu for NER (TinyBERT) CUDA acceleration. Assumes host has
 # CUDA 12 + cuDNN 9 findable by the dynamic linker. Users needing bundled

@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from superclaw.runtime import clip
-from superclaw.settings import DUCKDUCKGO_LOCALE, DUCKDUCKGO_SEARCH_URL, ENGINE_GOOGLE, GOOGLE_CX_ENV, GOOGLE_KEY_ENV, GOOGLE_SEARCH_URL, LIMITS, Settings
+from superclaw.settings import DDGS_BACKEND, DUCKDUCKGO_LOCALE, DUCKDUCKGO_SEARCH_URL, ENGINE_GOOGLE, GOOGLE_CX_ENV, GOOGLE_KEY_ENV, GOOGLE_SEARCH_URL, LIMITS, Settings
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
 
@@ -114,12 +114,26 @@ def duckduckgo(query: str, limit: int) -> list[Hit]:
     raise Refused(f"DuckDuckGo refused the query as automated traffic; retry later or set {GOOGLE_KEY_ENV} and {GOOGLE_CX_ENV} to search with Google")
 
 
+def ddgs_search(query: str, limit: int) -> list[Hit] | None:
+    try:
+        from ddgs import DDGS
+        from ddgs.exceptions import DDGSException
+    except ImportError:
+        return None
+    try:
+        rows = DDGS().text(query, max_results=limit, backend=DDGS_BACKEND)
+    except DDGSException as e:
+        raise Refused(f"the search engines refused the query ({type(e).__name__}); retry later or set {GOOGLE_KEY_ENV} and {GOOGLE_CX_ENV} to search with Google") from e
+    return [Hit(str(row.get("title") or ""), str(row["href"]), str(row.get("body") or "")) for row in rows if row.get("href")][:limit]
+
+
 def search(settings: Settings, query: str, limit: int) -> list[Hit]:
     if settings.search_engine == ENGINE_GOOGLE:
         if not (settings.google_search_key and settings.google_search_cx):
             raise Refused(f"Google search needs {GOOGLE_KEY_ENV} and {GOOGLE_CX_ENV}")
         return google(query, limit, settings.google_search_key, settings.google_search_cx)
-    return duckduckgo(query, limit)
+    hits = ddgs_search(query, limit)
+    return duckduckgo(query, limit) if hits is None else hits
 
 
 def host_of(url: str) -> str:
@@ -145,7 +159,7 @@ class WebSearch(Tool):
     deferred = True
     description = (
         "Search the web and get ranked results as title, URL and snippet. Google when GOOGLE_API_KEY and GOOGLE_CSE_ID are set, "
-        "DuckDuckGo otherwise. Read a result's page with web_fetch; quote the URL you relied on."
+        "the open engines otherwise. Read a result's page with web_fetch; quote the URL you relied on."
     )
     parameters = {
         "type": "object",

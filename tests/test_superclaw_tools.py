@@ -120,6 +120,7 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     hosts = {"public.example": ["93.184.216.34"], "inner.example": ["10.0.0.5"], "both.example": ["93.184.216.34", "127.0.0.1"], "v6.example": ["::ffff:192.168.1.2"]}
     monkeypatch.setattr(fetch, "resolve", lambda host: hosts[host])
     monkeypatch.setattr(fetch, "open_url", open_url)
+    monkeypatch.setattr(fetch, "browser_client", lambda: None)
     web_fetch = WebFetch(store)
     summary = web_fetch.run({"url": "https://public.example/page"}, ctx)
     assert summary.ok and summary.output.startswith("URL: https://public.example/page\nStatus: 200\nContent-Type: text/html; charset=utf-8\nBytes: ") and "Converted: html to markdown" in summary.output
@@ -148,6 +149,32 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     with pytest.raises(fetch.Unsafe):
         fetch._Redirects().redirect_request(urllib.request.Request("https://public.example/page"), None, 302, "Found", {}, "http://inner.example/")
     assert WebFetch.deferred and WebFetch.safety.side_effect is SideEffect.NETWORK and fetch._Redirects.max_redirections == LIMITS.web_fetch_redirects
+
+    class FakeBrowserResponse:
+        def __init__(self, status, headers, content):
+            self.status_code, self.headers, self.content = status, headers, content
+
+    class FakeBrowser:
+        calls: list[str] = []
+        table = {"https://public.example/hop": FakeBrowserResponse(302, {"Location": "/landing"}, b""),
+                 "https://public.example/landing": FakeBrowserResponse(200, {"Content-Type": "text/plain"}, b"landed"),
+                 "https://public.example/leak": FakeBrowserResponse(302, {"Location": "http://inner.example/"}, b""),
+                 "https://public.example/blocked": FakeBrowserResponse(403, {"Content-Type": "text/html"}, b"<html>nope</html>"),
+                 "https://reader.example/https://public.example/blocked": FakeBrowserResponse(200, {"Content-Type": "text/plain"}, b"Title: X\n\nMarkdown Content:\nreader text")}
+
+        def get(self, url):
+            self.calls.append(url)
+            return self.table[url]
+
+    hosts["reader.example"] = ["93.184.216.34"]
+    monkeypatch.setattr(fetch, "browser_client", lambda: FakeBrowser())
+    landed = web_fetch.run({"url": "https://public.example/hop", "inline": True}, ctx)
+    assert landed.output.startswith("URL: https://public.example/landing\nStatus: 200\n") and landed.output.endswith("\n\nlanded") and FakeBrowser.calls == ["https://public.example/hop", "https://public.example/landing"]
+    assert "private" in web_fetch.run({"url": "https://public.example/leak"}, ctx).output
+    blocked = web_fetch.run({"url": "https://public.example/blocked"}, ctx)
+    assert not blocked.ok and blocked.output.startswith("Error fetching URL: HTTP 403 Forbidden; a reader proxy in SUPERCLAW_READER") and "nope" in blocked.output
+    proxied = WebFetch(store, Settings.from_env({"SUPERCLAW_READER": "https://reader.example/"})).run({"url": "https://public.example/blocked", "inline": True}, ctx)
+    assert proxied.ok and "Via: https://reader.example/" in proxied.output and proxied.output.endswith("\nreader text")
     gs.close()
 
 
@@ -178,6 +205,7 @@ def test_file_tools(reg, ws, monkeypatch):
     monkeypatch.setattr(web, "fetch", fake_fetch)
     monkeypatch.setattr(web, "pause", pauses.append)
     monkeypatch.setattr(web, "now", lambda: 0.0)
+    monkeypatch.setattr(web, "ddgs_search", lambda query, limit: None)
     duck = WebSearch(Settings.from_env({}))
     out = duck.run({"query": "textual tui"}, ctx).output
     assert out == ("Results from duckduckgo for: textual tui\n1. Textual\n   https://textual.textualize.io/\n   Textual is a TUI framework for Python.\n"
@@ -190,6 +218,14 @@ def test_file_tools(reg, ws, monkeypatch):
     assert not refused.ok and "DuckDuckGo refused" in refused.output and "GOOGLE_API_KEY" in refused.output
     assert sum(b"q=blocked" in (d or b"") for _, d in calls) == LIMITS.web_search_attempts and LIMITS.web_search_retry_s in pauses
     assert duck.run({"query": "flaky"}, ctx).ok and sum(b"q=flaky" in (d or b"") for _, d in calls) == 2 and pauses.count(LIMITS.web_search_min_interval_s) >= 2
+    monkeypatch.setattr(web, "ddgs_search", lambda query, limit: [web.Hit("Engine", "https://engine.example/", "served"), web.Hit("More", "https://more.example/", "")][:limit])
+    assert duck.run({"query": "any", "limit": 1}, ctx).output == "Results from duckduckgo for: any\n1. Engine\n   https://engine.example/\n   served"
+
+    def refuse(query, limit):
+        raise web.Refused("the search engines refused the query")
+
+    monkeypatch.setattr(web, "ddgs_search", refuse)
+    assert duck.run({"query": "any"}, ctx).output.startswith("Error: the search engines refused")
     keyed = Settings.from_env({"GOOGLE_API_KEY": "k", "GOOGLE_CSE_ID": "c"})
     assert keyed.search_engine == "google" and Settings.from_env({"SUPERCLAW_SEARCH": "duckduckgo", "GOOGLE_API_KEY": "k", "GOOGLE_CSE_ID": "c"}).search_engine == "duckduckgo"
     assert WebSearch(keyed).run({"query": "textual"}, ctx).output == "Results from google for: textual\n1. Textual\n   https://textual.textualize.io/\n   TUI framework"
