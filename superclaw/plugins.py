@@ -23,7 +23,6 @@ from superclaw.settings import (
     MARKETPLACE_SEP,
     MCP_FILE,
     PLUGIN_MANIFEST,
-    WORKSPACE_DIR,
     Settings,
 )
 
@@ -306,5 +305,3 @@ def remove(plugin_id: str, root: Path) -> Path:
     return target
 
 
-def workspace_plugins_dir(workspace: Path) -> Path:
-    return Path(workspace) / WORKSPACE_DIR / "plugins"

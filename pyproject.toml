@@ -234,6 +234,7 @@ python_version = "3.13"
 files = [
     "superclaw/dsl.py",
     "superclaw/intent.py",
+    "superclaw/mcp.py",
     "superclaw/runtime.py",
     "superclaw/settings.py",
     "superclaw/stages.py",

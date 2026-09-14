@@ -277,10 +277,6 @@ def context_for(rt: Runtime, prompt: str, intent: Intent | None = None) -> Conte
     return Context(system_prompt, len(hits), len(facts), len(skills), len(found.files) if found else 0)
 
 
-def system_prompt_for(rt: Runtime, prompt: str) -> str:
-    return context_for(rt, prompt).system_prompt
-
-
 def resolve_session(rt: Runtime, resume: str | None, fork: str | None = None) -> str:
     if fork:
         source = rt.store.latest() if fork == "latest" else fork
