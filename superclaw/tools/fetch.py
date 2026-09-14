@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
 
-from superclaw.runtime import clip
+from superclaw.delegate import SPAWN_KEY
+from superclaw.observations import ObservationStore
+from superclaw.runtime import approx_tokens, clip
 from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
@@ -191,36 +193,52 @@ def to_markdown(html: str) -> str:
     return parser.text()
 
 
-def render(page: Page, format: str) -> str:
+def render(page: Page, format: str) -> tuple[list[str], str]:
     text = decode(page)
     converted = format == "markdown" or (format == "auto" and looks_like_html(page.content_type, text))
     body = to_markdown(text) if converted else text
     head = [f"URL: {page.url}", f"Status: {page.status}", f"Content-Type: {page.content_type or 'unknown'}",
-            f"Bytes: {len(page.body):,}" + (", truncated at max_bytes; raise it or read the observation" if page.truncated else "")]
+            f"Bytes: {len(page.body):,}" + (", truncated at max_bytes; raise it for the rest" if page.truncated else "")]
     if converted:
         head.append('Converted: html to markdown (format "raw" keeps the html)')
-    return "\n".join([*head, "", body])
+    return head, body
+
+
+def digest(body: str) -> list[str]:
+    lines = [line.strip() for line in body.splitlines() if line.strip()]
+    headings = [line for line in lines if line.startswith("#")]
+    title = (headings[0] if headings else lines[0] if lines else "").lstrip("# ").strip()
+    out = [f"Title: {title or '(none)'}", f"Size: {approx_tokens(body):,} tokens, {body.count('](')} links"]
+    if headings:
+        out += ["Outline:", *headings[: LIMITS.web_fetch_outline_lines]]
+    return out
 
 
 class WebFetch(Tool):
     name = "web_fetch"
     deferred = True
     description = (
-        "Fetch a public http or https URL and return its text; HTML becomes compact markdown with headings, links, lists and code. "
-        "Loopback, private and link-local hosts are refused, use bash with curl for those. Long pages are cut at max_bytes; the whole page is stored, so recall its §id when you need more."
+        "Fetch a public http or https URL. The page is stored whole as a §ref (HTML as compact markdown) and you get its digest: title, size, outline. "
+        "Pass prompt to have a child agent read the whole page in a fresh context and answer it; that is the way to extract facts without paying for the page. "
+        "inline=true returns the text itself, budgeted. Loopback, private and link-local hosts are refused, use bash with curl for those."
     )
     parameters = {
         "type": "object",
         "properties": {
             "url": {"type": "string", "description": "Public http or https URL."},
+            "prompt": {"type": "string", "description": "Question or extraction task a child agent answers from the whole page."},
+            "inline": {"type": "boolean", "description": "Return the page text in this context instead of a digest.", "default": False},
             "max_bytes": {"type": "integer", "description": "Raw bytes to download before conversion.", "default": LIMITS.web_fetch_bytes, "minimum": 1, "maximum": LIMITS.web_fetch_bytes_max},
             "format": {"type": "string", "enum": list(FORMATS), "description": "auto converts HTML to markdown, raw never converts, markdown always does.", "default": "auto"},
         },
         "required": ["url"],
         "additionalProperties": False,
     }
-    safety = Safety(SideEffect.NETWORK, Permission.PROMPT, "Requests a model-chosen URL from this host; the page enters the context.")
+    safety = Safety(SideEffect.NETWORK, Permission.PROMPT, "Requests a model-chosen URL from this host and stores the page for a week.")
     output_category = Category.DEFAULT
+
+    def __init__(self, observations: ObservationStore | None = None) -> None:
+        self._store = observations
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         url = str(args.get("url") or "").strip()
@@ -239,5 +257,17 @@ class WebFetch(Tool):
             return Result.error(f"Error fetching URL: HTTP {e.code} {e.reason}" + (f"\n{detail}" if detail else ""))
         except (OSError, ValueError) as e:
             return Result.error(f"Error fetching URL: {type(e).__name__}: {e}")
-        output = render(page, format)
-        return Result.success(output, truncated=page.truncated, meta={"full": output})
+        head, body = render(page, format)
+        stored = "\n".join([*head, "", body])
+        if args.get("inline") or self._store is None:
+            return Result.success(stored, truncated=page.truncated, meta={"full": stored})
+        ref = self._store.save(ctx.session_id, self.name, "", stored, expires_days=LIMITS.web_raw_ttl_days)
+        head.append(f"Stored: §{ref} for {LIMITS.web_raw_ttl_days} days; recall §{ref} reads it in chunks")
+        prompt = str(args.get("prompt") or "").strip()
+        spawn = ctx.state.get(SPAWN_KEY)
+        if prompt and spawn is not None:
+            child = spawn({"task": f"{prompt}\n\nThe page is stored as §{ref}; read all of it with recall before answering, and quote what you rely on.", "refs": [ref]})
+            return Result(child.ok, "\n".join([*head, "", child.output]), truncated=page.truncated)
+        if prompt:
+            head.append("No child agent is available in this run; recall the §ref yourself")
+        return Result.success("\n".join([*head, "", *digest(body)]), truncated=page.truncated)

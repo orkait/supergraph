@@ -302,6 +302,8 @@ class Limits:
     web_fetch_timeout_s: float = 30.0
     web_fetch_redirects: int = 5
     web_fetch_sniff_chars: int = 512
+    web_fetch_outline_lines: int = 12
+    web_raw_ttl_days: int = 7
     download_bytes_max: int = 256 * 1024 * 1024
     download_timeout_s: float = 600.0
     download_chunk_bytes: int = 64 * 1024

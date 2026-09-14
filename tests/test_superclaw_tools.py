@@ -13,7 +13,8 @@ from supergraph import SuperGraph
 from superclaw import checks, review
 from superclaw.attach import read as read_attachments
 from superclaw.clipboard import parse_drop
-from superclaw.observations import ObservationStore
+from superclaw.delegate import SPAWN_KEY
+from superclaw.observations import ObservationStore, ref_in
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
 from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, files, jail, relative, web
@@ -106,7 +107,6 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     bare = Registry()
     bare.register(Leaky())
     assert "not recoverable" in bare.run("leaky", {}, ctx).output
-    gs.close()
     pages = {"https://public.example/page": FakeResponse("https://public.example/page", PAGE_HTML.encode()),
              "https://public.example/data": FakeResponse("https://public.example/data", b'{"a": 1}', "application/json"),
              "https://public.example/latin": FakeResponse("https://public.example/latin", b"caf\xe9", "text/plain; charset=latin-1"),
@@ -120,14 +120,23 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     hosts = {"public.example": ["93.184.216.34"], "inner.example": ["10.0.0.5"], "both.example": ["93.184.216.34", "127.0.0.1"], "v6.example": ["::ffff:192.168.1.2"]}
     monkeypatch.setattr(fetch, "resolve", lambda host: hosts[host])
     monkeypatch.setattr(fetch, "open_url", open_url)
-    web_fetch = WebFetch()
-    page = web_fetch.run({"url": "https://public.example/page"}, ctx)
-    assert page.ok and page.output.startswith("URL: https://public.example/page\nStatus: 200\nContent-Type: text/html; charset=utf-8\nBytes: ") and "Converted: html to markdown" in page.output
+    web_fetch = WebFetch(store)
+    summary = web_fetch.run({"url": "https://public.example/page"}, ctx)
+    assert summary.ok and summary.output.startswith("URL: https://public.example/page\nStatus: 200\nContent-Type: text/html; charset=utf-8\nBytes: ") and "Converted: html to markdown" in summary.output
+    ref = ref_in(summary.output)
+    assert f"Stored: §{ref} for {LIMITS.web_raw_ttl_days} days" in summary.output and "Title: Hello world" in summary.output and "Outline:\n# Hello world" in summary.output
+    assert "First para" not in summary.output and "First para with [a link](https://x.y/z)" in store.load(ref).body and "full" not in summary.meta
+    unread = web_fetch.run({"url": "https://public.example/page", "prompt": "what is it"}, ctx)
+    assert "No child agent" in unread.output and "First para" not in unread.output
+    ctx.state[SPAWN_KEY] = lambda a: Result.success(f"child read {a['refs'][0]} for: {a['task'].splitlines()[0]}")
+    answered = web_fetch.run({"url": "https://public.example/page", "prompt": "what is it"}, ctx)
+    assert answered.ok and answered.output.endswith(f"\n\nchild read {ref} for: what is it") and f"Stored: §{ref}" in answered.output
+    page = web_fetch.run({"url": "https://public.example/page", "inline": True}, ctx)
     assert page.output.split("\n\n", 1)[1] == "[Docs](/docs)\n\n# Hello world\n\nFirst para with [a link](https://x.y/z) and anchor.\n\n- one\n- two\n\n```\ncode  here\n```"
-    assert page.meta["full"] == page.output and "<h1>" in web_fetch.run({"url": "https://public.example/page", "format": "raw"}, ctx).output
-    data = web_fetch.run({"url": "https://public.example/data"}, ctx).output
-    assert data.endswith('\n\n{"a": 1}') and "Converted" not in data and web_fetch.run({"url": "https://public.example/latin"}, ctx).output.endswith("\n\ncafé")
-    cut = web_fetch.run({"url": "https://public.example/long", "max_bytes": 4}, ctx)
+    assert page.meta["full"] == page.output and "<h1>" in web_fetch.run({"url": "https://public.example/page", "format": "raw", "inline": True}, ctx).output
+    data = web_fetch.run({"url": "https://public.example/data", "inline": True}, ctx).output
+    assert data.endswith('\n\n{"a": 1}') and "Converted" not in data and web_fetch.run({"url": "https://public.example/latin", "inline": True}, ctx).output.endswith("\n\ncafé")
+    cut = web_fetch.run({"url": "https://public.example/long", "max_bytes": 4, "inline": True}, ctx)
     assert cut.truncated and "Bytes: 4, truncated" in cut.output and cut.output.endswith("\n\nabcd")
     missing = web_fetch.run({"url": "https://public.example/missing"}, ctx)
     assert not missing.ok and missing.output == "Error fetching URL: HTTP 404 Not Found\nnope"
@@ -139,6 +148,7 @@ def test_jail_and_boundary(tmp_path, ws, tmp_path_factory, monkeypatch):
     with pytest.raises(fetch.Unsafe):
         fetch._Redirects().redirect_request(urllib.request.Request("https://public.example/page"), None, 302, "Found", {}, "http://inner.example/")
     assert WebFetch.deferred and WebFetch.safety.side_effect is SideEffect.NETWORK and fetch._Redirects.max_redirections == LIMITS.web_fetch_redirects
+    gs.close()
 
 
 DUCK_HTML = (
