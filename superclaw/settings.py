@@ -296,6 +296,8 @@ class Limits:
 
     review_diff_tokens: int = 24_000
     share_timeout_s: float = 300.0
+    share_attach_timeout_s: float = 10.0
+    share_attach_poll_s: float = 0.05
     share_key_chars: int = 12
     share_backlog: int = 16
     share_message_bytes: int = 16 * 1024 * 1024
@@ -382,6 +384,7 @@ class Limits:
     shell_timeout_ms: int = 60_000
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
+    shell_drain_timeout_s: float = 2.0
     capture_preview_lines: int = 5
     kernel_trace_depth: int = 3
     kernel_checkpoint_timeout_s: float = 10.0
