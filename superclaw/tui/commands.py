@@ -11,6 +11,7 @@ from superclaw import maintain
 from superclaw.catalog import describe, keyed_providers
 from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
+from superclaw.prompt import _git_branch
 from superclaw.usercommands import UserCommand, load_commands
 
 if TYPE_CHECKING:
@@ -46,13 +47,16 @@ def _mode(app: SuperclawApp, arg: str) -> None:
 
 
 def _new(app: SuperclawApp, arg: str) -> None:
-    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model))
+    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model, branch=_git_branch(app.rt.workspace)))
 
 
 def _resume(app: SuperclawApp, arg: str) -> None:
-    sid = app.rt.store.latest() if arg in ("", "latest") else arg
+    if not arg:
+        app.open_resume()
+        return
+    sid = app.rt.store.latest() if arg == "latest" else arg
     if not sid or app.rt.store.get(sid) is None:
-        app.note(f"no session {arg or 'latest'!r}", error=True)
+        app.note(f"no session {arg!r}", error=True)
         return
     app.open_session(sid)
 
@@ -144,7 +148,7 @@ def _rollback(app: SuperclawApp, arg: str) -> None:
         app.note("usage: /rollback <name>, one of /snapshots", error=True)
         return
     maintain.rollback(app.rt.gs, arg)
-    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model))
+    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model, branch=_git_branch(app.rt.workspace)))
     app.note(f"rolled back to {arg}; everything written after it is gone, and this is a fresh session on the restored store")
 
 
@@ -258,7 +262,7 @@ COMMANDS = (
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
-    Command("/resume", "/resume [id|latest]", "continue an earlier session", _resume),
+    Command("/resume", "/resume [id|latest]", "pick an earlier session to continue, or name one", _resume),
     Command("/sessions", "/sessions [query|touching <path>]", "list recent sessions, search their events, or see who touched a file", _sessions),
     Command("/fork", "/fork [id|latest]", "copy a session into a new one and continue it", _fork),
     Command("/usage", "/usage", "tokens and cost spent in this session", _usage),

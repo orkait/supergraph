@@ -50,13 +50,17 @@ class Job:
         return _KILLED if code < 0 else _EXITED
 
     def drain(self) -> str:
-        if self.proc.poll() is not None:
+        return self.snapshot()[1]
+
+    def snapshot(self) -> tuple[int | None, str]:
+        code = self.proc.poll()
+        if code is not None:
             for thread in self.threads:
                 thread.join(LIMITS.shell_drain_timeout_s)
         with self.lock:
             fresh = "".join(self.chunks[self.read:])
             self.read = len(self.chunks)
-        return fresh.rstrip("\n")
+        return code, fresh.rstrip("\n")
 
     def kill(self) -> None:
         if self.proc.poll() is None:
@@ -188,8 +192,7 @@ class BashOutput(Tool):
         if args.get("kill"):
             job.kill()
             return Result.success(f"{job_id} killed.\n{job.drain()}".rstrip())
-        fresh = job.drain()
-        code = job.proc.poll()
+        code, fresh = job.snapshot()
         if code is None:
             return Result.success(f"{job_id} still running.\n{fresh}".rstrip() if fresh else f"{job_id} still running, no new output yet.")
         tail = f"{fresh}\n[exit {code}]" if fresh else f"[exit {code}]"

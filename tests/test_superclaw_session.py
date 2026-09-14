@@ -1,5 +1,6 @@
 import json
 import time
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +15,7 @@ from superclaw.facts import Facts, as_of_ms, parse
 from superclaw.memory import Memory, refusal
 from superclaw.observations import ObservationStore
 from superclaw.session import NAMESPACE, SessionStore
+from superclaw.tui.sessions import ResumeScreen, project_of, size_of
 from superclaw.settings import LIMITS
 from superclaw.tools import ToolContext
 
@@ -52,6 +54,21 @@ def test_sessions_fork_replay_and_namespace(gs):
     hits = store.search("kept")
     assert hits and {h["id"] for h in hits} <= {a, b} and all(h["type"] == "message" for h in hits)
     assert any("kept" in h["text"] for h in hits) and store.search("zzzznomatch") == []
+    named = store.create(cwd="/w", model="m")
+    assert store.name_once(named, "  fix   the   parser  bug\nand ship it ") == "fix the parser bug and ship it"
+    assert store.name_once(named, "something else") == "fix the parser bug and ship it" and store.get(named)["title"] == "fix the parser bug and ship it"
+    assert store.name_once(store.create(cwd="/w", model="m"), "   ") == "" and len(store.name_once(store.create(cwd="/w", model="m"), "x" * 200)) == LIMITS.session_title_chars
+    picked = [
+        {"id": "s_a", "cwd": "/w/one", "title": "first task", "branch": "main", "created": 1_700_000_000_000_000_000, "event_count": 3, "bytes": 4096, "model": "m"},
+        {"id": "s_b", "cwd": "/w/one", "title": "", "branch": "", "created": 1_700_000_000_000_000_000, "event_count": 1, "bytes": 0, "model": "m"},
+        {"id": "s_c", "cwd": "/w/two", "title": "elsewhere", "branch": "dev", "created": 1_700_000_000_000_000_000, "event_count": 9, "bytes": 90, "model": "m"},
+    ]
+    screen = ResumeScreen(picked, Path("/w/one"), "s_a")
+    assert [name for name, _ in screen.groups("")] == ["one"] and len(screen.groups("")[0][1]) == 2
+    screen.everywhere = True
+    assert [name for name, _ in screen.groups("")] == ["one", "two"] and screen.groups("elsewhere")[1][1][0]["id"] == "s_c"
+    assert screen.groups("dev")[0][1] == [] and screen.matches(picked[0], "first main") and not screen.matches(picked[0], "first dev")
+    assert size_of(picked[0]) == "4.1KB" and size_of(picked[1]) == "1 events" and project_of("/w/one") == "one"
     digest = store.keep_prompt("SYSTEM BODY")
     assert store.prompt_text(digest) == "SYSTEM BODY" and store.keep_prompt("SYSTEM BODY") == digest
     assert gs.execute('COUNT NODES WHERE kind = "prompt"', namespace="superclaw").count == 1 and store.prompt_text("nosuchhash") == ""

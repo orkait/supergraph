@@ -23,6 +23,7 @@ from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Mode, Policy
 from superclaw.prompt import PromptInputs, build_system_prompt
+from superclaw.prompt import _git_branch
 from superclaw.provider import LitellmProvider
 from superclaw.repomap import render, scan
 from superclaw.runtime import Message, Provider, approx_tokens
@@ -276,7 +277,7 @@ def resolve_session(rt: Runtime, resume: str | None, fork: str | None = None) ->
             raise KeyError(f"no session {fork!r}")
         rt.session_id = rt.store.fork(source)
     elif not resume:
-        rt.session_id = rt.store.create(cwd=str(rt.workspace), model=rt.model)
+        rt.session_id = rt.store.create(cwd=str(rt.workspace), model=rt.model, branch=_git_branch(rt.workspace))
     else:
         sid = rt.store.latest() if resume == "latest" else resume
         if not sid or rt.store.get(sid) is None:
@@ -303,6 +304,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         rt.policy.request_kind = classify(rt.provider, prompt)
         if cb.on_event:
             cb.on_event({"type": "intent", "kind": rt.policy.request_kind.value})
+    rt.store.name_once(sid, prompt)
     context = context_for(rt, prompt)
     system_prompt = context.system_prompt
     history = rt.store.replay(sid)

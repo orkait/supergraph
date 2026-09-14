@@ -425,6 +425,8 @@ class Limits:
     palette_usage_width: int = 32
     palette_help_chars: int = 60
     status_near_compaction: float = 0.5
+    resume_per_project: int = 12
+    session_title_chars: int = 72
     tui_tier_narrow: int = 58
     tui_tier_medium: int = 80
     tui_tier_full: int = 100

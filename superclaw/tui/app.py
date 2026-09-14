@@ -36,6 +36,7 @@ from superclaw.tui.commands import EXIT_WORDS, dispatch, matching, user_entries
 from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
+from superclaw.tui.sessions import ResumeScreen
 from superclaw.tui.setup import SetupScreen
 from superclaw.meter import ContextMeter
 from superclaw.tui.status import RunStats, StatusBar, Where, WorkingLine, tier
@@ -268,6 +269,17 @@ class SuperclawApp(App[None]):
     def recent_models(self) -> list[str]:
         seen = dict.fromkeys([self.rt.model, *(s["model"] for s in self.rt.store.recent())])
         return list(seen)[: LIMITS.recent_models_shown]
+
+    def open_resume(self) -> None:
+        sessions = self.rt.store.recent()
+        if not sessions:
+            self.note("no sessions yet", error=True)
+            return
+        self.push_screen(ResumeScreen(sessions, self.rt.workspace, self.session_id), self.after_resume)
+
+    def after_resume(self, sid: str | None) -> None:
+        if sid:
+            self.open_session(sid)
 
     def open_models(self) -> None:
         providers = keyed_providers()
