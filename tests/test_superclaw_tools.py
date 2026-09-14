@@ -25,7 +25,7 @@ from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.ingest import Ingest
-from superclaw.tools.shell import Bash
+from superclaw.tools.shell import Bash, BashOutput
 from superclaw.tools.web import WebSearch
 from superclaw.worktree import WorktreeError, prepare
 
@@ -296,6 +296,22 @@ def test_bash(tmp_path, monkeypatch):
     assert bash.run({"command": "pwd", "cwd": "sub"}, ctx).output == str((tmp_path / "sub").resolve())
     assert "timed out" in bash.run({"command": "sleep 5", "timeout_ms": 200}, ctx).output
     assert bash.category({"command": "pytest -q"}) is Category.TEST and bash.category({"command": "ls"}) is Category.PROCESS
+    poll = BashOutput(bash.jobs)
+    assert poll.run({}, ctx).output == "No background commands." and "unknown job 'bg_9'" in poll.run({"id": "bg_9"}, ctx).output
+    started = bash.run({"command": "echo first; sleep 0.4; echo second; exit 4", "run_in_background": True}, ctx)
+    assert started.ok and "Started bg_1 in the background" in started.output and 'bash_output(id="bg_1")' in started.output
+    while "still running" in (first := poll.run({"id": "bg_1"}, ctx)).output and "first" not in first.output:
+        pass
+    assert first.ok and first.output.startswith("bg_1 still running") and "first" in first.output and "second" not in first.output
+    seen = [first.output]
+    while (done := poll.run({"id": "bg_1"}, ctx)).output.startswith("bg_1 still running"):
+        seen.append(done.output)
+    assert not done.ok and done.output.endswith("[exit 4]") and "second" in "\n".join([*seen, done.output]) and poll.run({"id": "bg_1"}, ctx).output == "[exit 4]"
+    assert poll.run({}, ctx).output == "bg_1  exited 4  echo first; sleep 0.4; echo second; exit 4"
+    forever = bash.run({"command": "sleep 30", "run_in_background": True}, ctx)
+    assert "bg_2" in forever.output and poll.run({"id": "bg_2"}, ctx).output == "bg_2 still running, no new output yet."
+    assert poll.run({"id": "bg_2", "kill": True}, ctx).output == "bg_2 killed." and bash.jobs.jobs["bg_2"].status == "killed"
+    bash.jobs.close()
     fake = tmp_path / "bin" / "yt-dlp"
     fake.parent.mkdir()
     fake.write_text('#!/bin/sh\next=mp4\nwhile [ $# -gt 1 ]; do case "$1" in --paths) dest="$2"; shift;; --extract-audio) ext=mp3;; esac; shift; done\n'
