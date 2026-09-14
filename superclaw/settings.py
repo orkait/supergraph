@@ -229,6 +229,7 @@ class Limits:
     max_output_tokens_fallback: int = 8192
     message_overhead_tokens: int = 4
     completion_max_tokens: int = 32_768
+    min_output_tokens: int = 1024
     completion_timeout_s: int = 120
     max_turns: int = 0
     usd_decimals: int = 6

@@ -19,7 +19,7 @@ KINDS = {"read_file": "read", "list_directory": "read", "glob": "search", "grep"
          "bash": "execute", "python": "execute", "update_plan": "think", "delegate": "think"}
 OPTIONS = (("allow", "allow_once", "Allow"), ("allow_session", "allow_always", "Allow for this session"),
            ("allow_prefix", "allow_always", "Remember this command prefix"), ("deny", "reject_once", "Deny"))
-STOP = {"cancelled": "cancelled", "max_turns": "max_turn_requests"}
+STOP = {"cancelled": "cancelled", "max_turns": "max_turn_requests", "max_tokens": "max_tokens"}
 
 
 class RpcError(Exception):

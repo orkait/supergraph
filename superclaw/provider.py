@@ -127,7 +127,8 @@ class LitellmProvider:
     def max_tokens(self) -> int:
         return self._max_tokens
 
-    def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None) -> Completion:
+    def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None,
+                 max_tokens: int | None = None) -> Completion:
         last_err: Exception | None = None
         streaming = self.streams and on_text is not None
         for provider in self._chain:
@@ -137,7 +138,7 @@ class LitellmProvider:
                 "api_key": provider.get("api_key"),
                 "api_base": provider.get("api_base"),
                 "temperature": self._temperature,
-                "max_tokens": self._max_tokens,
+                "max_tokens": max_tokens or self._max_tokens,
                 "timeout": self._timeout_s,
                 "stream": streaming,
             }

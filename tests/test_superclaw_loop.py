@@ -13,6 +13,7 @@ from supergraph.core.errors import SuperGraphError
 import argparse
 
 from superclaw import checks, cron, spec
+from superclaw.acp import STOP
 from superclaw.acp import serve as acp_serve
 from superclaw.agents import Agent
 from superclaw.app import Runtime, build_registry
@@ -229,12 +230,24 @@ def test_guards_gates_and_verifier(ws):
     long = Scripted(*[read(f"r{i}") for i in range(LIMITS.identical_call_at * 6)], Completion(text="done"))
     unlimited = run("loop", long, options(ws))
     assert unlimited.final_answer == "done" and unlimited.stop_reason != "max_turns" and len(long.requests) == LIMITS.identical_call_at * 6 + 1 and LIMITS.max_turns == 0
-    cut = Scripted(Completion(finish_reason="length"), Completion(finish_reason="length"), read("t1"), Completion(finish_reason="length"), Completion(text="made it"))
+    class Capped(Scripted):
+        max_tokens = 32_768
+
+        def complete(self, messages, tools, max_tokens=None):
+            self.caps.append(max_tokens)
+            return super().complete(messages, tools)
+
+    cut = Capped(read("t1"), Completion(finish_reason="length"), Completion(text="never"))
+    cut.caps = []
     res = run("think", cut, options(ws))
-    nudges = [m.content for m in res.messages if m.role == "user" and "output limit" in m.content]
-    assert res.final_answer == "made it" and len(nudges) == 3 and "hidden reasoning used the whole budget" in nudges[0] and "0-token" in nudges[0]
-    stalled = run("think", Scripted(*[Completion(finish_reason="length")] * LIMITS.max_empty_turns), options(ws))
-    assert stalled.stop_reason == "no_output" and stalled.final_answer.startswith(f"Agent stopped: {LIMITS.max_empty_turns} responses in a row were cut off") and "SUPERCLAW_MAX_OUTPUT_TOKENS" in stalled.final_answer
+    assert res.stop_reason == "max_tokens" and res.incomplete and res.final_answer.startswith("Agent stopped: the response was cut off by the 32,768-token output limit") and len(cut.requests) == 2
+    assert cut.caps == [32_768, 32_768] and STOP["max_tokens"] == "max_tokens"
+    fitted = Capped(read("f1"), Completion(text="fits"))
+    fitted.caps = []
+    assert run("think", fitted, options(ws, context_window=10_000)).final_answer == "fits" and LIMITS.min_output_tokens <= fitted.caps[1] < fitted.caps[0] < 10_000
+    tiny = Capped(Completion(text="tiny"))
+    tiny.caps = []
+    assert run("think", tiny, options(ws, context_window=LIMITS.min_output_tokens // 2)).final_answer == "tiny" and tiny.caps == [LIMITS.min_output_tokens]
     silent = run("think", Scripted(*[Completion()] * LIMITS.max_empty_turns), options(ws))
     assert silent.stop_reason == "no_output" and "no visible output" in silent.final_answer
     provider = Scripted(Completion(tool_calls=[call("update_plan", plan=[{"content": "step", "status": "pending"}])]), *[Completion(text="still not done")] * 4)

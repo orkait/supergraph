@@ -27,7 +27,6 @@ from superclaw.guards import (
     tool_failure_hint,
     tool_failure_stop_answer,
     truncated_stop_answer,
-    truncated_turn_nudge,
 )
 from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
@@ -155,11 +154,24 @@ class _Run:
             seq = self.persist("message", payload)
         self.seqs.append(seq)
 
+    @property
+    def cap(self) -> int:
+        return int(getattr(self.provider, "max_tokens", 0) or 0)
+
+    def output_budget(self, exposed: list[dict[str, Any]]) -> dict[str, int]:
+        if not self.cap:
+            return {}
+        if not self.o.context_window:
+            return {"max_tokens": self.cap}
+        free = self.o.context_window - self.meter.used(estimate_tokens(self.messages, exposed))
+        return {"max_tokens": max(LIMITS.min_output_tokens, min(self.cap, free))}
+
     def complete(self, exposed: list[dict[str, Any]]) -> Completion:
+        budget = self.output_budget(exposed)
         try:
             if getattr(self.provider, "streams", False) and self.o.on_event:
-                return self.provider.complete(self.messages, exposed, on_text=lambda text: self.emit({"type": "text_delta", "text": text}))
-            return self.provider.complete(self.messages, exposed)
+                return self.provider.complete(self.messages, exposed, on_text=lambda text: self.emit({"type": "text_delta", "text": text}), **budget)
+            return self.provider.complete(self.messages, exposed, **budget)
         except Exception as e:
             self.persist("error", {"turn": self.turns, "error": f"{type(e).__name__}: {e}"})
             self.emit({"type": "error", "message": str(e), "recoverable": False})
@@ -294,12 +306,12 @@ class _Run:
 
     def finish_without_tools(self, completion: Completion) -> Result | None:
         text = completion.text
-        truncated = completion.finish_reason == FINISH_LENGTH and not text.strip()
-        cap = int(getattr(self.provider, "max_tokens", 0) or 0)
+        if completion.finish_reason == FINISH_LENGTH and not text.strip():
+            return self.result(truncated_stop_answer(self.cap), incomplete=True, incomplete_reason="output limit reached", stop_reason="max_tokens")
         if self.guards.observe_turn(text, 0):
-            return self.result(truncated_stop_answer(self.guards.empty_turns, cap) if truncated else no_output_stop_answer(self.turns), stop_reason="no_output")
+            return self.result(no_output_stop_answer(self.turns), stop_reason="no_output")
         if not text.strip():
-            self.append(Message(role="user", content=truncated_turn_nudge(cap) if truncated else EMPTY_TURN_NUDGE))
+            self.append(Message(role="user", content=EMPTY_TURN_NUDGE))
             return None
         if ends_with_promise(text) and not self.promise_nudged:
             self.promise_nudged = True
