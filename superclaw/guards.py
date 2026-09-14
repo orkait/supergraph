@@ -20,17 +20,10 @@ EMPTY_TURN_NUDGE = (
 FINISH_LENGTH = "length"
 
 
-def truncated_turn_nudge(cap: int) -> str:
+def truncated_stop_answer(cap: int) -> str:
     return (
-        f"Your previous response was cut off by the {cap:,}-token output limit before any visible text or tool call; "
-        "hidden reasoning used the whole budget. Reason briefly, then act with a tool or reply with your final answer."
-    )
-
-
-def truncated_stop_answer(turns: int, cap: int) -> str:
-    return (
-        f"Agent stopped: {turns} responses in a row were cut off by the {cap:,}-token output limit before producing text, "
-        "so I halted rather than continue silently. Lower the reasoning effort, or raise SUPERCLAW_MAX_OUTPUT_TOKENS."
+        f"Agent stopped: the response was cut off by the {cap:,}-token output limit before any visible text or tool call; "
+        "hidden reasoning used the whole budget. Lower the reasoning effort with /effort, or raise SUPERCLAW_MAX_OUTPUT_TOKENS."
     )
 
 
@@ -175,10 +168,6 @@ class Guards:
         self._identical_count = self._identical_count + 1 if key == self._identical else 1
         self._identical = key
         return identical_call_reminder(name, self._identical_count) if self._identical_count == LIMITS.identical_call_at else None
-
-    @property
-    def empty_turns(self) -> int:
-        return self._empty
 
     def observe_turn(self, text: str, tool_calls: int) -> bool:
         if not text.strip() and tool_calls == 0:
