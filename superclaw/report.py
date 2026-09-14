@@ -19,6 +19,7 @@ from superclaw.prompt import (
 from superclaw.runtime import approx_tokens, compact
 from superclaw.settings import ASCII, EFFORT_OFF, LIMITS
 from superclaw.skills import load_skills
+from superclaw.maintain import health_line
 from superclaw.tooling import host_tools
 
 _PERCENT = 100
@@ -83,6 +84,7 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         f"mcp {len(rt.mcp.tools) if rt.mcp else 0} tools {dot} {len(rt.mcp.clients) if rt.mcp else 0} servers"
         + (f" {dot} {len(rt.mcp.skipped)} skipped" if rt.mcp and rt.mcp.skipped else ""),
         graph_line(rt.gs, dot),
+        health_line(rt.gs, dot),
         "host tools " + (" ".join(host_tools()) or "none of the modern set"),
         "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),
     ]

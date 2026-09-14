@@ -85,6 +85,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     assert lines[1].startswith("sandbox ") and f"model {rt.model}" in lines[2]
     assert str(rt.settings.db_path) in lines[3] and lines[4] == "mcp 0 tools · 0 servers" and lines[-1].endswith("none; /setup")
     assert lines[5].startswith("graph no embedder, lexical recall only · ") and lines[5].endswith(" edges")
+    assert lines[6].startswith("health tombstones ") and "last maintain" in lines[6] and doctor_lines(lean, "/setup")[6].startswith("health not opened")
     monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)
