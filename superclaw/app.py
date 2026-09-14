@@ -40,7 +40,7 @@ from superclaw.tools.files import core_file_tools
 from superclaw.tools.ingest import Ingest
 from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.search import ToolSearch
-from superclaw.tools.shell import Bash
+from superclaw.tools.shell import Bash, BashOutput, Jobs
 from superclaw.tools.skill import SkillTool
 from superclaw.tools.web import WebSearch
 
@@ -90,6 +90,8 @@ class Runtime:
         self.policy.mode = value
 
     def close(self, reason: str = SESSION_END_OTHER) -> None:
+        if (bash := self.registry.get("bash")) is not None and hasattr(bash, "jobs"):
+            bash.jobs.close()
         if self.hooks:
             self.hooks.dispatch("sessionEnd", {"session": self.session_id, "reason": reason}, reason)
         if self.mcp:
@@ -147,7 +149,8 @@ def build_registry(memory: Memory, observations: ObservationStore, workspace: Pa
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
-    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts),
+    jobs = Jobs()
+    for tool in (*core_file_tools(), Bash(backend, kernel, jobs), BashOutput(jobs), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts),
                  Download(documents), Ingest(documents), memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts, documents), Delegate(),
                  *([Python(kernel)] if kernel else [])):
         registry.register(tool)
