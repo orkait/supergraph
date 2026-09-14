@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
-from superclaw.runtime import Completion, Message, ToolCall, Usage, to_wire
+from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, to_wire
 from superclaw.settings import ERROR_HINTS, LIMITS
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -24,6 +26,25 @@ def _completion(**kwargs: Any) -> Any:
     litellm.suppress_debug_info = True
     litellm.drop_params = True
     return litellm.completion(**kwargs)
+
+
+def with_deadline(call: Callable[[], Any], seconds: float) -> Any:
+    outcome: dict[str, Any] = {}
+
+    def attempt() -> None:
+        try:
+            outcome["value"] = call()
+        except BaseException as e:
+            outcome["error"] = e
+
+    worker = threading.Thread(target=attempt, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"the provider timed out: it accepted the request and sent nothing for {seconds:g}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 def parse_response(resp: Any) -> Completion:
@@ -56,12 +77,16 @@ def _visible(text: str) -> str:
     return cleaned if start < 0 else cleaned[:start]
 
 
-def collect(chunks: Any, on_text: Callable[[str], None]) -> Completion:
+def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[], bool] | None = None, deadline: float = 0.0) -> Completion:
     parts: list[str] = []
     calls: dict[Any, ToolCall] = {}
     order: list[Any] = []
     shown, finish, usage = "", "", Usage()
     for chunk in chunks:
+        if cancelled is not None and cancelled():
+            raise Cancelled("the user stopped the run")
+        if deadline and time.monotonic() > deadline:
+            raise TimeoutError(f"the provider timed out: the stream stalled after {LIMITS.completion_timeout_s}s")
         chunk_usage = getattr(chunk, "usage", None)
         if chunk_usage is not None:
             details = getattr(chunk_usage, "prompt_tokens_details", None)
@@ -128,7 +153,7 @@ class LitellmProvider:
         return self._max_tokens
 
     def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None,
-                 max_tokens: int | None = None) -> Completion:
+                 max_tokens: int | None = None, cancelled: Callable[[], bool] | None = None) -> Completion:
         last_err: Exception | None = None
         streaming = self.streams and on_text is not None
         for provider in self._chain:
@@ -153,9 +178,12 @@ class LitellmProvider:
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
+            deadline = time.monotonic() + self._timeout_s
             try:
-                response = _completion(**kwargs)
-                return collect(response, on_text) if streaming else parse_response(response)
+                response = with_deadline(lambda: _completion(**kwargs), self._timeout_s)
+                return collect(response, on_text, cancelled, deadline) if streaming else parse_response(response)
+            except Cancelled:
+                raise
             except Exception as e:
                 last_err = e
         raise RuntimeError(f"all providers failed: {last_err}")

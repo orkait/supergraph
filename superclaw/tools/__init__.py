@@ -153,6 +153,7 @@ class ToolContext:
     extra_dirs: tuple[Path, ...] = ()
     state: dict[str, Any] = field(default_factory=dict)
     files: FileTracker = field(default_factory=FileTracker)
+    cancelled: Callable[[], bool] | None = None
 
     @property
     def roots(self) -> tuple[Path, ...]:

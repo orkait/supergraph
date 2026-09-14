@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from rich.text import Text
@@ -63,7 +64,8 @@ PHASE_WAITING = "waiting for you"
 PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
 FRESH_CONTEXT = "fresh context"
-BUSY_COMMANDS = ("/new", "/clear", "/reset", "/resume", "/fork", "/model", "/compact", "/retry", "/agent")
+BUSY_COMMANDS = ("/new", "/clear", "/reset", "/resume", "/fork", "/model", "/compact", "/retry", "/agent",
+                 "/mode", "/effort", "/rollback", "/maintain", "/setup")
 
 
 def context_overview(event: dict[str, Any], glyphs: Glyphs) -> str:
@@ -455,6 +457,9 @@ class SuperclawApp(App[None]):
         return self.palette_open() if action.startswith("palette_") else True
 
     def action_cycle_mode(self) -> None:
+        if self.running:
+            self.note("the mode stays put while a run is in flight; esc stops it first", error=True)
+            return
         self.rt.mode = next_mode(self.rt.mode)
         self.refresh_status()
         self.note(f"mode {self.rt.mode.value}")
@@ -587,6 +592,32 @@ class SuperclawApp(App[None]):
             self.query_one(WorkingLine).start(PHASE_COMPACTING)
             self.compact_worker()
 
+    def defer(self, label: str, work: Callable[[], list[str]]) -> None:
+        if self.running:
+            self.note("a run is in progress; esc cancels it", error=True)
+            return
+        self.running = True
+        self.query_one("#hints").add_class("hidden")
+        self.stats.timer.start()
+        self.query_one(WorkingLine).start(label)
+        self.deferred_worker(label, work)
+
+    @work(thread=True, exclusive=True)
+    def deferred_worker(self, label: str, work: Callable[[], list[str]]) -> None:
+        try:
+            lines = work()
+        except Exception as e:
+            self.call_from_thread(self.settle_deferred, [f"{label} failed: {clip(str(e), LIMITS.preview_error_chars)}"], True)
+            return
+        self.call_from_thread(self.settle_deferred, lines, False)
+
+    def settle_deferred(self, lines: list[str], error: bool) -> None:
+        self.running = False
+        self.query_one(WorkingLine).stop()
+        self.show_hints()
+        for line in lines:
+            self.note(line, error=error)
+
     @work(thread=True, exclusive=True)
     def compact_worker(self) -> None:
         pairs = self.rt.store.timeline(self.session_id)
@@ -695,12 +726,18 @@ class SuperclawApp(App[None]):
 
     def action_cancel(self) -> None:
         palette = self.query_one("#palette", OptionList)
+        prompt = self.query_one("#prompt", Input)
         if not palette.has_class("hidden"):
             palette.add_class("hidden")
-            self.query_one("#prompt", Input).value = ""
+            prompt.value = ""
         elif self.running:
             self.cancel_flag.set()
             self.phase(PHASE_CANCELLING)
+        elif prompt.value:
+            prompt.value = ""
+            self.clips.clear()
+        else:
+            self.note("nothing to cancel")
 
     def action_interrupt(self) -> None:
         if self.running and not self.cancel_flag.is_set():

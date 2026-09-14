@@ -44,6 +44,10 @@ class Completion:
     finish_reason: str = ""
 
 
+class Cancelled(RuntimeError):
+    pass
+
+
 class Provider(Protocol):
     def complete(self, messages: list[Message], tools: list[dict[str, Any]]) -> Completion: ...
 

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -29,7 +30,8 @@ from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Action, Mode, Policy
-from superclaw.runtime import Completion, Message, ToolCall, Usage, approx_tokens
+from superclaw.provider import collect, with_deadline
+from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, approx_tokens
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
@@ -44,7 +46,7 @@ class Scripted:
         self.queue = list(completions)
         self.requests = []
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, **kw):
         self.requests.append((list(messages), [t["function"]["name"] for t in tools]))
         item = self.queue.pop(0) if self.queue else Completion(text="(exhausted)")
         if isinstance(item, Exception):
@@ -242,6 +244,29 @@ def test_round_trip_permissions_and_persistence(ws, gs):
 
 
 def test_guards_gates_and_verifier(ws):
+    slow = time.monotonic() + 30
+    assert with_deadline(lambda: "quick", 5) == "quick"
+    with pytest.raises(TimeoutError, match="timed out"):
+        with_deadline(lambda: time.sleep(slow - time.monotonic()), 0.2)
+    with pytest.raises(ValueError, match="inner"):
+        with_deadline(lambda: (_ for _ in ()).throw(ValueError("inner")), 5)
+    stream = iter([Completion(text="a"), Completion(text="b")])
+    with pytest.raises(Cancelled):
+        collect(stream, lambda _: None, cancelled=lambda: True)
+    with pytest.raises(TimeoutError, match="stream stalled"):
+        collect(iter([Completion(text="a")]), lambda _: None, deadline=time.monotonic() - 1)
+
+    class Hanging:
+        streams = False
+
+        def complete(self, messages, tools, **kw):
+            raise Cancelled("the user stopped the run")
+
+    stopped = run("go", Hanging(), options(ws, cancelled=lambda: True))
+    assert stopped.stop_reason == "cancelled" and stopped.final_answer == "Stopped by the user."
+    killed = Bash().run({"command": "sleep 20", "description": "d", "timeout_ms": 20_000},
+                        ToolContext(workspace=ws, cancelled=lambda: True))
+    assert not killed.ok and killed.output == "Error: stopped by the user"
     bad = [Completion(tool_calls=[call("edit_file", f"c{i}", path="a.txt", description="d", old_string="zzz", new_string="y")]) for i in range(8)]
     res = run("edit", Scripted(*bad), options(ws))
     assert res.stop_reason == "tool_failure_loop" and sum("match it exactly" in m.content for m in res.messages if m.role == "user") == 1
@@ -253,7 +278,7 @@ def test_guards_gates_and_verifier(ws):
     class Capped(Scripted):
         max_tokens = 32_768
 
-        def complete(self, messages, tools, max_tokens=None):
+        def complete(self, messages, tools, max_tokens=None, **kw):
             self.caps.append(max_tokens)
             return super().complete(messages, tools)
 
@@ -392,7 +417,7 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     class Streaming(Scripted):
         streams = True
 
-        def complete(self, messages, tools, on_text=None):
+        def complete(self, messages, tools, on_text=None, **kw):
             for fragment in ("Hel", "lo") if on_text else ():
                 on_text(fragment)
             return super().complete(messages, tools)
