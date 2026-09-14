@@ -5,6 +5,8 @@ import os
 import queue
 import re
 import signal
+
+from superclaw.hooks import substitute
 import subprocess
 import threading
 import time
@@ -89,10 +91,11 @@ def load_config(paths: list[Path]) -> Config:
                 config.problems.append(f"{name}: already defined in an earlier config file; the first one wins")
                 continue
             seen.add(name)
+            root = path.parent
             config.servers.append(Server(
-                name=name, command=str(raw.get("command") or "").strip(),
-                args=[str(a) for a in raw.get("args") or []],
-                env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
+                name=name, command=substitute(str(raw.get("command") or "").strip(), root),
+                args=[substitute(str(a), root) for a in raw.get("args") or []],
+                env={str(k): substitute(str(v), root) for k, v in (raw.get("env") or {}).items()},
                 url=str(raw.get("url") or "").strip(),
                 headers={str(k): str(v) for k, v in (raw.get("headers") or {}).items()},
             ))

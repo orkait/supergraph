@@ -73,6 +73,7 @@ class Options:
     session_id: str = ""
     summarize: Callable[[str], str] | None = None
     hooks: Dispatcher | None = None
+    session_start: bool = True
     depth: int = 0
     cancelled: Callable[[], bool] | None = None
 
@@ -477,7 +478,10 @@ class _Run:
         self.persist("prompt", {"hash": prompt_hash(o.system_prompt), "tokens": approx_tokens(o.system_prompt), "text": o.system_prompt})
         self.append(Message(role="user", content=prompt, images=list(o.images)))
         if o.hooks:
-            for line in o.hooks.dispatch("sessionStart", {"session": o.session_id, "prompt": prompt}).context:
+            if o.session_start:
+                for line in o.hooks.dispatch("sessionStart", {"session": o.session_id, "prompt": prompt}, "resume" if o.history else "startup").context:
+                    self.append(Message(role="user", content=f"[hook] {line}"))
+            for line in o.hooks.dispatch("userPrompt", {"session": o.session_id, "prompt": prompt}).context:
                 self.append(Message(role="user", content=f"[hook] {line}"))
         for turn in range(max(1, o.max_turns)):
             self.turns = turn + 1

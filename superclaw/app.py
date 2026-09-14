@@ -49,6 +49,9 @@ class NoProviderKey(RuntimeError):
     pass
 
 
+_started: set[str] = set()
+
+
 @dataclass
 class Runtime:
     gs: Any
@@ -117,11 +120,11 @@ def build_kernel(workspace: Path, backend: Backend | None, observations: Observa
 
 
 def build_hooks(settings: Settings, workspace: Path, trust_workspace: bool) -> Dispatcher | None:
-    paths = [settings.user_hooks]
+    entries: list[Path | tuple[Path, Path | None]] = [settings.user_hooks]
     if trust_workspace:
-        paths.append(workspace / WORKSPACE_DIR / "hooks.json")
-    paths += [d / "hooks.json" for d in settings.plugin_dirs(workspace, trusted=trust_workspace)]
-    hooks = load_hooks(paths)
+        entries.append(workspace / WORKSPACE_DIR / "hooks.json")
+    entries += [(plugin.hooks, plugin.path) for plugin in settings.plugins(workspace, trusted=trust_workspace) if plugin.hooks]
+    hooks = load_hooks(entries)
     return Dispatcher(hooks, workspace) if hooks else None
 
 
@@ -129,7 +132,7 @@ def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> lis
     paths = [settings.user_mcp]
     if trust_workspace:
         paths.append(workspace / WORKSPACE_DIR / MCP_FILE)
-    return paths + [d / MCP_FILE for d in settings.plugin_dirs(workspace, trusted=trust_workspace)]
+    return paths + [plugin.mcp for plugin in settings.plugins(workspace, trusted=trust_workspace) if plugin.mcp]
 
 
 def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,
@@ -305,8 +308,9 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         agents={a.name: a for a in load_agents(rt.settings.agent_roots(rt.workspace))},
         require_completion_signal=require_completion, verify=verify,
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
-        session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled,
+        session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled, session_start=sid not in _started,
     ))
+    _started.add(sid)
     if rt.kernel and rt.registry.observations and (blob := rt.kernel.checkpoint()):
         rt.registry.observations.save_kernel(sid, blob)
     return result

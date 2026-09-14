@@ -511,7 +511,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     plg = sub.add_parser("plugin", help="list, install or remove plugins: directories that bundle skills, agents, commands, hooks and MCP servers")
     plg_sub = plg.add_subparsers(dest="plugin_command")
     plg_sub.add_parser("list", help="plugins found under the workspace and the config dir")
-    plg_sub.add_parser("install", help="copy a plugin directory, or clone a git URL, into the config dir").add_argument("source")
+    plg_install = plg_sub.add_parser("install", help="copy a plugin directory, or clone a git URL, into the config dir; superclaw and Claude Code plugin formats")
+    plg_install.add_argument("source")
+    plg_install.add_argument("--link", action="store_true", help="symlink a local directory instead of copying it, so a checkout stays live")
     plg_sub.add_parser("remove", help="delete an installed plugin by id").add_argument("id")
     upd = sub.add_parser("update", help="check for a newer superclaw, and install it with --apply")
     upd.add_argument("--apply", action="store_true", help="run the install command for this install method")
@@ -554,17 +556,17 @@ def cmd_repo_map(settings: Settings, workspace: Path, args: argparse.Namespace) 
 def cmd_plugin(settings: Settings, workspace: Path, args: argparse.Namespace) -> int:
     try:
         if args.plugin_command == "install":
-            plugin = plugins.install(args.source, settings.user_plugins)
-            print(f"installed {plugin.id} {plugin.version} to {plugin.path}; provides {', '.join(plugin.parts) or 'nothing yet'}")
+            plugin = plugins.install(args.source, settings.user_plugins, link=args.link)
+            print(f"installed {plugin.id} {plugin.version} ({plugin.format} format{', linked' if args.link else ''}) to {plugin.path}; provides {', '.join(plugin.parts) or 'nothing yet'}")
             return 0
         if args.plugin_command == "remove":
             print(f"removed {plugins.remove(args.id, settings.user_plugins)}")
             return 0
     except plugins.PluginError as e:
         sys.exit(f"superclaw: {e}")
-    found = plugins.load_plugins(settings.plugin_roots(workspace))
+    found = settings.plugins(workspace)
     for plugin in found:
-        print(f"{plugin.id:<{_NAME_WIDTH}} {plugin.version:<{_TOKENS_WIDTH}} {plugin.description}  [{', '.join(plugin.parts) or 'empty'}]  ({plugin.path})")
+        print(f"{plugin.id:<{_NAME_WIDTH}} {plugin.version:<{_TOKENS_WIDTH}} {plugin.format:<{_TOKENS_WIDTH}} {plugin.description}  [{', '.join(plugin.parts) or 'empty'}]  ({plugin.path})")
     if not found:
         print(f"no plugins; install one with `superclaw plugin install <dir|git url>` into {settings.user_plugins}", file=sys.stderr)
         return 1
