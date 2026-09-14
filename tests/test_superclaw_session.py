@@ -7,6 +7,7 @@ from supergraph import SuperGraph
 from superclaw.compaction import SUMMARY_LABEL
 from superclaw.facts import as_of_ms, parse
 from superclaw.memory import Memory, refusal
+from superclaw.observations import ObservationStore
 from superclaw.session import NAMESPACE, SessionStore
 from superclaw.tools import ToolContext
 
@@ -35,6 +36,13 @@ def test_sessions_fork_replay_and_namespace(gs):
     store.append(b, "message", {"role": "user", "content": "more"})
     assert store.get(b)["parent"] == a and len(store.events(a)) == 7 and len(store.events(b)) == 8 and store.latest() == b
     assert gs.execute("COUNT NODES").count == 0 and gs.execute("COUNT NODES", namespace=NAMESPACE).count > 0
+    store.touch(a, "/ws/x.py", "read")
+    store.touch(a, "/ws/x.py", "read")
+    store.touch(a, "/ws/x.py", "wrote")
+    store.touch(b, "/ws/y.py", "wrote")
+    assert store.files_of(a) == [("/ws/x.py", "read"), ("/ws/x.py", "wrote")] and [s["id"] for s in store.touching("/ws/x.py")] == [a] and store.touching("/ws/none") == []
+    ref = ObservationStore(gs).save(a, "read_file", "c9", "body " * 10)
+    assert store.around(a)["produced"] == [f"obs:{ref}"] and store.around(a)["forked_from"] == [f"session:{b}"] and store.around(b) == {}
     hits = store.search("kept")
     assert hits and {h["id"] for h in hits} <= {a, b} and all(h["type"] == "message" for h in hits)
     assert any("kept" in h["text"] for h in hits) and store.search("zzzznomatch") == []
@@ -67,6 +75,7 @@ def test_memory_files_only_stated_facts(gs, tmp_path):
     facts = mem.facts
     first = facts.assert_("Textual is built by Textualize.", "https://textual.textualize.io/", session_id="s1", observed_at=1_000_000)
     assert first.id.startswith("fact:") and facts.search("who builds Textual", as_of=1_000_001) == [first] and facts.search("who builds Textual", as_of=999_999) == []
+    assert gs.execute(f'EDGES FROM "{first.id}"', namespace=NAMESPACE).data == []
     assert facts.assert_("textual  is built by Textualize.", "https://textual.textualize.io/").id == first.id and facts.recent()[0].observed_at > 1_000_000
     assert facts.render([first]) == f"- ({facts.render([first]).split(',')[0][3:]}, https://textual.textualize.io/) Textual is built by Textualize."
     assert first.id in mem.search_tool().run({"query": "who builds Textual"}, ctx).output and "textual.textualize.io" in mem.search_tool().run({"query": "who builds Textual"}, ctx).output

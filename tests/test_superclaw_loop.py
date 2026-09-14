@@ -108,6 +108,11 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     assert res.final_answer == "it says hello" and [m.role for m in res.messages] == ["system", "user", "assistant", "tool", "assistant"]
     assert res.messages[3].content.startswith('<untrusted source="read_file">')
     assert [e["type"] for e in store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    touched = str((ws / "a.txt").resolve())
+    assert store.files_of(sid) == [(touched, "read")] and [s["id"] for s in store.touching(touched)] == [sid] and store.touching(str(ws / "zz.txt")) == []
+    around = Recall(store=ObservationStore(gs), sessions=store).run({"path": "a.txt"}, ToolContext(workspace=ws)).output
+    assert around.startswith("a.txt: touched by 1 session(s)\n") and f"{sid} '(untitled)': read" in around
+    assert "No earlier session touched" in Recall(store=ObservationStore(gs), sessions=store).run({"path": "zz.txt"}, ToolContext(workspace=ws)).output
     write = Completion(tool_calls=[call("write_file", path="b.txt", description="d", content="x")])
     assert "denied" in run("write", Scripted(write, Completion(text="done")), options(ws, mode="ask")).messages[3].content
     seen = []

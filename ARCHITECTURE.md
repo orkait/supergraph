@@ -60,7 +60,7 @@ What the harness writes into the substrate, all through `gs.execute`:
 | `kernel` | python namespace checkpoint per session | `superclaw` | overwritten |
 | `cronjob` | scheduled prompts | `superclaw` | until deleted |
 
-Edges: `session -> session` (`fork`), `fact -> obs` (`from`), `fact -> fact` (`supersedes`).
+Edges: `session -> session` (`fork`), `session -> file` (`read`, `wrote`), `obs -> session` (`produced`), `fact -> session` (`learned_in`), `fact -> obs` (`from`), `fact -> fact` (`supersedes`). `file` nodes hold the absolute path and live in the `superclaw` namespace. Memories carry no edges: they sit in the default namespace, and an edge across namespaces is accepted but invisible from both sides.
 
 ## Why they live together
 

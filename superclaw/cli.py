@@ -35,6 +35,7 @@ from superclaw.schema import problems as schema_problems
 from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
 from superclaw.share import NotServing
 from superclaw.skills import load_skills
+from superclaw.tools import jail
 from superclaw.usercommands import expand, load_commands
 from superclaw.usercommands import find as find_command
 from superclaw.worktree import WorktreeError
@@ -277,6 +278,13 @@ def cmd_import(rt: Runtime, args: argparse.Namespace) -> int:
 
 
 def cmd_sessions(rt: Runtime, args: argparse.Namespace) -> int:
+    if args.touching:
+        path = str(jail(rt.workspace, args.touching))
+        found = rt.store.touching(path)
+        for s in found:
+            verbs = sorted({verb for file, verb in rt.store.files_of(s["id"]) if file == path})
+            print(f"{s['id']}  {', '.join(verbs):<12} {s.get('title') or ''}")
+        return 0 if found else 1
     if args.query:
         hits = rt.store.search(args.query)
         for hit in hits:
@@ -462,6 +470,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     facts.add_argument("--reason", default="", help="why it is retracted")
     sess = sub.add_parser("sessions", help="list sessions, or search their events")
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
+    sess.add_argument("--touching", default="", help="list the sessions that read or wrote this workspace path")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
     sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose")
     sub.add_parser("usage", help="token and cost totals per recent session")

@@ -8,10 +8,10 @@ from typing import Any
 
 from supergraph.core.errors import SuperGraphError
 
-from superclaw.dsl import MS_PER_SECOND, age, lit, now_ms, rows
+from superclaw.dsl import MS_PER_SECOND, age, edge, lit, now_ms, rows
 from superclaw.redaction import redact
 from superclaw.session import NAMESPACE
-from superclaw.settings import FACT_KIND, FROM_EDGE, LIMITS, SUPERSEDES_EDGE
+from superclaw.settings import FACT_KIND, FROM_EDGE, LEARNED_EDGE, LIMITS, SUPERSEDES_EDGE
 
 FACT_LINE = re.compile(r"^\s*[-*]\s*(?P<text>[^|]+?)\s*(?:\|\s*(?P<quote>.+?))?\s*$")
 FACTS_HEADING = "Facts:"
@@ -81,14 +81,12 @@ class Facts:
         self._x(f"ASSERT {lit(node)} {fields} CONFIDENCE {confidence} SOURCE {lit(source)} EVENT_AT {at}")
         if page_ref:
             self.link(node, f"obs:{page_ref}", FROM_EDGE)
+        if session_id:
+            self.link(node, f"session:{session_id}", LEARNED_EDGE)
         return Fact(node, text, source, at, confidence)
 
-    def link(self, source: str, target: str, kind: str) -> None:
-        try:
-            self._x(f"CREATE EDGE {lit(source)} -> {lit(target)} kind = {lit(kind)}")
-        except SuperGraphError as e:
-            if "duplicate" not in str(e).lower():
-                raise
+    def link(self, source: str, target: str, kind: str) -> bool:
+        return edge(self._gs, source, target, kind, NAMESPACE)
 
     def retract(self, node: str, reason: str) -> None:
         self._x(f"RETRACT {lit(node)} REASON {lit(reason)}")

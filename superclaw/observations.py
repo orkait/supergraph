@@ -7,10 +7,11 @@ from typing import Any
 
 from supergraph.core.errors import SuperGraphError
 
+from superclaw.dsl import edge
 from superclaw.runtime import approx_tokens
 from superclaw.session import NAMESPACE, _lit
-from superclaw.settings import LIMITS
-from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
+from superclaw.settings import LEARNED_EDGE, LIMITS, PRODUCED_EDGE
+from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
 
 REF = re.compile(r"§([0-9a-f]{8,})")
 KIND = "obs"
@@ -64,6 +65,8 @@ class ObservationStore:
                 f'CREATE NODE {_lit(KIND + ":" + ref)} kind = {_lit(KIND)} sid = {_lit(session_id)} tool = {_lit(tool)} '
                 f'call_id = {_lit(call_id)} tokens = {approx_tokens(body)} chars = {len(body)}{expires} DOCUMENT {_lit(body)}'
             )
+            if session_id:
+                edge(self._gs, f"{KIND}:{ref}", f"session:{session_id}", PRODUCED_EDGE, NAMESPACE)
         return ref
 
     def load(self, ref: str) -> Observation | None:
@@ -100,7 +103,7 @@ class Recall(Tool):
     deferred = True
     description = (
         "Bring back an earlier tool result that was shortened or pruned. Pass ref (the §id shown in the result) and an optional chunk, "
-        "or a query to search every stored result by meaning."
+        "a query to search every stored result by meaning, or a path to see which earlier sessions read or wrote that file and what they learned and stored."
     )
     parameters = {
         "type": "object",
@@ -108,15 +111,41 @@ class Recall(Tool):
             "ref": {"type": "string", "description": "The id after § in a result."},
             "chunk": {"type": "integer", "minimum": 0, "default": 0},
             "query": {"type": "string", "description": "Find results by meaning when the id is unknown."},
+            "path": {"type": "string", "description": "Workspace path; lists the sessions that touched it, their facts and stored results."},
         },
         "additionalProperties": False,
     }
     safety = Safety(SideEffect.READ, Permission.ALLOW, "Reads stored tool results.")
 
-    def __init__(self, store: ObservationStore) -> None:
+    def __init__(self, store: ObservationStore, sessions: Any | None = None, facts: Any | None = None) -> None:
         self._store = store
+        self._sessions = sessions
+        self._facts = facts
+
+    def around(self, path: str, ctx: ToolContext) -> Result:
+        if self._sessions is None:
+            return Result.error("Error: no session store in this run")
+        target = str(jail(ctx.roots, path))
+        sessions = self._sessions.touching(target)[: LIMITS.recall_path_sessions]
+        if not sessions:
+            return Result.success(f"No earlier session touched {path}.")
+        lines = [f"{path}: touched by {len(sessions)} session(s)"]
+        for session in sessions:
+            linked = self._sessions.around(session["id"])
+            verbs = sorted({verb for file, verb in self._sessions.files_of(session["id"]) if file == target})
+            lines.append(f"{session['id']} {session.get('title') or '(untitled)'!r}: {', '.join(verbs) or 'touched'}")
+            for node in linked.get(LEARNED_EDGE, []):
+                fact = self._facts.load(node) if self._facts else None
+                if fact:
+                    lines.append(f"  fact {fact.line()}")
+            refs = [node.removeprefix(f"{KIND}:") for node in linked.get(PRODUCED_EDGE, [])]
+            if refs:
+                lines.append("  results: " + ", ".join(f"§{ref}" for ref in refs[: LIMITS.recall_path_refs]))
+        return Result.success("\n".join(lines))
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
+        if args.get("path"):
+            return self.around(str(args["path"]), ctx)
         ref = str(args.get("ref") or "").lstrip("§").strip()
         if ref:
             obs = self._store.load(ref)

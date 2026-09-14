@@ -31,8 +31,8 @@ from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.prompt import agent_block
 from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
-from superclaw.settings import LIMITS
-from superclaw.tools import Registry, Result as ToolResult, ToolContext
+from superclaw.settings import LIMITS, TOUCH_VERBS
+from superclaw.tools import PathEscapes, Registry, Result as ToolResult, ToolContext, jail
 from superclaw.tools.ask import NON_INTERACTIVE_MESSAGE, parse_questions
 from superclaw.tools.plan import format_plan, pending_items
 from superclaw.verifier import verify
@@ -122,6 +122,15 @@ class _Run:
         if self.o.session and self.o.session_id:
             return self.o.session.append(self.o.session_id, etype, payload)
         return 0
+
+    def touch(self, path: str, verb: str) -> None:
+        if not (self.o.session and self.o.session_id and path):
+            return
+        try:
+            target = jail(self.ctx.roots, path)
+        except PathEscapes:
+            return
+        self.o.session.touch(self.o.session_id, str(target), verb)
 
     def append(self, message: Message) -> None:
         self.messages.append(message)
@@ -239,6 +248,8 @@ class _Run:
         res = self.o.registry.run(call.name, args, self.ctx, call.id)
         if call.name == "update_plan" and res.ok:
             self.persist("plan", {"items": self.ctx.state.get("plan", [])})
+        if res.ok and call.name in TOUCH_VERBS:
+            self.touch(str(args.get("path") or ""), TOUCH_VERBS[call.name])
         if self.o.hooks:
             after = self.o.hooks.dispatch("afterTool", {"tool": call.name, "id": call.id, "args": args, "ok": res.ok, "output": res.output[:LIMITS.hook_output_chars]}, call.name)
             if after.context:
