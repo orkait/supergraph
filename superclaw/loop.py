@@ -548,7 +548,8 @@ class _Run:
         self.objective = prompt
         self.messages = [Message(role="system", content=o.system_prompt), *o.history]
         self.seqs = [0] * len(self.messages)
-        self.persist("prompt", {"hash": prompt_hash(o.system_prompt), "tokens": approx_tokens(o.system_prompt), "text": o.system_prompt})
+        digest = o.session.keep_prompt(o.system_prompt) if o.session and o.session_id else prompt_hash(o.system_prompt)
+        self.persist("prompt", {"hash": digest, "tokens": approx_tokens(o.system_prompt)})
         self.append(Message(role="user", content=prompt, images=list(o.images)))
         if o.hooks:
             if o.session_start:

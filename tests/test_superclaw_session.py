@@ -52,6 +52,9 @@ def test_sessions_fork_replay_and_namespace(gs):
     hits = store.search("kept")
     assert hits and {h["id"] for h in hits} <= {a, b} and all(h["type"] == "message" for h in hits)
     assert any("kept" in h["text"] for h in hits) and store.search("zzzznomatch") == []
+    digest = store.keep_prompt("SYSTEM BODY")
+    assert store.prompt_text(digest) == "SYSTEM BODY" and store.keep_prompt("SYSTEM BODY") == digest
+    assert gs.execute('COUNT NODES WHERE kind = "prompt"', namespace="superclaw").count == 1 and store.prompt_text("nosuchhash") == ""
     store.append(a, "usage", {"input_tokens": 100, "output_tokens": 20, "cache_read_tokens": 80, "cost_usd": 0.5})
     store.append(a, "usage", {"input_tokens": 30, "output_tokens": 10, "cost_usd": 0.25})
     assert store.usage(a) == {"calls": 2, "tokens": 160, "cached": 80, "cost_usd": 0.75} and store.usage(b) == {"calls": 0, "tokens": 0, "cached": 0, "cost_usd": 0.0}
