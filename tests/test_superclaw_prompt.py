@@ -65,6 +65,9 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert "<agent>" in with_agent and "Only review." in with_agent and "never widens" in with_agent
     assert "<agent>" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p"))
     equipped = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", tools=("rg", "fd", "jq")))
+    boxed = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", sandbox="bubblewrap", extra_dirs=(root / "vendor",)))
+    assert "bash runs in a bubblewrap sandbox" in boxed and "fresh /tmp and /dev/shm" in boxed and "and the additional directories" in boxed and "chmod 0700" in boxed
+    assert "sandbox" not in equipped.split("<environment>")[1].split("</environment>")[0]
     assert "Host tools present: rg, fd, jq. In bash prefer rg over grep, fd over find." in equipped and "Host tools" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK))
     assert tooling.guidance(("jq",)) == "Host tools present: jq." and tooling.guidance(()) == ""
     known = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, facts="- (today, https://x.example/) Fact one"))

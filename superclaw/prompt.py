@@ -33,6 +33,7 @@ class PromptInputs:
     tools: tuple[str, ...] = ()
     facts: str = ""
     claude_config: bool = False
+    sandbox: str = ""
 
 
 def core_prompt() -> str:
@@ -189,7 +190,22 @@ def agent_block(prompt: str) -> str:
     )
 
 
-def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = (), tools: tuple[str, ...] = ()) -> str:
+SANDBOX_FACTS = (
+    "bash runs in a {backend} sandbox. Facts that decide what is worth trying:",
+    "- No network. A port published on the host, the docker bridge and host loopback are all unreachable from bash. Use web_fetch and web_search for the network.",
+    "- Every bash call gets a fresh /tmp and /dev/shm. Nothing written there survives to the next call. Only the workspace{extra} persists.",
+    "- The workspace is the only writable place, and it does not honour chmod 0700, so a program that demands a private directory (postgres initdb, ssh, gnupg) cannot run here.",
+    "- ~/.ssh, ~/.aws, ~/.gnupg and the docker credentials are masked.",
+    "Do not spend turns discovering these by trial and error. If a task genuinely needs the network or a persistent service, say so and ask, or pass sandbox_permissions.",
+)
+
+
+def sandbox_block(backend: str, extra_dirs: tuple[Path, ...] = ()) -> str:
+    extra = " and the additional directories" if extra_dirs else ""
+    return "\n".join(line.format(backend=backend, extra=extra) for line in SANDBOX_FACTS)
+
+
+def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = (), tools: tuple[str, ...] = (), sandbox: str = "") -> str:
     lines = [f"Working directory: {cwd}", f"Operating system: {platform.system().lower()}"]
     branch = _git_branch(Path(cwd))
     if branch:
@@ -198,6 +214,8 @@ def environment_block(cwd: Path, extra_dirs: tuple[Path, ...] = (), tools: tuple
         lines.append("Additional directories you may read and write: " + ", ".join(str(d) for d in extra_dirs))
     if tools:
         lines.append(guidance(tools))
+    if sandbox:
+        lines.append(sandbox_block(sandbox, extra_dirs))
     return "<environment>\n" + "\n".join(lines) + "\n</environment>"
 
 
@@ -218,7 +236,7 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     user = user_guidelines(inputs.user_guidelines)
     if user:
         sections.append(user)
-    sections.append(environment_block(inputs.cwd, inputs.extra_dirs, inputs.tools))
+    sections.append(environment_block(inputs.cwd, inputs.extra_dirs, inputs.tools, inputs.sandbox))
     if inputs.repo_map.strip():
         sections.append("<repo_map>\nA deterministic map of the workspace at launch: counts, the files that usually matter, and paths. "
                         "It is a table of contents, not file contents; read a file before reasoning about it.\n" + inputs.repo_map.strip() + "\n</repo_map>")

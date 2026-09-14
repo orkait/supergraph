@@ -46,11 +46,11 @@ def context_report(rt: Runtime, prompt: str = "") -> ContextReport:
     skills = load_skills(rt.settings.skill_roots(rt.workspace))
     inputs = PromptInputs(cwd=rt.workspace, mode=rt.mode, skills=skills, memory=rt.memory.recall(prompt) if prompt else "",
                           user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
-                          provider=rt.model.split("/", 1)[0], model=rt.model, claude_config=rt.settings.claude_config)
+                          provider=rt.model.split("/", 1)[0], model=rt.model, claude_config=rt.settings.claude_config, sandbox=rt.sandbox)
     eager = rt.registry.definitions(rt.policy.visible, set())
     latest = rt.store.latest()
     categories = {
-        "system prompt": approx_tokens(core_prompt()) + approx_tokens(confirmation_policy()) + approx_tokens(environment_block(inputs.cwd, inputs.extra_dirs)),
+        "system prompt": approx_tokens(core_prompt()) + approx_tokens(confirmation_policy()) + approx_tokens(environment_block(inputs.cwd, inputs.extra_dirs, inputs.tools, inputs.sandbox)),
         "user guidelines": approx_tokens(user_guidelines(inputs.user_guidelines)),
         "project guidelines": approx_tokens(project_guidelines(inputs.cwd, find_git_root(inputs.cwd), inputs.claude_config)),
         "skills index": approx_tokens(skills_block(skills)),

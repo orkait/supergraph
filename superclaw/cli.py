@@ -355,7 +355,7 @@ def cmd_doctor(rt: Runtime, args: argparse.Namespace) -> int:
 def cmd_usage(rt: Runtime, args: argparse.Namespace) -> int:
     for s in rt.store.recent():
         u = rt.store.usage(s["id"])
-        print(f"{s['id']}  {u['calls']:4d} calls  {u['tokens']:>10,} tokens  ${u['cost_usd']:.4f}  {s['model']}")
+        print(f"{s['id']}  {u['calls']:4d} calls  {u['tokens']:>10,} tokens  {u['cached']:>10,} cached  ${u['cost_usd']:.4f}  {s['model']}")
     return 0
 
 
