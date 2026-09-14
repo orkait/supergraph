@@ -341,7 +341,8 @@ def test_intent_hooks_and_deferral(ws, gs):
     ]}))
     claude_hooks = ws / "claude-hooks.json"
     claude_hooks.write_text(json.dumps({"hooks": {
-        "PreToolUse": [{"matcher": "write_file", "hooks": [{"type": "command", "command": "printf '{\"decision\": \"block\", \"reason\": \"policy says no\"}'"}]}],
+        "PreToolUse": [{"matcher": "write_file", "hooks": [{"type": "command", "command": "printf '{\"decision\": \"block\", \"reason\": \"policy says no\"}'"}]},
+                       {"matcher": "^Read$", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"updatedInput\": {\"file_path\": \"z.txt\"}}}'"}]}],
         "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "printf '{\"additionalContext\": \"prompt seen\"}'"}]}],
         "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"additionalContext\": \"booted\"}}'"}]}],
     }}))
@@ -351,6 +352,9 @@ def test_intent_hooks_and_deferral(ws, gs):
     assert [m.content for m in booted.messages if m.role == "user"] == ["go", "[hook] booted", "[hook] prompt seen"]
     resumed = run("go", Scripted(Completion(text="fine")), options(ws, hooks=claude_dispatch, session_start=False))
     assert [m.content for m in resumed.messages if m.role == "user"] == ["go", "[hook] prompt seen"]
+    (ws / "z.txt").write_text("zed\n")
+    redirected = run("go", Scripted(read("c9"), Completion(text="ok")), options(ws, hooks=claude_dispatch, session_start=False))
+    assert "zed" in next(m.content for m in redirected.messages if m.role == "tool")
     provider = Scripted(Completion(tool_calls=[call("read_file", "c1", path="a.txt"), call("write_file", "c2", path="b.txt", description="d", content="y")]), Completion(text="final"))
     events, store = [], ObservationStore(gs)
     res = run("go", provider, options(ws, store=store, hooks=Dispatcher(load_hooks([config]), ws), on_event=events.append))

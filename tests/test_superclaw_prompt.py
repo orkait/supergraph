@@ -137,11 +137,43 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     servers = load_config([linked.mcp]).servers
     assert servers[0].name == "hyper" and servers[0].args == [f"{linked.path}/bin/server.mjs"]
     assert remove_plugin("hyper", settings.user_plugins) == linked.path and claude.is_dir() and settings.plugins(root) == []
-    registry = tmp_path / "home" / ".claude" / "plugins"
-    registry.mkdir(parents=True)
-    (registry / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {"hyper@hyper": [{"scope": "user", "installPath": str(claude)}], "gone@x": [{"installPath": str(tmp_path / "missing")}]}}))
-    assert claude_installed(tmp_path / "home") == [claude] and claude_installed(tmp_path / "nohome") == []
-    assert settings.claude_plugins is False and Settings.from_env({"SUPERCLAW_CLAUDE_PLUGINS": "1"}).claude_plugins
+    home = tmp_path / "home" / ".claude"
+    (home / "plugins").mkdir(parents=True)
+    (home / "plugins" / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {"hyper@hyper": [{"scope": "user", "installPath": str(claude)}], "gone@x": [{"installPath": str(tmp_path / "missing")}]}}))
+    assert claude_installed(home) == [claude] and claude_installed(tmp_path / "nohome") == []
+    assert settings.claude_config is False and settings.claude_settings(root) == [] and settings.claude_roots("skills", root) == []
+    for rel, text in (("skills/tidy/SKILL.md", "---\nname: tidy\ndescription: |\n  Tidy.\n  Up.\nlicense: MIT\n---\nTIDY"), ("agents/reviewer.md", "---\nname: reviewer\ndescription: Reviews.\n---\nREVIEW"),
+                      ("commands/plan.md", "Plan $ARGUMENTS"), (".claude.json", json.dumps({"mcpServers": {"docs": {"command": "docs-mcp"}, "off": {"command": "x"}}, "disabledMcpServers": ["off"],
+                                                                                                 "projects": {str(root): {"mcpServers": {"local": {"url": "http://127.0.0.1:1/mcp"}}, "disabledMcpjsonServers": ["nope"]}}})),
+                      ("settings.json", json.dumps({"hooks": {"PreToolUse": [
+                          {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"trailer\"}}'"}]},
+                          {"matcher": "^Bash$", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"updatedInput\": {\"command\": \"capped %s\", \"file_path\": \"%s\"}}}' \"$(jq -r .tool_input.command)\" \"$CLAUDE_PROJECT_DIR\""}]},
+                          {"matcher": "Read", "hooks": [{"type": "command", "command": "jq -c '{additionalContext: (.tool_name + \" \" + .tool_input.file_path)}'"}]}]}}))):
+        (home / rel).parent.mkdir(parents=True, exist_ok=True)
+        (home / rel).write_text(text)
+    (tmp_path / "cl" / ".claude").mkdir(parents=True)
+    (tmp_path / "cl" / ".claude" / "CLAUDE.md").write_text("CLAUDE RULES")
+    (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"proj": {"command": "proj-mcp"}, "nope": {"command": "x"}}}))
+    (root / ".claude" / "commands").mkdir(parents=True)
+    (root / ".claude" / "commands" / "plan.md").write_text("Local plan")
+    (root / ".claude" / "settings.local.json").write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "printf '{\"decision\": \"block\", \"reason\": \"keep going\"}'"}]}]}}))
+    on = Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg"), "SUPERCLAW_CLAUDE_CONFIG": "1", "CLAUDE_CONFIG_DIR": str(home)})
+    assert on.claude_dir == home and on.claude_state == home / ".claude.json" and [p.id for p in on.plugins(root)] == ["hyper"]
+    assert on.claude_settings(root) == [home / "settings.json", root / ".claude" / "settings.json", root / ".claude" / "settings.local.json"] and on.claude_settings(root, trusted=False) == [home / "settings.json"]
+    assert {s.name: s.description for s in load_skills(on.skill_roots(root))}.get("tidy") == "Tidy. Up." and any(a.name == "reviewer" for a in load_agents(on.agent_roots(root)))
+    assert find_command("plan", on.command_roots(root)).template == "Local plan" and find_command("plan", settings.command_roots(root)) is None
+    assert "CLAUDE RULES" in project_guidelines(tmp_path / "cl", None, claude=True) and project_guidelines(tmp_path / "cl", None) == ""
+    from superclaw.app import build_hooks, mcp_paths
+    named = [s.name for s in load_config(mcp_paths(on, root, True)).servers]
+    assert named == ["docs", "local", "proj", "hyper"] and [s.name for s in load_config(mcp_paths(on, root, False)).servers] == ["docs", "local", "hyper"] and load_config(mcp_paths(settings, root, True)).servers == []
+    claude_dispatch = build_hooks(on, root, True)
+    assert build_hooks(settings, root, True) is None and all(h.claude for h in claude_dispatch.hooks) and [h.event for h in claude_dispatch.hooks] == ["beforeTool", "beforeTool", "beforeTool", "stop", "sessionStart"]
+    denied = claude_dispatch.dispatch("beforeTool", {"tool": "edit_file", "args": {"path": "x"}}, "edit_file")
+    assert denied.blocked and denied.context == ["trailer"] and not claude_dispatch.dispatch("beforeTool", {"tool": "write_file", "args": {}}, "read_file").blocked
+    rewritten = claude_dispatch.dispatch("beforeTool", {"tool": "bash", "args": {"command": "cargo test"}}, "bash")
+    assert rewritten.updated_args == {"command": "capped cargo test", "path": str(root)} and not rewritten.blocked
+    assert claude_dispatch.dispatch("beforeTool", {"tool": "read_file", "args": {"path": "a.txt"}}, "read_file").context == ["Read a.txt"]
+    assert claude_dispatch.dispatch("stop", {"text": "done"}).blocked and claude_dispatch.dispatch("beforeTool", {"tool": "grep", "args": {}}, "grep").updated_args is None
     tree = tmp_path / "repo"
     for rel in ("README.md", "pyproject.toml", "src/app/main.py", "src/app/auth/tokens.py", "tests/test_auth.py", "node_modules/x/index.js", "docs/a/b/c/d/e/f/deep.md"):
         (tree / rel).parent.mkdir(parents=True, exist_ok=True)

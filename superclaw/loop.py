@@ -246,6 +246,8 @@ class _Run:
             before = self.o.hooks.dispatch("beforeTool", {"tool": call.name, "id": call.id, "args": args}, call.name)
             if before.blocked:
                 return ToolResult.error(f"Error: {call.name} blocked by hook {before.blocked_by}: {' '.join(before.context)}".rstrip(": ")), True
+            if before.updated_args is not None:
+                args = before.updated_args
         res = self.o.registry.run(call.name, args, self.ctx, call.id)
         if call.name == "update_plan" and res.ok:
             self.persist("plan", {"items": self.ctx.state.get("plan", [])})

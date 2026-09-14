@@ -138,8 +138,13 @@ PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
 CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
 CLAUDE_HOOKS_FILE = "hooks/hooks.json"
 CLAUDE_MCP_FILE = ".mcp.json"
-CLAUDE_INSTALLED_FILE = ".claude/plugins/installed_plugins.json"
-CLAUDE_PLUGINS_ENV = "SUPERCLAW_CLAUDE_PLUGINS"
+CLAUDE_DIR = ".claude"
+CLAUDE_DIR_ENV = "CLAUDE_CONFIG_DIR"
+CLAUDE_CONFIG_ENV = "SUPERCLAW_CLAUDE_CONFIG"
+CLAUDE_INSTALLED_FILE = "plugins/installed_plugins.json"
+CLAUDE_STATE_FILE = ".claude.json"
+CLAUDE_SETTINGS_FILES = ("settings.json", "settings.local.json")
+CLAUDE_GUIDELINES = ("CLAUDE.md", ".claude/CLAUDE.md")
 PLUGIN_ROOT_VARS = ("CLAUDE_PLUGIN_ROOT", "SUPERCLAW_PLUGIN_ROOT")
 FORMAT_SUPERCLAW = "superclaw"
 FORMAT_CLAUDE = "claude"
@@ -422,7 +427,9 @@ class Settings:
     google_search_key: str
     google_search_cx: str
     reader_url: str
-    claude_plugins: bool
+    claude_config: bool
+    claude_dir: Path
+    claude_state: Path
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -451,6 +458,7 @@ class Settings:
         e = {**saved, **e}
         db_override = e.get("SUPERCLAW_DB_PATH", "").strip()
         skills_override = e.get("SUPERCLAW_SKILLS_DIR", "").strip()
+        claude_dir = Path(e.get(CLAUDE_DIR_ENV, "").strip() or home / CLAUDE_DIR)
         return cls(
             model=e.get("SUPERCLAW_MODEL", "").strip() or DEFAULT_MODEL,
             fallback_models=split_models(e.get("SUPERCLAW_FALLBACK_MODELS", "")),
@@ -462,7 +470,9 @@ class Settings:
             google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
             google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
             reader_url=e.get(READER_ENV, "").strip(),
-            claude_plugins=e.get(CLAUDE_PLUGINS_ENV, "").strip().lower() not in OFF_VALUES,
+            claude_config=e.get(CLAUDE_CONFIG_ENV, "").strip().lower() not in OFF_VALUES,
+            claude_dir=claude_dir,
+            claude_state=(claude_dir if e.get(CLAUDE_DIR_ENV, "").strip() else home) / CLAUDE_STATE_FILE,
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
@@ -544,21 +554,38 @@ class Settings:
     def plugin_dirs(self, workspace: Path | None = None, trusted: bool = True) -> list[Path]:
         return [plugin.path for plugin in self.plugins(workspace, trusted)]
 
+    def claude_roots(self, kind: str, workspace: Path | None = None) -> list[Path]:
+        if not self.claude_config:
+            return []
+        roots = [self.claude_dir / kind]
+        if workspace is not None:
+            roots.insert(0, Path(workspace) / CLAUDE_DIR / kind)
+        return roots
+
+    def claude_settings(self, workspace: Path | None = None, trusted: bool = True) -> list[Path]:
+        if not self.claude_config:
+            return []
+        files = [self.claude_dir / CLAUDE_SETTINGS_FILES[0]]
+        if workspace is not None and trusted:
+            files += [Path(workspace) / CLAUDE_DIR / name for name in CLAUDE_SETTINGS_FILES]
+        return files
+
     def skill_roots(self, workspace: Path | None = None) -> list[Path | tuple[Path, str]]:
         roots: list[Path | tuple[Path, str]] = [self.skills_dir] if self.skills_dir else []
         roots += [self.config_dir / "skills", Path.home() / ".agents" / "skills"]
         if workspace is not None:
             roots.append(Path(workspace) / WORKSPACE_DIR / "skills")
+        roots += self.claude_roots("skills", workspace)
         return roots + [(plugin.skills, plugin.id) if plugin.format == FORMAT_CLAUDE else plugin.skills for plugin in self.plugins(workspace) if plugin.skills]
 
     def agent_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / AGENTS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / AGENTS_DIR)
-        return roots + [plugin.agents for plugin in self.plugins(workspace) if plugin.agents]
+        return roots + self.claude_roots(AGENTS_DIR, workspace) + [plugin.agents for plugin in self.plugins(workspace) if plugin.agents]
 
     def command_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / COMMANDS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / COMMANDS_DIR)
-        return roots + [plugin.commands for plugin in self.plugins(workspace) if plugin.commands]
+        return roots + self.claude_roots(COMMANDS_DIR, workspace) + [plugin.commands for plugin in self.plugins(workspace) if plugin.commands]

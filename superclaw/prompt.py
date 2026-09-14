@@ -6,7 +6,7 @@ from pathlib import Path
 
 from superclaw.intent import GUIDANCE, Kind
 from superclaw.policy import Mode
-from superclaw.settings import LIMITS
+from superclaw.settings import CLAUDE_GUIDELINES, LIMITS
 from superclaw.skills import Skill
 from superclaw.tooling import guidance
 
@@ -32,6 +32,7 @@ class PromptInputs:
     request_kind: Kind | None = None
     tools: tuple[str, ...] = ()
     facts: str = ""
+    claude_config: bool = False
 
 
 def core_prompt() -> str:
@@ -91,8 +92,8 @@ def _find_case_insensitive(directory: Path, name: str) -> Path | None:
     return None
 
 
-def _find_project_file(directory: Path) -> Path | None:
-    for candidate in PROJECT_FILES:
+def _find_project_file(directory: Path, files: tuple[str, ...]) -> Path | None:
+    for candidate in files:
         parts = Path(candidate).parts
         cur = directory
         found: Path | None = None
@@ -121,13 +122,14 @@ def _guideline_dirs(cwd: Path, git_root: Path | None) -> list[Path]:
     return dirs
 
 
-def project_guidelines(cwd: Path, git_root: Path | None) -> str:
+def project_guidelines(cwd: Path, git_root: Path | None, claude: bool = False) -> str:
     sections = []
     used = 0
+    files = PROJECT_FILES + (CLAUDE_GUIDELINES if claude else ())
     for directory in _guideline_dirs(cwd, git_root):
         if used >= LIMITS.guideline_total_bytes:
             break
-        match = _find_project_file(directory)
+        match = _find_project_file(directory, files)
         if match is None:
             continue
         content = match.read_text(errors="replace").strip()
@@ -220,7 +222,7 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     if inputs.repo_map.strip():
         sections.append("<repo_map>\nA deterministic map of the workspace at launch: counts, the files that usually matter, and paths. "
                         "It is a table of contents, not file contents; read a file before reasoning about it.\n" + inputs.repo_map.strip() + "\n</repo_map>")
-    project = project_guidelines(inputs.cwd, find_git_root(inputs.cwd))
+    project = project_guidelines(inputs.cwd, find_git_root(inputs.cwd), inputs.claude_config)
     if project:
         sections.append(project)
     if inputs.mode == Mode.PLAN:

@@ -18,8 +18,10 @@ from typing import Any
 import httpx
 
 from superclaw import __version__
-from superclaw.settings import LIMITS
+from superclaw.settings import CLAUDE_MCP_FILE, LIMITS
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
+
+Source = tuple[str, dict[str, Any], Path, set[str]]
 
 PROTOCOL_VERSION = "2024-11-05"
 CLIENT_NAME = "superclaw"
@@ -69,19 +71,40 @@ def _servers_of(data: Any) -> dict[str, Any]:
     return {}
 
 
-def load_config(paths: list[Path]) -> Config:
+def _read_json(path: Path, problems: list[str]) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        problems.append(f"{path}: {type(e).__name__}: {e}")
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def claude_sources(state: Path, workspace: Path, trusted: bool) -> list[Source]:
+    problems: list[str] = []
+    data = _read_json(state, problems)
+    project = (data.get("projects") or {}).get(str(workspace)) or {}
+    disabled = set(data.get("disabledMcpServers") or []) | set(project.get("disabledMcpServers") or [])
+    sources: list[Source] = [(str(state), _servers_of(data), state.parent, disabled), (f"{state}#{workspace}", _servers_of(project), workspace, disabled)]
+    if trusted:
+        sources.append((str(workspace / CLAUDE_MCP_FILE), _servers_of(_read_json(workspace / CLAUDE_MCP_FILE, problems)), workspace,
+                        set(project.get("disabledMcpjsonServers") or [])))
+    return sources
+
+
+def load_config(entries: list[Path | Source]) -> Config:
     config = Config()
     seen: set[str] = set()
-    for path in paths:
-        if not path.is_file():
-            continue
-        try:
-            data = json.loads(path.read_text())
-        except (OSError, ValueError) as e:
-            config.problems.append(f"{path}: {type(e).__name__}: {e}")
-            continue
-        for name, raw in sorted(_servers_of(data).items()):
-            if not isinstance(raw, dict) or raw.get("disabled"):
+    for entry in entries:
+        if isinstance(entry, Path):
+            data = _read_json(entry, config.problems)
+            servers, root, disabled = _servers_of(data), entry.parent, set()
+        else:
+            _, servers, root, disabled = entry
+        for name, raw in sorted(servers.items()):
+            if not isinstance(raw, dict) or raw.get("disabled") or name in disabled:
                 continue
             problem = _validate(name, raw)
             if problem:
@@ -91,7 +114,6 @@ def load_config(paths: list[Path]) -> Config:
                 config.problems.append(f"{name}: already defined in an earlier config file; the first one wins")
                 continue
             seen.add(name)
-            root = path.parent
             config.servers.append(Server(
                 name=name, command=substitute(str(raw.get("command") or "").strip(), root),
                 args=[substitute(str(a), root) for a in raw.get("args") or []],
