@@ -226,6 +226,9 @@ def test_guards_gates_and_verifier(ws):
     assert res.stop_reason == "tool_failure_loop" and sum("match it exactly" in m.content for m in res.messages if m.role == "user") == 1
     provider = Scripted(read("c1"), read("c2"), Completion(text="summary"))
     assert run("loop", provider, options(ws, max_turns=2)).final_answer == "summary" and provider.requests[-1][1] == []
+    long = Scripted(*[read(f"r{i}") for i in range(LIMITS.identical_call_at * 6)], Completion(text="done"))
+    unlimited = run("loop", long, options(ws))
+    assert unlimited.final_answer == "done" and unlimited.stop_reason != "max_turns" and len(long.requests) == LIMITS.identical_call_at * 6 + 1 and LIMITS.max_turns == 0
     provider = Scripted(Completion(tool_calls=[call("update_plan", plan=[{"content": "step", "status": "pending"}])]), *[Completion(text="still not done")] * 4)
     res = run("do it", provider, options(ws, require_completion_signal=True))
     assert res.incomplete and sum("the task is not finished" in m.content for m in res.messages if m.role == "user") == LIMITS.max_continue_nudges

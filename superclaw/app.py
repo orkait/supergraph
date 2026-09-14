@@ -29,7 +29,7 @@ from superclaw.runtime import Message, Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
-from superclaw.settings import MCP_FILE, PROVIDERS, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
+from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
@@ -64,7 +64,7 @@ class Runtime:
     model: str
     settings: Settings = field(default_factory=Settings.from_env)
     extra_dirs: tuple[Path, ...] = ()
-    max_turns: int = 12
+    max_turns: int = LIMITS.max_turns
     token_budget: int = 0
     intent_gate: bool = False
     hooks: Dispatcher | None = None
@@ -157,7 +157,7 @@ def build_runtime(
     workspace: Path,
     mode: Mode,
     *,
-    max_turns: int = 12,
+    max_turns: int = LIMITS.max_turns,
     intent_gate: bool = False,
     hooks: Dispatcher | None = None,
     require_provider: bool = True,
