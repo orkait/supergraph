@@ -55,6 +55,7 @@ WORDMARK_ART = (
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
 HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "ctrl+o unfold output", "esc cancel", "ctrl+c quit")
+HOOK_LINE = "[hook] "
 PHASE_RECALLING = "recalling"
 PHASE_THINKING = "thinking"
 PHASE_WRITING = "writing"
@@ -219,8 +220,9 @@ class SuperclawApp(App[None]):
 
     def load_history(self) -> None:
         self.load_meta()
+        events = self.rt.store.events(self.session_id)
         prompts, expect = [], False
-        for event in self.rt.store.events(self.session_id):
+        for event in events:
             if event["type"] == "prompt":
                 expect = True
             elif expect and event["type"] == "message" and event["payload"].get("role") == "user":
@@ -228,6 +230,42 @@ class SuperclawApp(App[None]):
                 expect = False
         self.history = [p for p in prompts if p.strip()]
         self.reset_history()
+        self.replay(events)
+        self.show_hints()
+
+    def replay(self, events: list[dict[str, Any]]) -> None:
+        shown = events[-LIMITS.replay_events_shown:]
+        if len(shown) < len(events):
+            self.note(f"{len(events) - len(shown)} earlier events not shown; /sessions searches them")
+        calls: dict[str, ToolCard] = {}
+        for event in shown:
+            payload = event.get("payload") or {}
+            if event["type"] == "compaction":
+                self.note(f"{self.glyphs.dot} compacted earlier turns into a summary")
+            elif event["type"] == "message" and payload.get("role") == "user":
+                self.replay_user(str(payload.get("content") or ""))
+            elif event["type"] == "message" and payload.get("role") == "assistant":
+                self.replay_assistant(payload, calls)
+            elif event["type"] == "tool_result":
+                card = calls.pop(str(payload.get("tool_call_id") or ""), None)
+                if card is not None:
+                    card.finish(bool(payload.get("ok")), str(payload.get("output") or ""), {}, "")
+
+    def replay_user(self, text: str) -> None:
+        if text.strip() and not text.startswith(HOOK_LINE):
+            self.add(Static(f"{self.glyphs.prompt} {text}", classes="user"))
+
+    def replay_assistant(self, payload: dict[str, Any], calls: dict[str, ToolCard]) -> None:
+        if str(payload.get("content") or "").strip():
+            self.add(Markdown(str(payload["content"])))
+        for call in payload.get("tool_calls") or []:
+            try:
+                args = json.loads(call.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            card = ToolCard(str(call.get("id") or ""), str(call.get("name") or ""), args if isinstance(args, dict) else {})
+            calls[str(call.get("id") or "")] = card
+            self.add(card)
 
     def reset_history(self) -> None:
         self.hist_index = len(self.history)
