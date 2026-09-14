@@ -2,7 +2,6 @@ from __future__ import annotations
 
 CSS = """
 Screen { layers: base popup; }
-#title { height: 1; padding: 0 1; color: $text-muted; }
 #welcome { height: 1fr; content-align: center middle; text-align: center; color: $text-muted; }
 #transcript { height: 1fr; padding: 0 1; }
 #transcript > .user { color: $accent; text-style: bold; margin: 1 0 0 0; border-left: thick $accent; padding-left: 1; }
@@ -25,7 +24,7 @@ ToolCard .more { color: $text-muted; text-style: italic; }
 #composer .gutter { width: 2; color: $accent; text-style: bold; }
 #prompt { border: none; height: 1; padding: 0; background: transparent; }
 #prompt:focus { border: none; background: transparent; }
-#status { height: 1; padding: 0 2; color: $text-muted; }
+#status { height: 2; padding: 0 2; color: $text-muted; }
 #palette { layer: popup; dock: bottom; margin: 0 0 5 2; height: auto; max-height: 8; width: 100; max-width: 100%; background: $surface; border: $border-kind $panel; }
 #palette.hidden { display: none; }
 ModalScreen { align: center middle; }

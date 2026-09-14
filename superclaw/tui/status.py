@@ -8,6 +8,7 @@ from textual.widgets import Static
 
 from superclaw.runtime import compact
 from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS
 from superclaw.tui.theme import ACCENT, MUTED
 
 
@@ -37,6 +38,20 @@ class TurnTimer:
         return end - self.started - self.paused_for
 
 
+CYCLE_HINT = "shift+tab to cycle"
+
+
+@dataclass(frozen=True)
+class Where:
+    path: str
+    branch: str = ""
+    model: str = ""
+    effort: str = ""
+    sandbox: str = ""
+    agent: str = ""
+    session: str = ""
+
+
 @dataclass
 class RunStats:
     used: int = 0
@@ -47,6 +62,7 @@ class RunStats:
     kept_out: int = 0
     cached: int = 0
     sent: int = 0
+    limit: int = 0
     timer: TurnTimer = field(default_factory=TurnTimer)
 
     @property
@@ -62,35 +78,53 @@ def tier(width: int) -> int:
     return sum(width >= bound for bound in (LIMITS.tui_tier_narrow, LIMITS.tui_tier_medium, LIMITS.tui_tier_full))
 
 
-class TitleBar(Static):
+class StatusBar(Static):
     def on_resize(self) -> None:
         self.app.relayout()
 
-    def show(self, cwd: str, branch: str, session: str, width: int) -> None:
-        level = tier(width)
-        left = Text(cwd, style=MUTED)
-        if branch and level >= 1:
-            left.append(f" {self.app.glyphs.dot} {branch}", style=MUTED)
-        right = Text(session if level >= 3 else "", style=MUTED)
-        gap = max(1, width - len(left) - len(right) - 2)
-        self.update(left + Text(" " * gap) + right)
+    def facts(self, where: Where, stats: RunStats, level: int) -> Text:
+        glyphs = self.app.glyphs
+        parts = [where.path]
+        if where.branch and level >= 1:
+            parts.append(where.branch)
+        if stats.window and level >= 1:
+            parts.append(f"{glyphs.gauge} {self.context(stats)}")
+        if stats.cost and level >= 2:
+            parts.append(f"${stats.cost:.4f}")
+        if level >= 2:
+            parts.append(where.model)
+        if where.effort and level >= 3:
+            parts.append(where.effort)
+        return Text("  ".join(parts), style=MUTED)
 
+    def context(self, stats: RunStats) -> str:
+        used, limit = compact(stats.used), stats.limit
+        if limit and stats.used > limit * LIMITS.status_near_compaction:
+            return f"{used}/{compact(stats.window)} {self.app.glyphs.dot} {max(0.0, 1 - stats.used / limit):.0%} until compaction"
+        return f"{used}/{compact(stats.window)} {self.app.glyphs.dot} {stats.fill:.0%}"
 
-class StatusBar(Static):
-    def show(self, mode: str, stats: RunStats, width: int) -> None:
-        level = tier(width)
+    def state(self, mode: str, where: Where, stats: RunStats, level: int) -> Text:
         glyphs = self.app.glyphs
         text = Text(f"{glyphs.mode} ", style=ACCENT)
-        text.append(mode)
-        if level >= 1 and self.app.rt.settings.effort:
-            text.append(f" {glyphs.dot} {self.app.rt.settings.effort}", style=MUTED)
-        if level >= 1 and stats.window:
-            text.append(f"    {glyphs.gauge} {compact(stats.used)}/{compact(stats.window)} {glyphs.dot} {stats.fill:.1%}", style=MUTED)
-        if level >= 2 and stats.cost:
-            text.append(f"    ${stats.cost:.4f}", style=MUTED)
-        if level >= 2 and (stats.saved or stats.kept_out):
-            text.append(f"    kept out {compact(stats.saved + stats.kept_out)}", style=MUTED)
-        self.update(text)
+        text.append(f"{mode} ({CYCLE_HINT})" if level >= 2 else mode)
+        parts = []
+        if where.sandbox and level >= 3:
+            parts.append(f"sandbox {where.sandbox}")
+        if stats.sent and level >= 2:
+            parts.append(f"{stats.cache_hit:.0%} cached")
+        if (stats.saved or stats.kept_out) and level >= 2:
+            parts.append(f"kept out {compact(stats.saved + stats.kept_out)}")
+        if where.agent and level >= 1:
+            parts.append(f"agent {where.agent}")
+        if where.session and level >= 3:
+            parts.append(where.session)
+        if parts:
+            text.append(f" {glyphs.dot} " + f" {glyphs.dot} ".join(parts), style=MUTED)
+        return text
+
+    def show(self, mode: str, where: Where, stats: RunStats, width: int) -> None:
+        level = tier(width)
+        self.update(self.facts(where, stats, level) + Text("\n") + self.state(mode, where, stats, level))
 
 
 class WorkingLine(Static):

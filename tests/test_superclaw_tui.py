@@ -23,7 +23,9 @@ from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyph
 from superclaw.tools import ToolContext
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
+from superclaw.meter import ContextMeter
 from superclaw.tui.cards import ToolCard, target_of
+from superclaw.tui.status import RunStats, StatusBar
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
 from superclaw.tui.status import WorkingLine
@@ -141,7 +143,17 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             assert not app.verbose and str(local.query_one(".body").content) == ""
             await pilot.press(*"/rename my work", "enter")
             await pilot.pause(0.05)
-            assert rt.store.get(sid)["title"] == "my work" and "my work" in str(app.query_one("#title").content)
+            assert rt.store.get(sid)["title"] == "my work" and "my work" in str(app.query_one("#status").content)
+            bar = str(app.query_one("#status").content)
+            first, second = bar.split("\n")
+            assert rt.model in first and "ask (shift+tab to cycle)" in second and "sandbox off" in second and "my work" in second
+            assert first.startswith(app.short_cwd(app.size.width)) and not app.query("#title")
+            near = RunStats(window=1_000_000, used=700_000)
+            near.limit = ContextMeter(1_000_000).limit()
+            assert "until compaction" in app.query_one("#status", StatusBar).context(near)
+            far = RunStats(window=1_000_000, used=100_000)
+            far.limit = ContextMeter(1_000_000).limit()
+            assert app.query_one("#status", StatusBar).context(far).endswith("10%")
             await pilot.press(*"/tools", "enter")
             await pilot.pause(0.05)
             assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))

@@ -37,7 +37,8 @@ from superclaw.tui.composer import Composer
 from superclaw.usercommands import UserCommand, expand
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
-from superclaw.tui.status import RunStats, StatusBar, TitleBar, WorkingLine, tier
+from superclaw.meter import ContextMeter
+from superclaw.tui.status import RunStats, StatusBar, Where, WorkingLine, tier
 from superclaw.tui.theme import ACCENT, CSS, MUTED
 
 PROMPT_PLACEHOLDER = "describe a task for superclaw"
@@ -190,7 +191,6 @@ class SuperclawApp(App[None]):
         return {"border-kind": self.glyphs.border}
 
     def compose(self) -> ComposeResult:
-        yield TitleBar(id="title")
         yield Static(self.welcome(), id="welcome")
         yield VerticalScroll(id="transcript", can_focus=False)
         yield Static(f" {self.glyphs.dot} ".join(HINTS), id="hints")
@@ -296,6 +296,9 @@ class SuperclawApp(App[None]):
         self.refresh_status()
         self.note(f"model {target} {self.glyphs.dot} {compact(self.rt.context_window)} window")
 
+    def show_hints(self) -> None:
+        self.query_one("#hints").set_class(bool(self.query_one("#transcript", VerticalScroll).children), "hidden")
+
     def relayout(self) -> None:
         self.refresh_status()
         self.query_one("#welcome", Static).update(self.welcome())
@@ -312,9 +315,15 @@ class SuperclawApp(App[None]):
 
     def refresh_status(self) -> None:
         width = self.size.width
-        self.query_one("#title", TitleBar).show(self.short_cwd(width), _git_branch(self.rt.workspace), self.session_label(), width)
-        self.query_one("#composer", Horizontal).border_subtitle = self.rt.model if tier(width) >= 1 else ""
-        self.query_one("#status", StatusBar).show(self.rt.mode.value, self.stats, width)
+        self.stats.limit = ContextMeter(self.rt.context_window).limit()
+        self.query_one("#status", StatusBar).show(self.rt.mode.value, self.where(width), self.stats, width)
+
+    def where(self, width: int) -> Where:
+        return Where(
+            path=self.short_cwd(width), branch=_git_branch(self.rt.workspace), model=self.rt.model,
+            effort=self.rt.settings.effort, sandbox="on" if self.rt.policy.sandboxed else "off",
+            agent=self.rt.agent.name if self.rt.agent else "", session=self.session_label(),
+        )
 
     def short_cwd(self, width: int) -> str:
         return clip(str(self.rt.workspace).replace(str(Path.home()), "~", 1), max(LIMITS.card_arg_chars // 2, width // 3))
@@ -353,6 +362,7 @@ class SuperclawApp(App[None]):
         self.cards.clear()
         self.query_one("#transcript").display = False
         self.query_one("#welcome").display = True
+        self.show_hints()
 
     def open_session(self, sid: str) -> None:
         if self.rt.hooks and self.rt.session_id and self.rt.session_id != sid:
@@ -549,7 +559,7 @@ class SuperclawApp(App[None]):
     def finish_compact(self, text: str, error: bool) -> None:
         self.running = False
         self.query_one(WorkingLine).stop()
-        self.query_one("#hints").remove_class("hidden")
+        self.show_hints()
         self.note(text, error=error)
 
     def attach(self, raw: str, quiet: bool = False) -> Clip | None:
@@ -714,7 +724,7 @@ class SuperclawApp(App[None]):
         self.running = False
         self.drop_stream()
         self.query_one(WorkingLine).stop()
-        self.query_one("#hints").remove_class("hidden")
+        self.show_hints()
         elapsed = self.stats.timer.elapsed()
         sep = f" {self.glyphs.dot} "
         if result is None:

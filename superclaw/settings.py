@@ -424,6 +424,7 @@ class Limits:
     command_matches_shown: int = 6
     palette_usage_width: int = 32
     palette_help_chars: int = 60
+    status_near_compaction: float = 0.5
     tui_tier_narrow: int = 58
     tui_tier_medium: int = 80
     tui_tier_full: int = 100
