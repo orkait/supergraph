@@ -30,6 +30,7 @@ from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
 from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
+from superclaw.stages import Intent, decompose
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
@@ -66,6 +67,7 @@ class Runtime:
     max_turns: int = LIMITS.max_turns
     token_budget: int = 0
     intent_gate: bool = False
+    intent_stage: bool = True
     hooks: Dispatcher | None = None
     kernel: Kernel | None = None
     mcp: Bridge | None = None
@@ -165,6 +167,7 @@ def build_runtime(
     *,
     max_turns: int = LIMITS.max_turns,
     intent_gate: bool = False,
+    intent_stage: bool = True,
     hooks: Dispatcher | None = None,
     require_provider: bool = True,
     allow_tools: frozenset[str] = frozenset(),
@@ -197,7 +200,7 @@ def build_runtime(
     return Runtime(
         gs=gs, store=sessions, memory=memory, registry=registry, policy=policy,
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
-        token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
+        token_budget=settings.budget_tokens, intent_gate=intent_gate, intent_stage=intent_stage, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
         sandbox=getattr(backend, "name", "") if backend else "",
     )
 
@@ -258,7 +261,7 @@ class Context:
                 "history": history, "prompt_tokens": approx_tokens(self.system_prompt)}
 
 
-def context_for(rt: Runtime, prompt: str) -> Context:
+def context_for(rt: Runtime, prompt: str, intent: Intent | None = None) -> Context:
     hits = rt.memory.hits(prompt)
     facts = rt.memory.facts.search(prompt)
     skills = load_skills(rt.settings.skill_roots(rt.workspace))
@@ -269,6 +272,7 @@ def context_for(rt: Runtime, prompt: str) -> Context:
         agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
         tools=host_tools(), claude_config=rt.settings.claude_config, sandbox=rt.sandbox,
+        intent=intent.block() if intent else "",
     ))
     return Context(system_prompt, len(hits), len(facts), len(skills), len(found.files) if found else 0)
 
@@ -300,8 +304,21 @@ class Callbacks:
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
 
 
+def read_intent(rt: Runtime, prompt: str, cb: Callbacks, cancelled: Callable[[], bool] | None, wanted: bool = True) -> Intent:
+    if not (wanted and rt.intent_stage) or rt.provider is None:
+        return Intent()
+    intent = decompose(rt.provider, prompt, cancelled)
+    if intent.blocked and cb.on_ask_user is not None:
+        questions = [{"question": unknown, "options": []} for unknown in intent.unknowns]
+        intent = intent.settled(cb.on_ask_user(questions))
+    if cb.on_event and not intent.empty:
+        cb.on_event({"type": "decomposed", "goal": intent.goal, "subgoals": list(intent.subgoals),
+                     "queries": list(intent.queries), "unknowns": list(intent.unknowns), "answered": len(intent.answered)})
+    return intent
+
+
 def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = None, *, require_completion: bool = False, verify: bool = False,
-             cancelled: Callable[[], bool] | None = None, images: list[str] | None = None) -> Result:
+             cancelled: Callable[[], bool] | None = None, images: list[str] | None = None, authored: bool = True) -> Result:
     cb = callbacks or Callbacks()
     if rt.provider is None:
         raise NoProviderKey("no provider connected; run setup first")
@@ -311,8 +328,9 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         rt.policy.request_kind = classify(rt.provider, prompt)
         if cb.on_event:
             cb.on_event({"type": "intent", "kind": rt.policy.request_kind.value})
+    intent = read_intent(rt, prompt, cb, cancelled, authored)
     rt.store.name_once(sid, prompt)
-    context = context_for(rt, prompt)
+    context = context_for(rt, prompt, intent)
     system_prompt = context.system_prompt
     history = rt.store.replay(sid)
     if cb.on_event:

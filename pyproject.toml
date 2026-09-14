@@ -219,6 +219,23 @@ select = ["F401", "F841"]
 "tests/*" = ["F841"]
 "benchmarks/*" = ["F841"]
 
+[tool.mypy]
+# A ratchet, not a migration. `files` lists the modules that are clean under
+# --strict today; a gate that starts red gets switched off. Add a module here
+# when it passes, never remove one. The rest of superclaw is checked only as
+# an import dependency (follow_imports = silent).
+python_version = "3.13"
+files = [
+    "superclaw/stages.py",
+    "superclaw/runtime.py",
+    "superclaw/settings.py",
+    "superclaw/intent.py",
+    "superclaw/dsl.py",
+]
+strict = true
+ignore_missing_imports = true
+follow_imports = "silent"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # -n 4: 4 xdist workers. With the 2-thread BLAS cap set in conftest.py

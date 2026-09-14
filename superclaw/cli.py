@@ -178,7 +178,7 @@ def draft_spec(rt: Runtime, prompt: str, sid: str, emit: Callable[[dict[str, Any
     rt.registry.register(spec.SubmitSpec())
     rt.mode = Mode.PLAN
     rt.policy.plan_exempt = frozenset({spec.TOOL_NAME})
-    return run_once(rt, f"{spec.draft_prompt()}\n\n<task>\n{prompt}\n</task>", sid, Callbacks(on_event=emit))
+    return run_once(rt, f"{spec.draft_prompt()}\n\n<task>\n{prompt}\n</task>", sid, Callbacks(on_event=emit), authored=False)
 
 
 def cmd_spec(rt: Runtime, args: argparse.Namespace) -> int:
@@ -189,7 +189,7 @@ def cmd_spec(rt: Runtime, args: argparse.Namespace) -> int:
             sys.exit(f"superclaw: {e}")
         sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"implement {path.stem}", branch=_git_branch(rt.workspace))
         print(f"superclaw: implementing {path.name} in mode {rt.mode.value}, session {sid}", file=sys.stderr)
-        res = run_once(rt, spec.implementation_prompt(body, path, args.note), sid, Callbacks(on_event=lambda event: None))
+        res = run_once(rt, spec.implementation_prompt(body, path, args.note), sid, Callbacks(on_event=lambda event: None), authored=False)
         print(res.final_answer)
         return 2 if res.incomplete else 0
     if args.spec_command == "show":
@@ -220,7 +220,7 @@ def cmd_verify(rt: Runtime, args: argparse.Namespace) -> int:
     while not report.ok and used < attempts:
         print(f"superclaw: attempt {used} failed {len(report.failed)} check(s); asking the agent to fix it", file=sys.stderr)
         sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"verify attempt {used}", branch=_git_branch(rt.workspace))
-        run_once(rt, checks.remediation_prompt(report), sid, Callbacks(on_event=lambda event: None))
+        run_once(rt, checks.remediation_prompt(report), sid, Callbacks(on_event=lambda event: None), authored=False)
         report = checks.run(rt.workspace, found, only, args.timeout_s or LIMITS.verify_timeout_s)
         used += 1
     if args.json:
@@ -252,7 +252,7 @@ def cmd_review(rt: Runtime, args: argparse.Namespace) -> int:
     sid = resolve_session(rt, None, None)
     rt.store.rename(sid, f"review: {change.label}")
     print(f"superclaw: reviewing {change.label} in plan mode, session {sid}", file=sys.stderr)
-    res = run_once(rt, text, sid, Callbacks(on_event=lambda event: None))
+    res = run_once(rt, text, sid, Callbacks(on_event=lambda event: None), authored=False)
     print(res.final_answer)
     return 2 if res.incomplete else 0
 

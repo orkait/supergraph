@@ -34,6 +34,7 @@ class PromptInputs:
     facts: str = ""
     claude_config: bool = False
     sandbox: str = ""
+    intent: str = ""
 
 
 def core_prompt() -> str:
@@ -237,6 +238,8 @@ def build_system_prompt(inputs: PromptInputs) -> str:
     if user:
         sections.append(user)
     sections.append(environment_block(inputs.cwd, inputs.extra_dirs, inputs.tools, inputs.sandbox))
+    if inputs.intent.strip():
+        sections.append(inputs.intent.strip())
     if inputs.repo_map.strip():
         sections.append("<repo_map>\nA deterministic map of the workspace at launch: counts, the files that usually matter, and paths. "
                         "It is a table of contents, not file contents; read a file before reasoning about it.\n" + inputs.repo_map.strip() + "\n</repo_map>")

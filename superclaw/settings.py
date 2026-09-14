@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from typing import Any
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from superclaw.models import ModelInfo
 
 DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
@@ -261,6 +264,9 @@ class Limits:
     verifier_transcript_bytes: int = 24_000
 
     max_empty_turns: int = 3
+    intent_items_max: int = 8
+    intent_goal_chars: int = 240
+    intent_min_chars: int = 12
     failure_hint_at: int = 2
     failure_stop_at: int = 6
     stale_plan_tool_calls: int = 10
@@ -554,7 +560,7 @@ class Settings:
         self.credentials.chmod(CREDENTIALS_MODE)
         os.environ.update(values)
 
-    def model_info(self):
+    def model_info(self) -> ModelInfo:
         from superclaw.models import lookup
 
         return lookup(self.model, self.models_cache)

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeAlias
 
 from superclaw.settings import LIMITS
+
+ToolSchema: TypeAlias = dict[str, Any]
+ToolArgs: TypeAlias = dict[str, Any]
+TextSink: TypeAlias = Callable[[str], None]
+CancelCheck: TypeAlias = Callable[[], bool]
 
 
 @dataclass
@@ -49,7 +55,14 @@ class Cancelled(RuntimeError):
 
 
 class Provider(Protocol):
-    def complete(self, messages: list[Message], tools: list[dict[str, Any]]) -> Completion: ...
+    def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolSchema],
+        on_text: TextSink | None = None,
+        max_tokens: int | None = None,
+        cancelled: CancelCheck | None = None,
+    ) -> Completion: ...
 
 
 def to_wire(messages: list[Message]) -> list[dict[str, Any]]:
