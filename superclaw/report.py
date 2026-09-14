@@ -71,6 +71,23 @@ def graph_line(gs: Any, dot: str) -> str:
     return f"graph {embedder} {dot} {int(stats.get('node_count', 0)):,} nodes {dot} {int(stats.get('edge_count', 0)):,} edges"
 
 
+def cache_line(rt: Runtime, dot: str) -> str:
+    if rt.store is None:
+        return "prompt cache not measured by this command; /doctor inside the TUI reads the sessions"
+    sent = cached = 0
+    for session in rt.store.recent():
+        if session["model"] != rt.model:
+            continue
+        use = rt.store.usage(session["id"])
+        sent += use["tokens"]
+        cached += use["cached"]
+    if not sent:
+        return f"prompt cache no billed turns yet for {rt.model}"
+    share = cached / sent
+    verdict = "this provider is not serving the repeated prefix from cache; a turn costs full price" if share < LIMITS.cache_hit_floor else "the repeated prefix is being served from cache"
+    return f"prompt cache {share:.0%} of {sent:,} tokens across recent sessions {dot} {verdict}"
+
+
 def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
     dot, env, glyphs = rt.settings.glyphs.dot, os.environ, rt.settings.glyphs
     return [
@@ -87,5 +104,6 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         health_line(rt.gs, dot),
         "host tools " + (" ".join(host_tools()) or "none of the modern set"),
         f"claude config {'on' if rt.settings.claude_config else 'off'} {dot} {rt.settings.claude_dir}",
+        cache_line(rt, dot),
         "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),
     ]

@@ -348,6 +348,11 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     info = ModelInfo("m", 100_000, 4096, input_per_token=0.001, output_per_token=0.002)
     res = run("go", Scripted(*[turn] * 4), options(ws, budget_usd=2.0, model_info=info, context_window=100_000, on_event=events.append))
     assert next(e for e in events if e["type"] == "usage")["cost_usd"] == 1.2 and res.stop_reason == "budget" and "$2.00" in res.final_answer
+    cached_run = Scripted(Completion(text="ok", usage=Usage(input_tokens=1000, output_tokens=10, cache_read_tokens=800)))
+    cevents = []
+    run("go", cached_run, options(ws, model_info=info, context_window=100_000, on_event=cevents.append))
+    seen = next(e for e in cevents if e["type"] == "usage")
+    assert seen["run_cached"] == 800 and seen["run_input"] == 1000 and seen["cache_read_tokens"] == 800
     reviewer = Agent(name="reviewer", description="Reviews.", prompt="Only review.", tools=frozenset({"read_file"}))
     events = []
     provider = Scripted(Completion(tool_calls=[call("delegate", task="look at a.txt", agent="reviewer")]),

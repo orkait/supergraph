@@ -108,6 +108,8 @@ class _Run:
         self.seqs: list[int] = []
         self.turns = 0
         self.tokens_used = 0
+        self.cached_tokens = 0
+        self.input_tokens = 0
         self.cost_usd = 0.0
         self.loaded: set[str] = set()
         self.nudges = 0
@@ -503,11 +505,14 @@ class _Run:
         self.meter.observe(usage)
         cost = self.o.model_info.cost(usage) if self.o.model_info else 0.0
         self.tokens_used += usage.total
+        self.cached_tokens += usage.cache_read_tokens
+        self.input_tokens += usage.input_tokens
         self.cost_usd += cost
         self.persist("usage", {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
                                "cache_read_tokens": usage.cache_read_tokens, "cost_usd": round(cost, LIMITS.usd_decimals)})
         self.emit({"type": "usage", "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
                    "cache_read_tokens": usage.cache_read_tokens, "run_total": self.tokens_used,
+                   "run_cached": self.cached_tokens, "run_input": self.input_tokens,
                    "cost_usd": round(cost, LIMITS.usd_decimals), "run_cost_usd": round(self.cost_usd, LIMITS.usd_decimals),
                    "context_used": usage.input_tokens, "context_window": self.o.context_window,
                    "saved_tokens": self.saved_tokens, "kept_out_tokens": self.kept_out_tokens})
