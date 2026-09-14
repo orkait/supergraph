@@ -32,12 +32,12 @@ class SessionStore:
     def _x(self, query: str):
         return self._gs.execute(query, namespace=NAMESPACE)
 
-    def create(self, *, cwd: str, model: str, title: str = "", parent: str = "") -> str:
+    def create(self, *, cwd: str, model: str, title: str = "", parent: str = "", branch: str = "") -> str:
         sid = f"s_{time.strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(LIMITS.session_id_bytes)}"
         self._x(
             f'CREATE NODE {_lit("session:" + sid)} kind = "session" sid = {_lit(sid)} cwd = {_lit(cwd)} '
-            f'model = {_lit(model)} title = {_lit(title)} parent = {_lit(parent)} '
-            f'created = {time.time_ns()} event_count = 0'
+            f'model = {_lit(model)} title = {_lit(title)} parent = {_lit(parent)} branch = {_lit(branch)} '
+            f'created = {time.time_ns()} event_count = 0 bytes = 0'
         )
         return sid
 
@@ -81,8 +81,8 @@ class SessionStore:
             return None
         return {
             "id": row["sid"], "cwd": row.get("cwd", ""), "model": row.get("model", ""),
-            "title": row.get("title", ""), "parent": row.get("parent", ""),
-            "created": row.get("created", 0), "event_count": row.get("event_count", 0),
+            "title": row.get("title", ""), "parent": row.get("parent", ""), "branch": row.get("branch", ""),
+            "created": row.get("created", 0), "event_count": row.get("event_count", 0), "bytes": row.get("bytes", 0),
         }
 
     def recent(self) -> list[dict[str, Any]]:
@@ -90,7 +90,8 @@ class SessionStore:
         rows.sort(key=lambda r: (r.get("created", 0), r.get("sid", "")), reverse=True)
         return [
             {"id": r["sid"], "cwd": r.get("cwd", ""), "model": r.get("model", ""), "title": r.get("title", ""),
-             "parent": r.get("parent", ""), "created": r.get("created", 0), "event_count": r.get("event_count", 0)}
+             "parent": r.get("parent", ""), "branch": r.get("branch", ""), "created": r.get("created", 0),
+             "event_count": r.get("event_count", 0), "bytes": r.get("bytes", 0)}
             for r in rows
         ]
 
@@ -123,7 +124,7 @@ class SessionStore:
             f'DOCUMENT {_lit(json.dumps(payload))}'
         )
         self._x(f'CREATE EDGE {_lit("session:" + sid)} -> {_lit(node)} kind = "has_event"')
-        self._x(f'UPDATE NODE {_lit("session:" + sid)} SET event_count = {seq}')
+        self._x(f'UPDATE NODE {_lit("session:" + sid)} SET event_count = {seq} bytes = {int(meta["bytes"]) + len(json.dumps(payload))}')
         return seq
 
     def events(self, sid: str) -> list[dict[str, Any]]:
@@ -198,6 +199,16 @@ class SessionStore:
                 cached += int(p.get("cache_read_tokens", 0))
                 cost += float(p.get("cost_usd", 0.0))
         return {"calls": calls, "tokens": tokens, "cached": cached, "cost_usd": cost}
+
+    def name_once(self, sid: str, text: str) -> str:
+        meta = self.get(sid)
+        if meta is None or str(meta.get("title") or "").strip():
+            return str(meta.get("title") or "") if meta else ""
+        title = " ".join(text.split())[: LIMITS.session_title_chars].strip()
+        if not title:
+            return ""
+        self.rename(sid, title)
+        return title
 
     def rename(self, sid: str, title: str) -> None:
         if self.get(sid) is None:

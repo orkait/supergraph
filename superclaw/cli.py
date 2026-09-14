@@ -24,6 +24,7 @@ from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.facts import as_of_ms
 from supergraph.core.errors import SuperGraphError
 from superclaw.policy import Mode
+from superclaw.prompt import _git_branch
 from superclaw.provider import hint
 from superclaw import checks, cron, maintain, plugins, repomap, review, spec, update
 from superclaw.acp import serve as acp_serve
@@ -186,7 +187,7 @@ def cmd_spec(rt: Runtime, args: argparse.Namespace) -> int:
             body, path = spec.load(rt.workspace, args.id)
         except spec.SpecError as e:
             sys.exit(f"superclaw: {e}")
-        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"implement {path.stem}")
+        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"implement {path.stem}", branch=_git_branch(rt.workspace))
         print(f"superclaw: implementing {path.name} in mode {rt.mode.value}, session {sid}", file=sys.stderr)
         res = run_once(rt, spec.implementation_prompt(body, path, args.note), sid, Callbacks(on_event=lambda event: None))
         print(res.final_answer)
@@ -218,7 +219,7 @@ def cmd_verify(rt: Runtime, args: argparse.Namespace) -> int:
     used = 1
     while not report.ok and used < attempts:
         print(f"superclaw: attempt {used} failed {len(report.failed)} check(s); asking the agent to fix it", file=sys.stderr)
-        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"verify attempt {used}")
+        sid = rt.store.create(cwd=str(rt.workspace), model=rt.model, title=f"verify attempt {used}", branch=_git_branch(rt.workspace))
         run_once(rt, checks.remediation_prompt(report), sid, Callbacks(on_event=lambda event: None))
         report = checks.run(rt.workspace, found, only, args.timeout_s or LIMITS.verify_timeout_s)
         used += 1
