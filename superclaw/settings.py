@@ -134,6 +134,10 @@ REPO_MAP_IGNORED_DIRS = frozenset({".git", ".cache", ".next", ".worktrees", ".su
 SPECS_DIR = "specs"
 SHARE_DIR = "superclaw"
 PLUGINS_DIR = "plugins"
+MARKETPLACES_DIR = "marketplaces"
+MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json"
+GITHUB_URL = "https://github.com/{repo}.git"
+MARKETPLACE_SEP = "@"
 PLUGIN_MANIFEST = "plugin.json"
 PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
 CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
@@ -540,6 +544,10 @@ class Settings:
     @property
     def user_plugins(self) -> Path:
         return self.config_dir / PLUGINS_DIR
+
+    @property
+    def user_marketplaces(self) -> Path:
+        return self.config_dir / MARKETPLACES_DIR
 
     def plugin_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.user_plugins]

@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -6,7 +8,7 @@ import pytest
 from superclaw.agents import load_agents
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.mcp import load_config
-from superclaw.plugins import PluginError, claude_installed, load_plugins
+from superclaw.plugins import PluginError, add_marketplace, claude_installed, install_from_marketplace, is_marketplace_ref, load_marketplaces, load_plugins, remove_marketplace, resolve_source
 from superclaw.plugins import install as install_plugin
 from superclaw.plugins import remove as remove_plugin
 from superclaw.agents import resolve as resolve_agent
@@ -174,6 +176,37 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert rewritten.updated_args == {"command": "capped cargo test", "path": str(root)} and not rewritten.blocked
     assert claude_dispatch.dispatch("beforeTool", {"tool": "read_file", "args": {"path": "a.txt"}}, "read_file").context == ["Read a.txt"]
     assert claude_dispatch.dispatch("stop", {"text": "done"}).blocked and claude_dispatch.dispatch("beforeTool", {"tool": "grep", "args": {}}, "grep").updated_args is None
+    market = tmp_path / "market"
+    (market / ".claude-plugin").mkdir(parents=True)
+    shutil.copytree(claude, market / "hyper")
+    repo = tmp_path / "gitsrc"
+    shutil.copytree(claude, repo / "plugins" / "hyper")
+    for command in (["init", "-q", "-b", "main"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one"], ["tag", "v1"]):
+        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    (market / ".claude-plugin" / "marketplace.json").write_text(json.dumps({"name": "Acme", "metadata": {"description": "Acme plugins"}, "plugins": [
+        {"name": "hyper", "source": "./hyper"}, {"name": "sub", "source": {"source": "git-subdir", "url": str(repo), "path": "plugins/hyper", "ref": "v1"}},
+        {"name": "gh", "source": {"source": "github", "repo": "orkait/hyperstack"}}, {"name": "odd", "source": {"source": "ftp"}}]}))
+    assert is_marketplace_ref("hyper@acme") and not is_marketplace_ref("git@github.com:o/r.git") and not is_marketplace_ref(str(market))
+    added = add_marketplace(str(market), settings.user_marketplaces, link=True)
+    assert added.name == "acme" and added.description == "Acme plugins" and sorted(added.plugins) == ["gh", "hyper", "odd", "sub"] and added.path.is_symlink()
+    assert [m.name for m in load_marketplaces(settings.user_marketplaces)] == ["acme"] and load_marketplaces(tmp_path / "nowhere") == []
+    assert resolve_source(added, "gh") == ("https://github.com/orkait/hyperstack.git", "", "") and resolve_source(added, "sub") == (str(repo), "v1", "plugins/hyper")
+    for spec in ("odd", "missing"):
+        with pytest.raises(PluginError):
+            resolve_source(added, spec)
+    with pytest.raises(PluginError):
+        install_from_marketplace("hyper@nope", settings.user_marketplaces, settings.user_plugins)
+    fetched = install_from_marketplace("hyper@acme", settings.user_marketplaces, settings.user_plugins)
+    assert fetched.id == "hyper" and fetched.path == settings.user_plugins / "hyper" and not fetched.path.is_symlink() and [p.id for p in settings.plugins(root)] == ["hyper"]
+    with pytest.raises(PluginError):
+        install_from_marketplace("sub@acme", settings.user_marketplaces, settings.user_plugins)
+    remove_plugin("hyper", settings.user_plugins)
+    assert install_from_marketplace("sub@acme", settings.user_marketplaces, settings.user_plugins).id == "hyper" and (settings.user_plugins / "hyper" / "skills" / "rulebook").is_dir()
+    with pytest.raises(PluginError):
+        add_marketplace(str(market), settings.user_marketplaces)
+    assert remove_marketplace("acme", settings.user_marketplaces) == added.path and market.is_dir() and load_marketplaces(settings.user_marketplaces) == []
+    with pytest.raises(PluginError):
+        remove_marketplace("acme", settings.user_marketplaces)
     tree = tmp_path / "repo"
     for rel in ("README.md", "pyproject.toml", "src/app/main.py", "src/app/auth/tokens.py", "tests/test_auth.py", "node_modules/x/index.js", "docs/a/b/c/d/e/f/deep.md"):
         (tree / rel).parent.mkdir(parents=True, exist_ok=True)
