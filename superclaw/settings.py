@@ -412,6 +412,7 @@ class Limits:
     worktree_key_hash_chars: int = 10
     model_id_width: int = 44
     model_list_shown: int = 40
+    replay_events_shown: int = 200
     tool_name_width: int = 16
     preview_args_chars: int = 160
     preview_error_chars: int = 200

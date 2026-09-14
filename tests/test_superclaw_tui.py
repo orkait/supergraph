@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from textual.events import Paste
-from textual.widgets import Input, Markdown
+from textual.widgets import Input, Markdown, Static
 
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
@@ -237,6 +237,12 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.press(*"/clear", "enter")
             await pilot.pause(0.05)
             assert app.session_id != sid and app.stats.used == 0 and app.stats.cost == 0 and app.query_one("#welcome").display and not app.query_one("#transcript").display
+            app.open_session(sid)
+            await pilot.pause(0.05)
+            assert app.session_id == sid and app.query_one("#transcript").display and not app.query_one("#welcome").display
+            said = [str(w.content) for w in app.query(Static) if "user" in w.classes]
+            assert any("write it" in line for line in said) and not any(line.startswith(f"{app.glyphs.prompt} [hook]") for line in said)
+            assert app.query(ToolCard) and str(app.query(ToolCard).first().query_one(".head").content).startswith(app.glyphs.ok)
 
     asyncio.run(drive())
     assert [e["type"] for e in rt.store.events(sid) if e["type"] != "usage"] == ["prompt", "message", "message", "tool_result", "message"]
@@ -256,17 +262,19 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
 
     async def slash():
         async with slash_app.run_test(size=(100, 30)) as pilot:
+            replayed = len(slash_app.query(Markdown))
+            assert replayed and slash_app.query(ToolCard)
             await pilot.press(*"/pr")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
             assert "Open a PR." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
             await pilot.press(*" 42", "enter")
-            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 1)
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == replayed + 1)
             assert slash_app.history[-1] == "/pr 42"
             await pilot.press(*"/ti")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
             assert str(slash_app.query_one("#palette").get_option_at_index(0).prompt).startswith("/tidy [args]") and "skill: Tidy the code." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
             await pilot.press(*"dy now", "enter")
-            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 2)
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == replayed + 2)
             assert slash_app.history[-1] == "/tidy now"
             await pilot.press(*"/qu")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
