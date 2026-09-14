@@ -125,6 +125,7 @@ MODELS_CACHE_DIR = "models"
 WORKTREES_DIR = "worktrees"
 CLIPBOARD_DIR = "clipboard"
 MCP_FILE = "mcp.json"
+MCP_SCOPES = ("user", "project")
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
 COMMANDS_DIR = "commands"

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
+from superclaw.mcp import MCPError, add_server, remove_server
 from superclaw.loop import Result
 from supergraph.core.errors import StoreInUse
 
@@ -33,7 +34,7 @@ from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
-from superclaw.settings import LIMITS, PROVIDERS, Glyphs, Settings, split_models
+from superclaw.settings import LIMITS, MCP_FILE, MCP_SCOPES, PROVIDERS, WORKSPACE_DIR, Glyphs, Settings, split_models
 from superclaw.share import NotServing
 from superclaw.skills import load_skills
 from superclaw.tools import jail
@@ -496,7 +497,19 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     sess.add_argument("query", nargs="?", default="", help="search text; omit to list recent sessions")
     sess.add_argument("--touching", default="", help="list the sessions that read or wrote this workspace path")
     sub.add_parser("doctor", help="terminal, sandbox, model, store and provider health")
-    sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose")
+    mcp = sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose, or add and remove servers")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command")
+    mcp_sub.add_parser("list", help="connect to every configured server and list its tools")
+    mcp_add = mcp_sub.add_parser("add", help="add a server: `mcp add NAME -- CMD ARGS...` for stdio, `mcp add NAME --url URL` for streamable HTTP")
+    mcp_add.add_argument("name")
+    mcp_add.add_argument("argv", nargs="*", metavar="CMD", help="the stdio command and its arguments, after --")
+    mcp_add.add_argument("--url", default="", help="streamable HTTP endpoint instead of a command")
+    mcp_add.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="environment for a stdio server (repeatable)")
+    mcp_add.add_argument("--header", action="append", default=[], metavar="KEY=VALUE", help="HTTP header for a url server (repeatable)")
+    mcp_add.add_argument("--scope", choices=MCP_SCOPES, default=MCP_SCOPES[0], help=f"user writes {MCP_FILE} in the config dir, project writes <workspace>/{WORKSPACE_DIR}/{MCP_FILE}")
+    mcp_remove = mcp_sub.add_parser("remove", help="remove a server by name")
+    mcp_remove.add_argument("name")
+    mcp_remove.add_argument("--scope", choices=MCP_SCOPES, default=MCP_SCOPES[0])
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     sub.add_parser("agents", help="list the agent profiles that --agent can select")
@@ -550,6 +563,24 @@ def cmd_repo_map(settings: Settings, workspace: Path, args: argparse.Namespace) 
                           "files": found.files}, indent=2))
         return 0
     print(repomap.render(found, budget=args.max_bytes or LIMITS.repo_map_bytes))
+    return 0
+
+
+def mcp_file(settings: Settings, workspace: Path, scope: str) -> Path:
+    return settings.user_mcp if scope == MCP_SCOPES[0] else workspace / WORKSPACE_DIR / MCP_FILE
+
+
+def cmd_mcp_edit(settings: Settings, workspace: Path, args: argparse.Namespace) -> int:
+    path = mcp_file(settings, workspace, args.scope)
+    try:
+        if args.mcp_command == "add":
+            server = add_server(path, args.name, args.argv, url=args.url, env=args.env, headers=args.header)
+            print(f"added {server.name} ({server.transport}) to {path}; `superclaw mcp` connects and lists its tools")
+        else:
+            remove_server(path, args.name)
+            print(f"removed {args.name} from {path}")
+    except MCPError as e:
+        sys.exit(f"superclaw: {e}")
     return 0
 
 
@@ -627,6 +658,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_update(settings, args)
     if args.command == "plugin":
         return cmd_plugin(settings, workspace, args)
+    if args.command == "mcp" and args.mcp_command in ("add", "remove"):
+        return cmd_mcp_edit(settings, workspace, args)
     if args.command == "repo-map":
         return cmd_repo_map(settings, workspace, args)
     if args.worktree is not None:

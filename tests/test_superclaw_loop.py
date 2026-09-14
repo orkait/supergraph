@@ -21,7 +21,7 @@ from superclaw.delegate import Delegate
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
 from superclaw.loop import Options, run
-from superclaw.mcp import connect_all, load_config
+from superclaw.mcp import MCPError, add_server, connect_all, load_config, remove_server
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
@@ -378,6 +378,16 @@ def test_intent_hooks_and_deferral(ws, gs):
     }}))
     config = load_config([mcp_config])
     assert [s.name for s in config.servers] == ["broken", "fake"] and any("stdio transport" in p for p in config.problems)
+    added = add_server(mcp_config, "later", [sys.executable, str(server)], env=["MODE=x"])
+    assert added.transport == "stdio" and added.env == {"MODE": "x"} and add_server(ws / "fresh" / "mcp.json", "web", [], url="https://h/mcp", headers=["Authorization=Bearer t"]).headers == {"Authorization": "Bearer t"}
+    assert [s.name for s in load_config([mcp_config]).servers] == ["broken", "fake", "later"] and json.loads((ws / "fresh" / "mcp.json").read_text()) == {"mcpServers": {"web": {"url": "https://h/mcp", "headers": {"Authorization": "Bearer t"}}}}
+    for bad in ({"name": "later", "command": ["x"]}, {"name": "sp ace", "command": ["x"]}, {"name": "none", "command": []}, {"name": "both", "command": ["x"], "url": "https://h"}, {"name": "env", "command": ["x"], "env": ["novalue"]}):
+        with pytest.raises(MCPError):
+            add_server(mcp_config, bad["name"], bad["command"], url=bad.get("url", ""), env=bad.get("env"))
+    remove_server(mcp_config, "later")
+    with pytest.raises(MCPError):
+        remove_server(mcp_config, "later")
+    assert [s.name for s in load_config([mcp_config]).servers] == ["broken", "fake"] and json.loads(mcp_config.read_text())["mcpServers"]["off"] == {"command": "nope", "disabled": True}
     bridge = connect_all(config, Registry())
     assert [t.name for t in bridge.tools] == ["mcp_fake_echo_it"] and [s.name for s in bridge.skipped] == ["broken"]
     remote_tool = bridge.tools[0]

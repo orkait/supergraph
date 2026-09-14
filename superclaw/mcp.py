@@ -29,6 +29,7 @@ SERVER_KEYS = ("mcpServers", "servers")
 TOOL_PREFIX = "mcp_"
 EMPTY_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}, "additionalProperties": True}
 _UNSAFE = re.compile(r"[^a-z0-9_]+")
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 class MCPError(RuntimeError):
@@ -92,6 +93,57 @@ def claude_sources(state: Path, workspace: Path, trusted: bool) -> list[Source]:
         sources.append((str(workspace / CLAUDE_MCP_FILE), _servers_of(_read_json(workspace / CLAUDE_MCP_FILE, problems)), workspace,
                         set(project.get("disabledMcpjsonServers") or [])))
     return sources
+
+
+def _pairs(items: list[str], what: str) -> dict[str, str]:
+    out = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            raise MCPError(f"{what} must look like KEY=VALUE, got {item!r}")
+        out[key.strip()] = value
+    return out
+
+
+def add_server(path: Path, name: str, command: list[str], url: str = "", env: list[str] | None = None, headers: list[str] | None = None) -> Server:
+    name = name.strip()
+    if not _NAME.match(name):
+        raise MCPError(f"invalid server name {name!r}; use letters, digits, - and _")
+    raw: dict[str, Any] = {}
+    if command:
+        raw.update(command=command[0], args=command[1:])
+    if url:
+        raw["url"] = url
+    if env:
+        raw["env"] = _pairs(env, "--env")
+    if headers:
+        raw["headers"] = _pairs(headers, "--header")
+    if problem := _validate(name, raw):
+        raise MCPError(problem)
+    problems: list[str] = []
+    data = _read_json(path, problems)
+    if problems:
+        raise MCPError(problems[0])
+    key = next((k for k in SERVER_KEYS if isinstance(data.get(k), dict)), SERVER_KEYS[0])
+    servers = data.setdefault(key, {})
+    if name in servers:
+        raise MCPError(f"server {name!r} already exists in {path}; remove it first")
+    servers[name] = {k: v for k, v in raw.items() if v}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return load_config([path]).servers[[s.name for s in load_config([path]).servers].index(name)]
+
+
+def remove_server(path: Path, name: str) -> None:
+    problems: list[str] = []
+    data = _read_json(path, problems)
+    if problems:
+        raise MCPError(problems[0])
+    key = next((k for k in SERVER_KEYS if isinstance(data.get(k), dict) and name in data[k]), "")
+    if not key:
+        raise MCPError(f"no server {name!r} in {path}")
+    del data[key][name]
+    path.write_text(json.dumps(data, indent=2) + "\n")
 
 
 def load_config(entries: list[Path | Source]) -> Config:
