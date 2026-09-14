@@ -23,7 +23,7 @@ class Delegate(Tool):
             "agent": {"type": "string", "description": "Agent profile to run the child under; it narrows the child's prompt and tools."},
             "refs": {"type": "array", "items": {"type": "string"}, "description": "Stored results (§id) to hand over in full."},
             "files": {"type": "array", "items": {"type": "string"}, "description": "Workspace paths the child should start from."},
-            "max_turns": {"type": "integer", "minimum": 1, "maximum": LIMITS.delegate_max_turns},
+            "max_turns": {"type": "integer", "minimum": 1, "description": "Optional cap on the child's model turns; unset means the guards and budget end it."},
             "budget_tokens": {"type": "integer", "minimum": LIMITS.delegate_min_budget_tokens, "description": "Total tokens the child may spend; every turn costs its prompt again."},
         },
         "required": ["task"],

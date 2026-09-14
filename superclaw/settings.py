@@ -378,7 +378,6 @@ class Limits:
     kernel_checkpoint_timeout_s: float = 10.0
     delegate_refs_returned: int = 5
     delegate_depth: int = 2
-    delegate_max_turns: int = 24
     delegate_budget_tokens: int = 200_000
     delegate_min_budget_tokens: int = 20_000
     delegate_handoff_tokens: int = 8000
