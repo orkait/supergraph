@@ -16,6 +16,8 @@ from superclaw.runtime import Message, ToolCall
 from superclaw.settings import FILE_KIND, LIMITS
 
 NAMESPACE = "superclaw"
+PROMPT_KIND = "prompt"
+PROMPT_NODE = "prompt:{hash}"
 EXPORT_SCHEMA_VERSION = 1
 
 
@@ -157,6 +159,22 @@ class SessionStore:
         for event in sorted(events, key=lambda e: int(e.get("seq", 0))):
             self.append(sid, str(event["type"]), dict(event.get("payload") or {}))
         return sid
+
+    def keep_prompt(self, text: str) -> str:
+        digest = prompt_hash(text)
+        node = PROMPT_NODE.format(hash=digest)
+        try:
+            self._x(f'CREATE NODE {_lit(node)} kind = {_lit(PROMPT_KIND)} at = {now_ms()} DOCUMENT {_lit(text)}')
+        except SuperGraphError:
+            pass
+        return digest
+
+    def prompt_text(self, digest: str) -> str:
+        try:
+            node = self._x(f"NODE {_lit(PROMPT_NODE.format(hash=digest))} WITH DOCUMENT").data or {}
+        except SuperGraphError:
+            return ""
+        return str(node.get("_document") or "")
 
     def last_prompt(self, sid: str) -> dict[str, Any] | None:
         prompts = [ev["payload"] for ev in self.events(sid) if ev["type"] == "prompt"]
