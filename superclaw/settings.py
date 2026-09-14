@@ -239,6 +239,7 @@ class Limits:
 
     compaction_reserve_tokens: int = 16_384
     compaction_trigger_share: float = 0.6
+    compaction_flush_calls: int = 6
     compaction_keep_tokens: int = 20_000
     compaction_window_share: float = 0.25
     prune_threshold_chars: int = 8192
