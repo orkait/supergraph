@@ -168,7 +168,7 @@ def build_runtime(
     agent: Agent | None = None,
     open_store: bool = True,
 ) -> Runtime:
-    provider = connect_provider(settings.model, settings.effort, settings.fallback_models, settings.stream)
+    provider = connect_provider(settings.model, settings.effort, settings.fallback_models, settings.stream, settings.output_cap())
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
     backend = detect()
@@ -201,9 +201,9 @@ def reader_for(provider: Provider | None) -> Callable[[str], str] | None:
     return lambda prompt: provider.complete([Message(role="user", content=prompt)], []).text
 
 
-def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = (), stream: bool = True) -> Provider | None:
+def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = (), stream: bool = True, max_tokens: int = LIMITS.completion_max_tokens) -> Provider | None:
     chain = build_provider_chain([model, *fallbacks], free_first=False)
-    return LitellmProvider(chain, effort=effort, stream=stream) if chain else None
+    return LitellmProvider(chain, effort=effort, stream=stream, max_tokens=max_tokens) if chain else None
 
 
 def switch_model(rt: Runtime, model: str) -> None:
@@ -215,7 +215,7 @@ def switch_model(rt: Runtime, model: str) -> None:
     rt.settings.save_model(model)
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
-    rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models, rt.settings.stream)
+    rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models, rt.settings.stream, rt.settings.output_cap())
 
 
 def apply_effort(rt: Runtime, effort: str) -> None:

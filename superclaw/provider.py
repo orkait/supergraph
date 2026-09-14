@@ -123,6 +123,10 @@ class LitellmProvider:
     def model(self) -> str:
         return self._chain[0]["litellm_model"]
 
+    @property
+    def max_tokens(self) -> int:
+        return self._max_tokens
+
     def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None) -> Completion:
         last_err: Exception | None = None
         streaming = self.streams and on_text is not None
