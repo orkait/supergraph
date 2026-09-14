@@ -391,7 +391,7 @@ def cmd_skills(rt: Runtime, args: argparse.Namespace) -> int:
 def cmd_context(rt: Runtime, args: argparse.Namespace) -> int:
     report = context_report(rt, args.prompt)
     info = rt.model_info
-    print(f"{rt.model}  window {report.window:,}  max output {info.max_output_tokens:,}  {'catalog' if info.known else 'fallback (unknown model)'}")
+    print(f"{rt.model}  window {report.window:,}  max output {info.max_output_tokens:,}  cap {rt.settings.output_cap():,}  {'catalog' if info.known else 'fallback (unknown model)'}")
     for name, tokens in [*report.categories.items(), ("free", report.free)]:
         print(f"  {name:<{_NAME_WIDTH}}{tokens:>{_TOKENS_WIDTH},}  {report.percent(tokens):5.1f}%")
     return 0

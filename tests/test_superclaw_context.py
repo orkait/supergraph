@@ -83,6 +83,8 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert resolve_model("opencode/deepseek-v4-flash")["api_base"].endswith("/zen/v1") and "extra_headers" not in resolve_model("opencode/deepseek-v4-flash")
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
+    assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).output_cap() == min(info.max_output_tokens, LIMITS.completion_max_tokens) and Settings.from_env({"SUPERCLAW_MAX_OUTPUT_TOKENS": "1234"}).output_cap() == 1234
+    assert Settings.from_env({"SUPERCLAW_MODEL": "nobody/no-such-model"}).output_cap() == LIMITS.max_output_tokens_fallback
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
     import superclaw.provider as mod
 

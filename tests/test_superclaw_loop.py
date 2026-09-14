@@ -229,6 +229,14 @@ def test_guards_gates_and_verifier(ws):
     long = Scripted(*[read(f"r{i}") for i in range(LIMITS.identical_call_at * 6)], Completion(text="done"))
     unlimited = run("loop", long, options(ws))
     assert unlimited.final_answer == "done" and unlimited.stop_reason != "max_turns" and len(long.requests) == LIMITS.identical_call_at * 6 + 1 and LIMITS.max_turns == 0
+    cut = Scripted(Completion(finish_reason="length"), Completion(finish_reason="length"), read("t1"), Completion(finish_reason="length"), Completion(text="made it"))
+    res = run("think", cut, options(ws))
+    nudges = [m.content for m in res.messages if m.role == "user" and "output limit" in m.content]
+    assert res.final_answer == "made it" and len(nudges) == 3 and "hidden reasoning used the whole budget" in nudges[0] and "0-token" in nudges[0]
+    stalled = run("think", Scripted(*[Completion(finish_reason="length")] * LIMITS.max_empty_turns), options(ws))
+    assert stalled.stop_reason == "no_output" and stalled.final_answer.startswith(f"Agent stopped: {LIMITS.max_empty_turns} responses in a row were cut off") and "SUPERCLAW_MAX_OUTPUT_TOKENS" in stalled.final_answer
+    silent = run("think", Scripted(*[Completion()] * LIMITS.max_empty_turns), options(ws))
+    assert silent.stop_reason == "no_output" and "no visible output" in silent.final_answer
     provider = Scripted(Completion(tool_calls=[call("update_plan", plan=[{"content": "step", "status": "pending"}])]), *[Completion(text="still not done")] * 4)
     res = run("do it", provider, options(ws, require_completion_signal=True))
     assert res.incomplete and sum("the task is not finished" in m.content for m in res.messages if m.role == "user") == LIMITS.max_continue_nudges

@@ -28,6 +28,7 @@ DUCKDUCKGO_LOCALE = "us-en"
 DDGS_BACKEND = "auto"
 IMPERSONATE = "chrome"
 READER_ENV = "SUPERCLAW_READER"
+OUTPUT_TOKENS_ENV = "SUPERCLAW_MAX_OUTPUT_TOKENS"
 REDIRECT_CODES = (301, 302, 303, 307, 308)
 BLOCKED_CODES = (401, 403, 429, 503)
 FACT_KIND = "fact"
@@ -225,9 +226,9 @@ def read_env_file(path: Path) -> dict[str, str]:
 @dataclass(frozen=True)
 class Limits:
     context_window_fallback: int = 128_000
-    max_output_tokens_fallback: int = 4096
+    max_output_tokens_fallback: int = 8192
     message_overhead_tokens: int = 4
-    completion_max_tokens: int = 4096
+    completion_max_tokens: int = 32_768
     completion_timeout_s: int = 120
     max_turns: int = 0
     usd_decimals: int = 6
@@ -437,6 +438,7 @@ class Settings:
     claude_dir: Path
     claude_state: Path
     context_window: int
+    output_tokens: int
     budget_tokens: int
     budget_usd: float
     data_dir: Path
@@ -480,6 +482,7 @@ class Settings:
             claude_dir=claude_dir,
             claude_state=(claude_dir if e.get(CLAUDE_DIR_ENV, "").strip() else home) / CLAUDE_STATE_FILE,
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
+            output_tokens=int(e.get(OUTPUT_TOKENS_ENV, "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
             data_dir=data_dir,
@@ -541,6 +544,9 @@ class Settings:
 
     def window(self) -> int:
         return self.context_window or self.model_info().context_window
+
+    def output_cap(self) -> int:
+        return self.output_tokens or min(self.model_info().max_output_tokens, LIMITS.completion_max_tokens)
 
     @property
     def user_plugins(self) -> Path:

@@ -14,6 +14,7 @@ from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
+    FINISH_LENGTH,
     MAX_TURNS_FINAL_ANSWER_PROMPT,
     FailureOutcome,
     Guards,
@@ -25,6 +26,8 @@ from superclaw.guards import (
     promise_nudge,
     tool_failure_hint,
     tool_failure_stop_answer,
+    truncated_stop_answer,
+    truncated_turn_nudge,
 )
 from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
@@ -134,7 +137,7 @@ class _Run:
             return
         self.o.session.touch(self.o.session_id, str(target), verb)
 
-    def append(self, message: Message) -> None:
+    def append(self, message: Message, finish: str = "") -> None:
         self.messages.append(message)
         self.meter.append(message)
         self.ctx.files.cursor = len(self.messages)
@@ -147,6 +150,8 @@ class _Run:
             }
             if message.images:
                 payload["images"] = len(message.images)
+            if finish:
+                payload["finish"] = finish
             seq = self.persist("message", payload)
         self.seqs.append(seq)
 
@@ -289,10 +294,12 @@ class _Run:
 
     def finish_without_tools(self, completion: Completion) -> Result | None:
         text = completion.text
+        truncated = completion.finish_reason == FINISH_LENGTH and not text.strip()
+        cap = int(getattr(self.provider, "max_tokens", 0) or 0)
         if self.guards.observe_turn(text, 0):
-            return self.result(no_output_stop_answer(self.turns), stop_reason="no_output")
+            return self.result(truncated_stop_answer(self.guards.empty_turns, cap) if truncated else no_output_stop_answer(self.turns), stop_reason="no_output")
         if not text.strip():
-            self.append(Message(role="user", content=EMPTY_TURN_NUDGE))
+            self.append(Message(role="user", content=truncated_turn_nudge(cap) if truncated else EMPTY_TURN_NUDGE))
             return None
         if ends_with_promise(text) and not self.promise_nudged:
             self.promise_nudged = True
@@ -494,7 +501,7 @@ class _Run:
             self.maybe_compact(exposed)
             completion = self.complete(exposed)
             self.account(completion.usage)
-            self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)))
+            self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)), finish=completion.finish_reason)
             if completion.text:
                 self.emit({"type": "text", "text": completion.text})
             outcome = self.run_tools(completion) if completion.tool_calls else self.finish_without_tools(completion)
