@@ -24,6 +24,11 @@ ENGINES = (ENGINE_GOOGLE, ENGINE_DUCKDUCKGO)
 GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
 DUCKDUCKGO_SEARCH_URL = "https://html.duckduckgo.com/html/"
 DUCKDUCKGO_LOCALE = "us-en"
+DDGS_BACKEND = "auto"
+IMPERSONATE = "chrome"
+READER_ENV = "SUPERCLAW_READER"
+REDIRECT_CODES = (301, 302, 303, 307, 308)
+BLOCKED_CODES = (401, 403, 429, 503)
 YTDLP_BIN = "yt-dlp"
 AUDIO_FORMAT = "mp3"
 RG_BIN = "rg"
@@ -369,6 +374,7 @@ class Settings:
     search_engine: str
     google_search_key: str
     google_search_cx: str
+    reader_url: str
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -407,6 +413,7 @@ class Settings:
             search_engine=choose_engine(e),
             google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
             google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
+            reader_url=e.get(READER_ENV, "").strip(),
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
