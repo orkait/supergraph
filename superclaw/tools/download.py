@@ -8,11 +8,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from supergraph.core.errors import SuperGraphError
+
+from superclaw.documents import Documents
 from superclaw.runtime import clip, compact
 from superclaw.settings import AUDIO_FORMAT, LIMITS, YTDLP_BIN
 from superclaw.tools import PathEscapes, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
 from superclaw.tools.budget import Category
 from superclaw.tools.fetch import HEADERS, Unsafe, open_url, validate
+from superclaw.tools.ingest import describe
 
 KINDS = ("auto", "video", "audio", "file")
 MEDIA_KINDS = ("video", "audio")
@@ -84,12 +88,25 @@ class Download(Tool):
             "kind": {"type": "string", "enum": list(KINDS), "description": "auto tries yt-dlp then a plain download; video and audio require yt-dlp; file skips it.", "default": "auto"},
             "dest": {"type": "string", "description": "Directory inside the workspace to save into.", "default": "."},
             "name": {"type": "string", "description": "File name for a plain download; defaults to the server's name."},
+            "keep": {"type": "boolean", "description": "Also parse the saved file into the brain as searchable chunks (same as the ingest tool).", "default": False},
         },
         "required": ["url"],
         "additionalProperties": False,
     }
     safety = Safety(SideEffect.NETWORK, Permission.PROMPT, "Downloads a model-chosen URL from this host into the workspace.")
     output_category = Category.PROCESS
+
+    def __init__(self, documents: Documents | None = None) -> None:
+        self._documents = documents
+
+    def keep(self, path: Path, ctx: ToolContext) -> str:
+        if self._documents is None:
+            return "not ingested: no document store in this run"
+        try:
+            doc = self._documents.ingest(path, session_id=ctx.session_id)
+        except (ImportError, ValueError, SuperGraphError) as e:
+            return f"not ingested: {clip(str(e), LIMITS.preview_error_chars)}"
+        return describe(doc, relative(ctx.roots, path), False, LIMITS.ingest_ttl_days)
 
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         url = str(args.get("url") or "").strip()
@@ -106,6 +123,8 @@ class Download(Tool):
         except (PathEscapes, Unsafe, FileExistsError, ValueError, OSError, RuntimeError, subprocess.TimeoutExpired) as e:
             return Result.error(f"Error: download failed: {e}")
         lines = [f"Saved {relative(ctx.roots, path)} ({compact(path.stat().st_size)}B)" for path in saved]
+        if args.get("keep"):
+            lines += [self.keep(path, ctx) for path in saved]
         return Result.success("\n".join(lines), changed_files=[relative(ctx.roots, path) for path in saved])
 
     @staticmethod
