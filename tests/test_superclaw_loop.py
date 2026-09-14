@@ -325,6 +325,12 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
                                       context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=fevents.append))
     flush = next(e for e in fevents if e["type"] == "flush")
     assert flush["saved"] == 2 and fres.final_answer == "ok" and any("about to be compacted" in m.content for m in flushed.requests[2][0] if m.role == "user")
+    assert not any("about to be compacted" in m.content for m in fres.messages) and not any(m.tool_call_id == "m1" for m in fres.messages)
+    bare = Scripted(Completion(text="answered"))
+    bevents = []
+    run("go", bare, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="S" * 40_000,
+                            context_window=14_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=bevents.append))
+    assert not [e for e in bevents if e["type"] == "flush"] and len(bare.requests) == 1
     assert flushed.requests[2][1] == ["memory_note", "update_plan"] and any("leased worker" in text for _, text, _ in memory.hits("leased worker"))
     quiet = Scripted(read("q0", "big0.txt"), read("q1", "big1.txt"), Completion(text="NOTHING"), Completion(text="ok"))
     qevents = []
