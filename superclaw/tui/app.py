@@ -180,7 +180,7 @@ class SuperclawApp(App[None]):
         self.hist_draft = ""
         self._title = ""
         self.clips = Clips()
-        self.user_commands = user_entries(rt.settings.command_roots(rt.workspace))
+        self.user_commands = user_entries(rt.settings.command_roots(rt.workspace), rt.settings.skill_roots(rt.workspace))
         self.streaming: Static | None = None
         self.stream_text = ""
         self.verbose = False

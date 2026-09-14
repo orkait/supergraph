@@ -72,9 +72,9 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
     prompt = args.prompt if args.prompt != "-" else sys.stdin.read()
     if prompt.startswith("/"):
         name, _, rest = prompt[1:].partition(" ")
-        command = find_command(name, rt.settings.command_roots(rt.workspace))
+        command = find_command(name, rt.settings.command_roots(rt.workspace), rt.settings.skill_roots(rt.workspace))
         if command is None:
-            print(f"superclaw: no user command /{name}; `superclaw commands` lists them, sending the text as typed", file=sys.stderr)
+            print(f"superclaw: no user command or skill /{name}; `superclaw commands` lists them, sending the text as typed", file=sys.stderr)
         else:
             if command.agent:
                 rt.agent = resolve_agent(command.agent, rt.settings.agent_roots(rt.workspace))
@@ -372,9 +372,9 @@ def cmd_agents(rt: Runtime, args: argparse.Namespace) -> int:
 
 
 def cmd_commands(rt: Runtime, args: argparse.Namespace) -> int:
-    found = load_commands(rt.settings.command_roots(rt.workspace))
+    found = load_commands(rt.settings.command_roots(rt.workspace), rt.settings.skill_roots(rt.workspace))
     for command in found:
-        routing = " ".join(part for part in (f"agent={command.agent}" if command.agent else "", f"model={command.model}" if command.model else "") if part)
+        routing = " ".join(part for part in ("skill" if command.skill else "", f"agent={command.agent}" if command.agent else "", f"model={command.model}" if command.model else "") if part)
         print(f"/{command.name:<{_NAME_WIDTH}} {command.description}  {routing}({command.path})")
     if not found:
         print(f"no user commands; add <name>.md to {rt.settings.command_roots()[0]}", file=sys.stderr)

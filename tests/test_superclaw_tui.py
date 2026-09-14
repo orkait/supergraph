@@ -235,7 +235,9 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     commands = tmp_path / ".superclaw" / "commands"
     commands.mkdir(parents=True)
     (commands / "pr.md").write_text("---\ndescription: Open a PR.\n---\nOpen a PR for issue $1.")
-    rt.provider = Scripted(Completion(text="opened"))
+    (tmp_path / ".superclaw" / "skills" / "tidy").mkdir(parents=True)
+    (tmp_path / ".superclaw" / "skills" / "tidy" / "SKILL.md").write_text("---\nname: tidy\ndescription: Tidy the code.\n---\nTIDY STEPS")
+    rt.provider = Scripted(Completion(text="opened"), Completion(text="tidied"))
     slash_app = SuperclawApp(rt, sid)
 
     async def slash():
@@ -246,6 +248,12 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.press(*" 42", "enter")
             await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 1)
             assert slash_app.history[-1] == "/pr 42"
+            await pilot.press(*"/ti")
+            await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
+            assert str(slash_app.query_one("#palette").get_option_at_index(0).prompt).startswith("/tidy [args]") and "skill: Tidy the code." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
+            await pilot.press(*"dy now", "enter")
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == 2)
+            assert slash_app.history[-1] == "/tidy now"
             await pilot.press(*"/qu")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
             assert "/exit" in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
@@ -253,7 +261,8 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
 
     asyncio.run(slash())
     assert slash_app.return_code == 0
-    assert [e["payload"]["content"] for e in rt.store.events(sid) if e["type"] == "message" and e["payload"]["role"] == "user"][-1] == "Open a PR for issue 42."
+    sent = [e["payload"]["content"] for e in rt.store.events(sid) if e["type"] == "message" and e["payload"]["role"] == "user"]
+    assert sent[-2] == "Open a PR for issue 42." and sent[-1] == '<skill name="tidy">\nTIDY STEPS\n</skill>\n\nFollow the skill above for this request. now'
     drawn = {ch for path in Path(SuperclawApp.__module__.replace(".", "/")).parent.glob("*.py") for ch in path.read_text() if not ch.isascii()}
     allowed = {ch for value in vars(UNICODE).values() if isinstance(value, str) for ch in value} | set("".join(WORDMARK_ART)) | {"§"}
     assert drawn <= allowed and choose_glyphs({"LANG": "C"}) is ASCII and choose_glyphs({"LANG": "C.UTF-8", "SUPERCLAW_ASCII": "1"}) is ASCII
