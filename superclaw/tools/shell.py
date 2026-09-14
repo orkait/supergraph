@@ -50,6 +50,9 @@ class Job:
         return _KILLED if code < 0 else _EXITED
 
     def drain(self) -> str:
+        if self.proc.poll() is not None:
+            for thread in self.threads:
+                thread.join(LIMITS.shell_drain_timeout_s)
         with self.lock:
             fresh = "".join(self.chunks[self.read:])
             self.read = len(self.chunks)

@@ -220,6 +220,19 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     late = open_shared(brain)
     assert late.role == "attached" and SessionStore(late).get(shared_sid)["event_count"] == 1
     late.close()
+    racing = ws / "racing"
+    holder = open_shared(racing)
+    socket_path(racing).unlink()
+    started = threading.Timer(0.3, lambda: holder._server.start())
+    started.start()
+    slow = open_shared(racing)
+    started.join()
+    assert slow.role == "attached" and slow.execute("COUNT NODES", namespace="superclaw").count == 0
+    slow.close()
+    socket_path(racing).unlink()
+    with pytest.raises(NotServing):
+        open_shared(racing)
+    holder.close()
     attached.close()
     assert not socket_path(brain).exists()
     legacy = SuperGraph(path=str(ws / "old-brain"), embedder="none", enable_sentence_nodes=False)

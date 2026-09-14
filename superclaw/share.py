@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -154,11 +155,23 @@ class SharedGraph:
         try:
             self._own()
         except StoreInUse:
-            path = socket_path(self.db_path)
-            if not path.exists():
-                raise NotServing(self.db_path / ".supergraph.lock", path) from None
-            self._remote = RemoteGraph(path)
+            self._remote = self._attach()
         return self
+
+    def _attach(self) -> RemoteGraph:
+        path = socket_path(self.db_path)
+        deadline = time.monotonic() + LIMITS.share_attach_timeout_s
+        while True:
+            if path.exists():
+                remote = RemoteGraph(path)
+                try:
+                    remote.execute("SYS HEALTH")
+                    return remote
+                except (OSError, ConnectionError):
+                    remote.close()
+            if time.monotonic() >= deadline:
+                raise NotServing(self.db_path / ".supergraph.lock", path) from None
+            time.sleep(LIMITS.share_attach_poll_s)
 
     def _takeover(self) -> None:
         with self._switch:
@@ -170,7 +183,7 @@ class SharedGraph:
             try:
                 self._own()
             except StoreInUse as e:
-                self._remote = RemoteGraph(socket_path(self.db_path))
+                self._remote = self._attach()
                 raise SuperGraphError(f"another superclaw holds the brain but is not answering on {socket_path(self.db_path)}") from e
 
     def execute(self, query: str, *, namespace: str | None = None) -> Result:

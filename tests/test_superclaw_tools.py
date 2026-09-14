@@ -303,10 +303,11 @@ def test_bash(tmp_path, monkeypatch):
     while "still running" in (first := poll.run({"id": "bg_1"}, ctx)).output and "first" not in first.output:
         pass
     assert first.ok and first.output.startswith("bg_1 still running") and "first" in first.output and "second" not in first.output
-    seen = [first.output]
+    drained = [first.output]
     while (done := poll.run({"id": "bg_1"}, ctx)).output.startswith("bg_1 still running"):
-        seen.append(done.output)
-    assert not done.ok and done.output.endswith("[exit 4]") and "second" in "\n".join([*seen, done.output]) and poll.run({"id": "bg_1"}, ctx).output == "[exit 4]"
+        drained.append(done.output)
+    drained.append(done.output)
+    assert not done.ok and done.output.endswith("[exit 4]") and "second" in "\n".join(drained) and poll.run({"id": "bg_1"}, ctx).output == "[exit 4]"
     assert poll.run({}, ctx).output == "bg_1  exited 4  echo first; sleep 0.4; echo second; exit 4"
     forever = bash.run({"command": "sleep 30", "run_in_background": True}, ctx)
     assert "bg_2" in forever.output and poll.run({"id": "bg_2"}, ctx).output == "bg_2 still running, no new output yet."
