@@ -375,7 +375,8 @@ class SuperclawApp(App[None]):
         if text.startswith("/") and " " not in text:
             palette.clear_options()
             for command in matching(text, self.user_commands)[: LIMITS.command_matches_shown]:
-                palette.add_option(f"{command.usage:<26} {command.help}")
+                help_text = command.help if len(command.help) <= LIMITS.palette_help_chars else command.help[: LIMITS.palette_help_chars - 1].rstrip() + self.glyphs.ellipsis
+                palette.add_option(f"{command.usage:<{LIMITS.palette_usage_width}} {help_text}")
             palette.highlighted = None
             palette.remove_class("hidden") if palette.option_count else palette.add_class("hidden")
         else:

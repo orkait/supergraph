@@ -411,6 +411,8 @@ class Limits:
     spinner_interval_s: float = 0.09
     timer_interval_s: float = 0.25
     command_matches_shown: int = 6
+    palette_usage_width: int = 32
+    palette_help_chars: int = 60
     tui_tier_narrow: int = 58
     tui_tier_medium: int = 80
     tui_tier_full: int = 100
