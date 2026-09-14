@@ -53,15 +53,16 @@ class ObservationStore:
             return None
         return None if not data else data.get("_document") or ""
 
-    def save(self, session_id: str, tool: str, call_id: str, body: str) -> str:
+    def save(self, session_id: str, tool: str, call_id: str, body: str, expires_days: int = 0) -> str:
         digest = hashlib.sha256(f"{tool}\0{call_id}\0{body}".encode()).hexdigest()
         ref = digest[:LIMITS.ref_hex_chars]
         while (existing := self._document(ref)) is not None and existing != body:
             ref = digest[:len(ref) + LIMITS.ref_hex_step]
         if existing is None:
+            expires = f" EXPIRES IN {int(expires_days)}d" if expires_days else ""
             self._x(
                 f'CREATE NODE {_lit(KIND + ":" + ref)} kind = {_lit(KIND)} sid = {_lit(session_id)} tool = {_lit(tool)} '
-                f'call_id = {_lit(call_id)} tokens = {approx_tokens(body)} chars = {len(body)} DOCUMENT {_lit(body)}'
+                f'call_id = {_lit(call_id)} tokens = {approx_tokens(body)} chars = {len(body)}{expires} DOCUMENT {_lit(body)}'
             )
         return ref
 
