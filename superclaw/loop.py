@@ -8,7 +8,7 @@ from typing import Any
 from collections.abc import Callable
 
 from superclaw.agents import Agent
-from superclaw.compaction import SUMMARY_INSTRUCTIONS, compact, cut_point, prune_tool_results
+from superclaw.compaction import TRANSCRIPT_NOTE, compact, cut_point, prune_tool_results, summary_instructions
 from superclaw.delegate import SPAWN_KEY
 from superclaw.hooks import Dispatcher
 from superclaw.guards import (
@@ -117,6 +117,10 @@ class _Run:
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, extra_dirs=options.extra_dirs,
                                state={"plan": plan, SPAWN_KEY: self.spawn})
+        self.compact_notes: list[str] = []
+        for path, _ in options.session.files_of(options.session_id) if options.session and options.session_id else []:
+            if Path(path).is_file():
+                self.ctx.files.record(Path(path), Path(path).read_bytes())
 
     def emit(self, event: dict[str, Any]) -> None:
         if self.o.on_event:
@@ -183,7 +187,7 @@ class _Run:
     def summarize(self, brief: str) -> str:
         if self.o.summarize:
             return self.o.summarize(brief)
-        request = [Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=brief)]
+        request = [Message(role="system", content=summary_instructions(self.compact_notes)), Message(role="user", content=brief)]
         return self.provider.complete(request, []).text
 
     def maybe_compact(self, exposed: list[dict[str, Any]]) -> None:
@@ -192,8 +196,10 @@ class _Run:
         if self.prune() and not self.meter.pressure(estimate_tokens(self.messages, exposed)):
             return
         plan = self.ctx.state.get("plan", [])
+        if self.o.hooks:
+            self.compact_notes = self.o.hooks.dispatch("preCompact", {"session": self.o.session_id, "trigger": "auto", "custom_instructions": ""}, "auto").context
         res = compact(self.messages, keep_tokens=self.keep_tokens, summarize=self.summarize,
-                      plan_text=format_plan(plan) if plan else "")
+                      plan_text=format_plan(plan) if plan else "", footer=TRANSCRIPT_NOTE.format(sid=self.o.session_id) if self.o.session_id else "")
         if not res.compacted:
             return
         system_end = sum(1 for m in self.messages if m.role == "system")
@@ -232,6 +238,13 @@ class _Run:
         request = {"tool": name, "args": args, "reason": decision.reason, "risk": decision.risk.level,
                    "categories": decision.risk.categories, "prefix": prefix if not prefix_error else []}
         self.emit({"type": "permission_request", **request})
+        if self.o.hooks:
+            asked = self.o.hooks.dispatch("permissionRequest", {"tool": name, "args": args, "reason": decision.reason, "risk": decision.risk.level}, name)
+            if asked.permission == "allow":
+                return True, f"approved by hook {asked.blocked_by}"
+            if asked.permission == "deny":
+                return False, f"denied by hook {asked.blocked_by}: {' '.join(asked.context)}".rstrip(": ")
+            self.o.hooks.dispatch("notification", {"session": self.o.session_id, "message": f"{name} needs your approval", "notification_type": "permission_prompt"}, "permission_prompt")
         if self.o.on_permission is None:
             return False, f"no interactive approver; {decision.reason}"
         choice = self.o.on_permission(request)
@@ -285,6 +298,8 @@ class _Run:
             return ToolResult.error(f"Error: invalid arguments for ask_user: {e}")
         if self.o.on_ask_user is None:
             return ToolResult.success(NON_INTERACTIVE_MESSAGE)
+        if self.o.hooks:
+            self.o.hooks.dispatch("notification", {"session": self.o.session_id, "message": questions[0]["question"], "notification_type": "elicitation_dialog"}, "elicitation_dialog")
         answers = self.o.on_ask_user(questions)
         answers += [""] * (len(questions) - len(answers))
         return ToolResult.success("\n".join(f"Q: {q['question']}\nA: {a}" for q, a in zip(questions, answers, strict=True)))
@@ -318,7 +333,7 @@ class _Run:
             self.append(Message(role="user", content=promise_nudge()))
             return None
         if self.o.hooks:
-            stop = self.o.hooks.dispatch("stop", {"text": text, "turns": self.turns})
+            stop = self.o.hooks.dispatch("subagentStop" if self.o.depth else "stop", {"session": self.o.session_id, "text": text, "turns": self.turns})
             if stop.blocked and self.nudges < LIMITS.max_continue_nudges:
                 self.nudges += 1
                 self.append(Message(role="user", content=f"A stop hook ({stop.blocked_by}) asked you to continue: {' '.join(stop.context) or 'work remains'}"))

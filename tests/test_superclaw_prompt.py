@@ -139,7 +139,7 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert skill_tool.run({"name": "hyper:rulebook"}, ToolContext(workspace=root)).output == "LAWS" and skill_tool.run({"name": "ship"}, ToolContext(workspace=root)).output == "SHIP"
     assert "unknown skill 'rulebook'" in skill_tool.run({"name": "rulebook"}, ToolContext(workspace=root)).output
     hooks = load_hooks([(linked.hooks, linked.path)])
-    assert [h.event for h in hooks] == ["sessionStart"] and hooks[0].command[:2] == ["/bin/sh", "-c"] and str(linked.path) in hooks[0].command[2] and hooks[0].timeout_s == 5
+    assert [h.event for h in hooks] == ["sessionStart", "notification"] and hooks[0].command[:2] == ["/bin/sh", "-c"] and str(linked.path) in hooks[0].command[2] and hooks[0].timeout_s == 5
     dispatcher = Dispatcher(hooks, root)
     assert dispatcher.dispatch("sessionStart", {"session": "s1", "prompt": "hi"}, "startup").context == [f"bootstrap from {linked.path}"]
     assert dispatcher.dispatch("sessionStart", {"session": "s1", "prompt": "hi"}, "resume").context == []
@@ -176,7 +176,7 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     named = [s.name for s in load_config(mcp_paths(on, root, True)).servers]
     assert named == ["docs", "local", "proj", "hyper"] and [s.name for s in load_config(mcp_paths(on, root, False)).servers] == ["docs", "local", "hyper"] and load_config(mcp_paths(settings, root, True)).servers == []
     claude_dispatch = build_hooks(on, root, True)
-    assert build_hooks(settings, root, True) is None and all(h.claude for h in claude_dispatch.hooks) and [h.event for h in claude_dispatch.hooks] == ["beforeTool", "beforeTool", "beforeTool", "stop", "sessionStart"]
+    assert build_hooks(settings, root, True) is None and all(h.claude for h in claude_dispatch.hooks) and [h.event for h in claude_dispatch.hooks] == ["beforeTool", "beforeTool", "beforeTool", "stop", "sessionStart", "notification"]
     denied = claude_dispatch.dispatch("beforeTool", {"tool": "edit_file", "args": {"path": "x"}}, "edit_file")
     assert denied.blocked and denied.context == ["trailer"] and not claude_dispatch.dispatch("beforeTool", {"tool": "write_file", "args": {}}, "read_file").blocked
     rewritten = claude_dispatch.dispatch("beforeTool", {"tool": "bash", "args": {"command": "cargo test"}}, "bash")

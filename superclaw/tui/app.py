@@ -25,9 +25,9 @@ from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
 from superclaw.runtime import Message, clip, compact, count
-from superclaw.compaction import SUMMARY_INSTRUCTIONS
+from superclaw.compaction import TRANSCRIPT_NOTE, summary_instructions
 from superclaw.compaction import compact as compact_context
-from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, TRANSCRIPT_TEMPLATE, Glyphs, Provider
+from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, SESSION_END_CLEAR, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.tools import ToolContext
 from superclaw import clipboard
 from superclaw.clips import Clip, Clips
@@ -355,7 +355,9 @@ class SuperclawApp(App[None]):
         self.query_one("#welcome").display = True
 
     def open_session(self, sid: str) -> None:
-        self.session_id = sid
+        if self.rt.hooks and self.rt.session_id and self.rt.session_id != sid:
+            self.rt.hooks.dispatch("sessionEnd", {"session": self.rt.session_id, "reason": SESSION_END_CLEAR}, SESSION_END_CLEAR)
+        self.session_id = self.rt.session_id = sid
         self.clear_transcript()
         self.load_history()
         self.stats = RunStats(window=self.rt.context_window)
@@ -528,12 +530,13 @@ class SuperclawApp(App[None]):
     @work(thread=True, exclusive=True)
     def compact_worker(self) -> None:
         pairs = self.rt.store.timeline(self.session_id)
+        notes = self.rt.hooks.dispatch("preCompact", {"session": self.session_id, "trigger": "manual", "custom_instructions": ""}, "manual").context if self.rt.hooks else []
 
         def summarize(brief: str) -> str:
-            return self.rt.provider.complete([Message(role="system", content=SUMMARY_INSTRUCTIONS), Message(role="user", content=brief)], []).text
+            return self.rt.provider.complete([Message(role="system", content=summary_instructions(notes)), Message(role="user", content=brief)], []).text
 
         try:
-            result = compact_context([m for _, m in pairs], summarize=summarize)
+            result = compact_context([m for _, m in pairs], summarize=summarize, footer=TRANSCRIPT_NOTE.format(sid=self.session_id))
         except Exception as e:
             self.call_from_thread(self.finish_compact, f"compact failed: {clip(str(e), LIMITS.preview_error_chars)}", True)
             return
