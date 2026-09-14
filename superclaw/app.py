@@ -15,6 +15,7 @@ from superclaw.documents import Documents
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.kernel import READ_VERBS, Kernel, Python
+from superclaw import maintain
 from superclaw.loop import Options, Result, run
 from superclaw.mcp import Bridge, connect_all, load_config
 from superclaw.memory import Memory
@@ -28,7 +29,7 @@ from superclaw.runtime import Message, Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
-from superclaw.settings import MCP_FILE, PROVIDERS, WORKSPACE_DIR, Settings
+from superclaw.settings import MCP_FILE, PROVIDERS, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
@@ -175,6 +176,8 @@ def build_runtime(
         sessions = SessionStore(gs)
         kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
         registry = build_registry(memory, observations, workspace, backend, settings, kernel, sessions, Documents(gs))
+        if maintain.stale(gs):
+            maintain.maintain(gs, optimize=False)
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
     policy = Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs)
     if agent:
@@ -278,6 +281,8 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
     cb = callbacks or Callbacks()
     if rt.provider is None:
         raise NoProviderKey("no provider connected; run setup first")
+    if rt.mode is Mode.UNSAFE and rt.gs is not None and maintain.snapshot(rt.gs, f"{UNSAFE_SNAPSHOT}-{sid}") and cb.on_event:
+        cb.on_event({"type": "snapshot", "name": f"{UNSAFE_SNAPSHOT}-{sid}"})
     if rt.intent_gate:
         rt.policy.request_kind = classify(rt.provider, prompt)
         if cb.on_event:

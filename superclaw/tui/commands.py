@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from supergraph.core.errors import SuperGraphError
 
+from superclaw import maintain
 from superclaw.catalog import describe, keyed_providers
 from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
@@ -121,6 +122,29 @@ def _facts(app: SuperclawApp, arg: str) -> None:
         app.note(f"{fact.id}  {fact.line()}")
     if not found:
         app.note("no facts yet; web_fetch with a prompt learns them, memory_note with origin web files one")
+
+
+def _maintain(app: SuperclawApp, arg: str) -> None:
+    report = maintain.maintain(app.rt.gs)
+    app.note(f"maintained: {report.line(app.glyphs.dot)}")
+    app.note(maintain.health_line(app.rt.gs, app.glyphs.dot))
+
+
+def _snapshots(app: SuperclawApp, arg: str) -> None:
+    names = maintain.snapshots(app.rt.gs)
+    for name in names:
+        app.note(name)
+    if not names:
+        app.note("no snapshots in this process; one is taken before the first unsafe run of a session")
+
+
+def _rollback(app: SuperclawApp, arg: str) -> None:
+    if not arg or arg not in maintain.snapshots(app.rt.gs):
+        app.note("usage: /rollback <name>, one of /snapshots", error=True)
+        return
+    maintain.rollback(app.rt.gs, arg)
+    app.open_session(app.rt.store.create(cwd=str(app.rt.workspace), model=app.rt.model))
+    app.note(f"rolled back to {arg}; everything written after it is gone, and this is a fresh session on the restored store")
 
 
 def _ask(app: SuperclawApp, arg: str) -> None:
@@ -251,6 +275,9 @@ COMMANDS = (
     Command("/recall", "/recall <§id|query>", "bring back or search stored tool results", _recall),
     Command("/facts", "/facts [query|as-of DATE [query]|retract ID [reason]]", "facts learned from sources, with age and URL", _facts),
     Command("/ask", "/ask <question>", "answer from stored facts and results with the substrate's reader, no agent loop", _ask),
+    Command("/maintain", "/maintain", "expire, decay stale facts, optimize the brain and show its health", _maintain),
+    Command("/snapshots", "/snapshots", "snapshots taken in this process", _snapshots),
+    Command("/rollback", "/rollback <name>", "restore the store to a snapshot from this process, discarding later writes", _rollback),
     Command("/setup", "/setup", "connect a provider key and model", _setup),
     Command("/help", "/help", "commands and keys", _help),
     Command("/exit", "/exit, /quit", "leave superclaw", _quit, aliases=("/quit",)),

@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -7,10 +8,13 @@ from supergraph import SuperGraph
 from superclaw.compaction import SUMMARY_LABEL
 from supergraph.core.errors import SuperGraphError
 
+from superclaw import maintain
+from superclaw.dsl import now_ms
 from superclaw.facts import Facts, as_of_ms, parse
 from superclaw.memory import Memory, refusal
 from superclaw.observations import ObservationStore
 from superclaw.session import NAMESPACE, SessionStore
+from superclaw.settings import LIMITS
 from superclaw.tools import ToolContext
 
 
@@ -103,6 +107,25 @@ def test_memory_files_only_stated_facts(gs, tmp_path):
     reading.close()
     with pytest.raises(SuperGraphError):
         facts.ask("who")
+    assert maintain.stale(gs) and maintain.last(gs) is None
+    day = 86_400_000
+    old = facts.assert_("Old but solid.", "https://old.example/", observed_at=now_ms() - 100 * day)
+    weak = facts.assert_("Old and weak.", "https://old.example/", confidence=0.3, observed_at=now_ms() - 100 * day)
+    fresh = facts.assert_("Fresh.", "https://new.example/")
+    gs.execute('CREATE NODE "obs:stale" kind = "obs" EXPIRES IN 1s DOCUMENT "stale page"', namespace=NAMESPACE)
+    time.sleep(1.2)
+    report = maintain.maintain(gs)
+    assert (report.expired, report.decayed, report.retracted) == (1, 3, 1) and report.health.get("live_nodes") and "expired 1" in report.line("·")
+    assert facts.load(zebra.id).confidence == 0.35
+    assert facts.load(old.id).confidence == 0.35 and facts.load(weak.id) is None and facts.load(fresh.id).confidence == LIMITS.web_fact_confidence
+    again = maintain.maintain(gs, optimize=False)
+    assert (again.decayed, again.retracted, again.optimized) == (0, 0, {}) and not maintain.stale(gs) and maintain.last(gs)["expired"] == 0
+    assert maintain.health_line(gs, "·").startswith("health tombstones ") and maintain.health_line(gs, "·").endswith("last maintain today") and maintain.health_line(None, "·").startswith("health not opened")
+    assert maintain.snapshot(gs, "before") and not maintain.snapshot(gs, "before") and maintain.snapshots(gs) == ["before"]
+    facts.retract(fresh.id, "testing rollback")
+    assert facts.load(fresh.id) is None
+    maintain.rollback(gs, "before")
+    assert facts.load(fresh.id) is not None
     with pytest.raises(ValueError):
         facts.assert_("The key is sk-proj-abcdefghijklmnopqrstuvwxyz0123456789", "https://x.example/")
     assert not gs.execute('NODES WHERE kind = "memory"', namespace=NAMESPACE).data and gs.execute('NODES WHERE kind = "fact"', namespace=NAMESPACE).data

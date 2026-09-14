@@ -77,13 +77,13 @@ class Facts:
             raise ValueError("refused: the fact contains a secret")
         at = observed_at or now_ms()
         node = ident(text)
-        fields = f'kind = {lit(FACT_KIND)} source = {lit(source)} observed_at = {at} confidence = {confidence} sid = {lit(session_id)} quote = {lit(quote)}'
+        fields = f'kind = {lit(FACT_KIND)} source = {lit(source)} observed_at = {at} decayed_at = {at} confidence = {confidence} sid = {lit(session_id)} quote = {lit(quote)}'
         try:
             self._x(f"CREATE NODE {lit(node)} {fields} DOCUMENT {lit(text)}")
         except SuperGraphError as e:
             if "exist" not in str(e).lower():
                 raise
-            self._x(f"UPDATE NODE {lit(node)} SET observed_at = {at} confidence = {confidence} source = {lit(source)}")
+            self._x(f"UPDATE NODE {lit(node)} SET observed_at = {at} decayed_at = {at} confidence = {confidence} source = {lit(source)}")
         self._x(f"ASSERT {lit(node)} {fields} CONFIDENCE {confidence} SOURCE {lit(source)} EVENT_AT {at}")
         if page_ref:
             self.link(node, f"obs:{page_ref}", FROM_EDGE)
