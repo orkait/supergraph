@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from supergraph.core.errors import SuperGraphError
-
 from superclaw import maintain
 from superclaw.catalog import describe, keyed_providers
 from superclaw.facts import as_of_ms
@@ -94,9 +92,11 @@ def _usage(app: SuperclawApp, arg: str) -> None:
 def _context(app: SuperclawApp, arg: str) -> None:
     from superclaw.report import context_report
 
-    report = context_report(app.rt, arg)
-    for name, tokens in [*report.categories.items(), ("free", report.free)]:
-        app.note(f"{name:<18}{tokens:>9,}  {report.percent(tokens):5.1f}%")
+    def measure() -> list[str]:
+        report = context_report(app.rt, arg)
+        return [f"{name:<18}{tokens:>9,}  {report.percent(tokens):5.1f}%" for name, tokens in [*report.categories.items(), ("free", report.free)]]
+
+    app.defer("measuring context", measure)
 
 
 def _recall(app: SuperclawApp, arg: str) -> None:
@@ -130,9 +130,11 @@ def _facts(app: SuperclawApp, arg: str) -> None:
 
 
 def _maintain(app: SuperclawApp, arg: str) -> None:
-    report = maintain.maintain(app.rt.gs)
-    app.note(f"maintained: {report.line(app.glyphs.dot)}")
-    app.note(maintain.health_line(app.rt.gs, app.glyphs.dot))
+    def sweep() -> list[str]:
+        report = maintain.maintain(app.rt.gs)
+        return [f"maintained: {report.line(app.glyphs.dot)}", maintain.health_line(app.rt.gs, app.glyphs.dot)]
+
+    app.defer("maintaining the brain", sweep)
 
 
 def _snapshots(app: SuperclawApp, arg: str) -> None:
@@ -156,14 +158,14 @@ def _ask(app: SuperclawApp, arg: str) -> None:
     if not arg:
         app.note("usage: /ask <question>", error=True)
         return
-    try:
+    def consult() -> list[str]:
         answer = app.rt.memory.facts.ask(arg)
-    except SuperGraphError as e:
-        app.note(str(e), error=True)
-        return
-    app.note(answer.text or "no information available")
-    if answer.cited:
-        app.note("cited: " + ", ".join(answer.cited))
+        lines = [answer.text or "no information available"]
+        if answer.cited:
+            lines.append("cited: " + ", ".join(answer.cited))
+        return lines
+
+    app.defer("asking the substrate", consult)
 
 
 def _model(app: SuperclawApp, arg: str) -> None:
@@ -235,8 +237,7 @@ def _permissions(app: SuperclawApp, arg: str) -> None:
 def _doctor(app: SuperclawApp, arg: str) -> None:
     from superclaw.report import doctor_lines
 
-    for line in doctor_lines(app.rt, "/setup"):
-        app.note(line)
+    app.defer("checking health", lambda: list(doctor_lines(app.rt, "/setup")))
 
 
 def _effort(app: SuperclawApp, arg: str) -> None:

@@ -33,7 +33,7 @@ from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.prompt import agent_block
-from superclaw.runtime import Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
+from superclaw.runtime import Cancelled, Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS, TOUCH_VERBS
 from superclaw.tools import PathEscapes, Registry, Result as ToolResult, ToolContext, jail
@@ -122,7 +122,7 @@ class _Run:
         self.control = ""
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, extra_dirs=options.extra_dirs,
-                               state={"plan": plan, SPAWN_KEY: self.spawn})
+                               state={"plan": plan, SPAWN_KEY: self.spawn}, cancelled=options.cancelled)
         self.compact_notes: list[str] = []
         for path, _ in options.session.files_of(options.session_id) if options.session and options.session_id else []:
             if Path(path).is_file():
@@ -177,11 +177,13 @@ class _Run:
         return {"max_tokens": max(LIMITS.min_output_tokens, min(self.cap, free))}
 
     def complete(self, exposed: list[dict[str, Any]]) -> Completion:
-        budget = self.output_budget(exposed)
+        budget: dict[str, Any] = {**self.output_budget(exposed), "cancelled": self.o.cancelled}
         try:
             if getattr(self.provider, "streams", False) and self.o.on_event:
                 return self.provider.complete(self.messages, exposed, on_text=lambda text: self.emit({"type": "text_delta", "text": text}), **budget)
             return self.provider.complete(self.messages, exposed, **budget)
+        except Cancelled:
+            raise
         except Exception as e:
             self.persist("error", {"turn": self.turns, "error": f"{type(e).__name__}: {e}"})
             self.emit({"type": "error", "message": str(e), "recoverable": False})
@@ -562,8 +564,11 @@ class _Run:
             if spent := self.budget_spent() or self.stopped():
                 return spent
             exposed = o.registry.definitions(o.policy.visible, self.loaded)
-            self.maybe_compact(exposed)
-            completion = self.complete(exposed)
+            try:
+                self.maybe_compact(exposed)
+                completion = self.complete(exposed)
+            except Cancelled:
+                return self.stopped() or self.result("Stopped by the user.", incomplete=True, incomplete_reason="cancelled", stop_reason="cancelled")
             self.account(completion.usage)
             self.append(Message(role="assistant", content=completion.text, tool_calls=list(completion.tool_calls)), finish=completion.finish_reason)
             if completion.text:

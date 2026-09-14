@@ -35,7 +35,7 @@ class Scripted:
     def __init__(self, *completions):
         self.queue = list(completions)
 
-    def complete(self, messages, tools):
+    def complete(self, messages, tools, **kw):
         return self.queue.pop(0) if self.queue else Completion(text="(exhausted)")
 
 

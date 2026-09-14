@@ -385,6 +385,7 @@ class Limits:
     shell_max_timeout_ms: int = 600_000
     shell_capture_bytes: int = 1024 * 1024
     shell_drain_timeout_s: float = 2.0
+    shell_poll_s: float = 0.1
     capture_preview_lines: int = 5
     kernel_trace_depth: int = 3
     kernel_checkpoint_timeout_s: float = 10.0
