@@ -685,6 +685,7 @@ class SuperclawApp(App[None]):
             self.stats.used, self.stats.window = event["context_used"], event["context_window"]
             self.stats.tokens, self.stats.cost = event["run_total"], event["run_cost_usd"]
             self.stats.saved, self.stats.kept_out = event["saved_tokens"], event["kept_out_tokens"]
+            self.stats.cached, self.stats.sent = event.get("run_cached", 0), event.get("run_input", 0)
             self.refresh_status()
         elif line := describe(event, self.glyphs):
             self.note(line)
@@ -721,7 +722,8 @@ class SuperclawApp(App[None]):
             self.note(f"run failed after {elapsed:.0f}s: {error}" + (f"{sep}{advice}" if advice else ""), error=True)
         else:
             summary = sep.join((f"done in {elapsed:.0f}s", f"{result.turns} turns", f"{self.stats.timer.calls} tools",
-                                f"{result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window"))
+                                f"{result.saved_tokens + result.kept_out_tokens:,} tokens kept out of the window",
+                                f"{self.stats.cache_hit:.0%} of the prompt served from cache" if self.stats.sent else "no cache reporting from this provider"))
             if result.stop_reason or result.incomplete:
                 self.note(f"stopped: {result.stop_reason or result.incomplete_reason}{sep}{summary}", error=True)
             else:

@@ -7,6 +7,7 @@ import pytest
 from superclaw.catalog import describe, models_for, resolve
 from superclaw.compaction import PRUNE_MARKER, SUMMARY_LABEL, compact, cut_point, project, prune_tool_results
 from superclaw.meter import ContextMeter
+from superclaw.tui.status import RunStats
 from superclaw.models import ModelInfo, lookup
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens, message_tokens, to_wire
@@ -88,6 +89,10 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert big.limit() == int(1_000_000 * LIMITS.compaction_trigger_share) and big.pressure(700_000) and not big.pressure(500_000)
     assert small.limit() == int(40_000 * LIMITS.compaction_trigger_share) and small.pressure(25_000) and not small.pressure(23_000)
     assert ContextMeter(1_000, reserve=100).limit() == 600 and ContextMeter(0).pressure(10_000) is False
+    stats = RunStats(window=1000)
+    assert stats.cache_hit == 0.0
+    stats.cached, stats.sent = 900, 1200
+    assert stats.cache_hit == 0.75
     assert Settings.from_env({"SUPERCLAW_MODEL": "nobody/no-such-model"}).output_cap() == LIMITS.max_output_tokens_fallback
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
     import superclaw.provider as mod

@@ -45,11 +45,17 @@ class RunStats:
     cost: float = 0.0
     saved: int = 0
     kept_out: int = 0
+    cached: int = 0
+    sent: int = 0
     timer: TurnTimer = field(default_factory=TurnTimer)
 
     @property
     def fill(self) -> float:
         return self.used / self.window if self.window else 0.0
+
+    @property
+    def cache_hit(self) -> float:
+        return self.cached / self.sent if self.sent else 0.0
 
 
 def tier(width: int) -> int:
