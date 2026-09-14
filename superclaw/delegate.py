@@ -20,7 +20,7 @@ class Delegate(Tool):
         "type": "object",
         "properties": {
             "task": {"type": "string", "description": "Self-contained instructions; the child knows nothing else."},
-            "agent": {"type": "string", "description": "Agent profile to run the child under; it narrows the child's prompt and tools."},
+            "agent": {"type": "string", "description": "Agent profile to run the child under; it narrows the child's prompt and tools. Built in: explore (read-only search that answers with file:line findings), review (read-only review of a diff)."},
             "refs": {"type": "array", "items": {"type": "string"}, "description": "Stored results (§id) to hand over in full."},
             "files": {"type": "array", "items": {"type": "string"}, "description": "Workspace paths the child should start from."},
             "max_turns": {"type": "integer", "minimum": 1, "description": "Optional cap on the child's model turns; unset means the guards and budget end it."},

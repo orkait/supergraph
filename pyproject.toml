@@ -199,7 +199,7 @@ include = ["supergraph*", "superclaw*"]
 "supergraph"       = ["py.typed", "*.txt"]
 "supergraph.query" = ["py.typed"]
 "supergraph.dsl"   = ["*.lark"]
-"superclaw"        = ["prompts/*.md"]
+"superclaw"        = ["prompts/*.md", "profiles/*.md"]
 
 [tool.ruff]
 # Dead-code gate. Before this existed the library carried 116 unused imports

@@ -129,6 +129,7 @@ MCP_FILE = "mcp.json"
 MCP_SCOPES = ("user", "project")
 WORKSPACE_DIR = ".superclaw"
 AGENTS_DIR = "agents"
+BUILTIN_PROFILES = Path(__file__).parent / "profiles"
 COMMANDS_DIR = "commands"
 REPO_MAP_IGNORED_DIRS = frozenset({".git", ".cache", ".next", ".worktrees", ".superclaw", "build", "coverage", "dist", "node_modules",
                                    "vendor", ".venv", "venv", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "target"})
@@ -605,7 +606,7 @@ class Settings:
         roots = [self.config_dir / AGENTS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / AGENTS_DIR)
-        return roots + self.claude_roots(AGENTS_DIR, workspace) + [plugin.agents for plugin in self.plugins(workspace) if plugin.agents]
+        return roots + self.claude_roots(AGENTS_DIR, workspace) + [plugin.agents for plugin in self.plugins(workspace) if plugin.agents] + [BUILTIN_PROFILES]
 
     def command_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / COMMANDS_DIR]
