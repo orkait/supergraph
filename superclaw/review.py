@@ -22,7 +22,7 @@ class Change:
 
 
 def _git(cwd: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    done = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         raise ReviewError(done.stderr.strip() or f"git {' '.join(args)} failed")
     return done.stdout

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Final
 
 from superclaw.runtime import Message
 from superclaw.settings import LIMITS
+from superclaw.text import oneline
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -45,7 +46,7 @@ class Intent:
 
     def settled(self, answers: Sequence[str]) -> Intent:
         replies = tuple(zip(self.unknowns, answers, strict=False))
-        kept = tuple((question, " ".join(answer.split())) for question, answer in replies if answer.strip())
+        kept = tuple((question, oneline(answer)) for question, answer in replies if answer.strip())
         unresolved = tuple(question for question in self.unknowns if question not in {q for q, _ in kept})
         return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept))
 
@@ -84,7 +85,7 @@ def decompose_prompt() -> str:
 def _strings(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
-    cleaned = [" ".join(item.split()) for item in value if isinstance(item, str) and item.strip()]
+    cleaned = [oneline(item) for item in value if isinstance(item, str) and item.strip()]
     return tuple(cleaned[: LIMITS.intent_items_max])
 
 
@@ -103,7 +104,7 @@ def parse_intent(text: str) -> Intent:
     for raw in _objects(text or ""):
         goal = raw.get("goal")
         parsed = Intent(
-            " ".join(goal.split())[: LIMITS.intent_goal_chars] if isinstance(goal, str) else "",
+            oneline(goal)[: LIMITS.intent_goal_chars] if isinstance(goal, str) else "",
             _strings(raw.get("subgoals")),
             _strings(raw.get("queries")),
             _strings(raw.get("unknowns")),

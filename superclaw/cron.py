@@ -10,6 +10,7 @@ from typing import Any
 from croniter import croniter
 
 from superclaw.app import Callbacks, Runtime, run_once
+from superclaw.dsl import Result, Store
 from superclaw.session import NAMESPACE, _lit
 from superclaw.settings import LIMITS
 
@@ -51,11 +52,11 @@ def _job(row: dict[str, Any]) -> Job:
 
 
 class CronStore:
-    def __init__(self, gs: Any, now_ms: Callable[[], int] = lambda: int(time.time() * _MS)) -> None:
+    def __init__(self, gs: Store, now_ms: Callable[[], int] = lambda: int(time.time() * _MS)) -> None:
         self._gs = gs
         self.now_ms = now_ms
 
-    def _x(self, query: str):
+    def _x(self, query: str) -> Result:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def _node(self, job_id: str) -> str:
@@ -132,7 +133,9 @@ def fire(rt: Runtime, store: CronStore, job: Job, emit: Callable[[dict[str, Any]
 def run(rt: Runtime, store: CronStore, ids: tuple[str, ...] = (), once: bool = False, catch_up: bool = False,
         emit: Callable[[dict[str, Any]], None] = lambda event: None, sleep: Callable[[float], None] = time.sleep,
         stop: Callable[[], bool] = lambda: False) -> int:
-    selected = lambda job: not ids or job.id in ids  # noqa: E731
+    def selected(job: Job) -> bool:
+        return not ids or job.id in ids
+
     if not once and not catch_up:
         for job in store.due():
             if selected(job):

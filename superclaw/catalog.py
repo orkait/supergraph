@@ -10,16 +10,8 @@ from typing import Any
 
 import httpx
 
-from superclaw.runtime import PER_MILLION, compact
-from superclaw.settings import (
-    CATALOG_CHAT_MODE,
-    LIMITS,
-    MODEL_SOURCE_CATALOG,
-    MODEL_SOURCE_LIVE,
-    NONCODING_TERMS,
-    PROVIDERS,
-    Provider,
-)
+from superclaw.settings import CATALOG_CHAT_MODE, LIMITS, MODEL_SOURCE_CATALOG, MODEL_SOURCE_LIVE, NONCODING_TERMS, PRICE_UNIT_TOKENS, PROVIDERS, Provider
+from superclaw.text import compact
 
 Fetch = Callable[[str, dict[str, str]], bytes]
 
@@ -127,11 +119,10 @@ def merge(live: list[Model], catalog: list[Model]) -> list[Model]:
     out = []
     for model in live:
         fill = known.get(model.id)
-        if fill:
-            model = Model(model.id, model.provider, model.name, model.context_window or fill.context_window,
-                          model.input_per_token or fill.input_per_token, model.output_per_token or fill.output_per_token,
-                          model.tools or fill.tools, model.source)
-        out.append(model)
+        out.append(model if fill is None else Model(
+            model.id, model.provider, model.name, model.context_window or fill.context_window,
+            model.input_per_token or fill.input_per_token, model.output_per_token or fill.output_per_token,
+            model.tools or fill.tools, model.source))
     return out
 
 
@@ -147,7 +138,7 @@ def describe(model: Model, dot: str) -> str:
     if model.tools:
         parts.append("tools")
     if model.input_per_token or model.output_per_token:
-        parts.append(f"${model.input_per_token * PER_MILLION:.2f}/{model.output_per_token * PER_MILLION:.2f}")
+        parts.append(f"${model.input_per_token * PRICE_UNIT_TOKENS:.2f}/{model.output_per_token * PRICE_UNIT_TOKENS:.2f}")
     parts.append(model.source)
     return f" {dot} ".join(parts)
 

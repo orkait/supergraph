@@ -89,26 +89,6 @@ def to_wire(messages: list[Message]) -> list[dict[str, Any]]:
     return wire
 
 
-def clip(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
-
-
-THOUSAND = 1000
-PER_MILLION = 1_000_000
-
-
-def compact(count: int) -> str:
-    if count >= PER_MILLION:
-        return f"{count / PER_MILLION:.1f}M"
-    if count >= THOUSAND:
-        return f"{count / THOUSAND:.1f}K"
-    return str(count)
-
-
-def count(n: int, one: str, many: str = "") -> str:
-    return f"{n} {one if n == 1 else (many or one + 's')}"
-
-
 _ASCII_INK = re.compile(r"[!-~]")
 _NON_ASCII = re.compile(r"[^\x00-\x7f]")
 

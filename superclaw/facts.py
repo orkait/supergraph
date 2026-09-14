@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
-from superclaw.dsl import MS_PER_SECOND, age, edge, lit, now_ms, rows
+from superclaw.dsl import MS_PER_SECOND, Result, Store, age, edge, lit, now_ms, rows
 from superclaw.redaction import redact
 from superclaw.session import NAMESPACE
 from superclaw.settings import ANSWER_KINDS, FACT_KIND, FROM_EDGE, LEARNED_EDGE, LIMITS, SUPERSEDES_EDGE
+from superclaw.text import oneline
+from supergraph.core.errors import SuperGraphError
 
 FACT_LINE = re.compile(r"^\s*[-*]\s*(?P<text>[^|]+?)\s*(?:\|\s*(?P<quote>.+?))?\s*$")
 FACTS_HEADING = "Facts:"
@@ -46,31 +46,32 @@ class Fact:
 
 
 def ident(text: str) -> str:
-    return f"{FACT_KIND}:" + hashlib.sha1(" ".join(text.split()).lower().encode("utf-8")).hexdigest()[: LIMITS.id_hash_chars]
+    body = oneline(text).lower().encode("utf-8")
+    return f"{FACT_KIND}:" + hashlib.sha1(body, usedforsecurity=False).hexdigest()[: LIMITS.id_hash_chars]
 
 
 def parse(text: str) -> list[tuple[str, str]]:
-    head, sep, tail = text.partition(FACTS_HEADING)
+    _, sep, tail = text.partition(FACTS_HEADING)
     if not sep:
         return []
     found: list[tuple[str, str]] = []
     for line in tail.splitlines():
         match = FACT_LINE.match(line)
         if match and match.group("text").strip():
-            found.append((" ".join(match.group("text").split()), " ".join((match.group("quote") or "").split())))
+            found.append((oneline(match.group("text")), oneline(match.group("quote") or "")))
     return found[: LIMITS.facts_per_page_max]
 
 
 class Facts:
-    def __init__(self, gs: Any) -> None:
+    def __init__(self, gs: Store) -> None:
         self._gs = gs
 
-    def _x(self, query: str) -> Any:
+    def _x(self, query: str) -> Result:
         return self._gs.execute(query, namespace=NAMESPACE)
 
     def assert_(self, text: str, source: str, *, session_id: str = "", confidence: float = LIMITS.web_fact_confidence,
                 observed_at: int | None = None, quote: str = "", page_ref: str = "") -> Fact:
-        text = " ".join(text.split())
+        text = oneline(text)
         if not text or not source:
             raise ValueError("a fact needs text and a source")
         if redact(text)[1] or redact(quote)[1]:

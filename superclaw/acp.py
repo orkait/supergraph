@@ -118,8 +118,8 @@ class Conn:
             self._reply(message_id, error=RpcError(INTERNAL_ERROR, f"{type(e).__name__}: {e}"))
 
     def serve(self) -> None:
-        for line in self._reader:
-            line = line.strip()
+        for raw in self._reader:
+            line = raw.strip()
             if not line:
                 continue
             try:

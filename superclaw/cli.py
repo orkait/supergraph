@@ -12,24 +12,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
-from superclaw.mcp import MCPError, add_server, remove_server
-from superclaw.loop import Result
-from supergraph.core.errors import StoreInUse
-
+from superclaw import checks, cron, maintain, plugins, repomap, review, spec, update
+from superclaw.acp import serve as acp_serve
 from superclaw.agents import load_agents
 from superclaw.agents import resolve as resolve_agent
+from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
 from superclaw.facts import as_of_ms
-from supergraph.core.errors import SuperGraphError
+from superclaw.loop import Result
+from superclaw.mcp import MCPError, add_server, remove_server
 from superclaw.policy import Mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
-from superclaw import checks, cron, maintain, plugins, repomap, review, spec, update
-from superclaw.acp import serve as acp_serve
 from superclaw.report import context_report, doctor_lines
-from superclaw.runtime import clip
 from superclaw.schema import SchemaError
 from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
@@ -38,11 +34,13 @@ from superclaw.schema import problems as schema_problems
 from superclaw.settings import LIMITS, MCP_FILE, MCP_SCOPES, PROVIDERS, SESSION_END_EXIT, SESSION_END_OTHER, WORKSPACE_DIR, Glyphs, Settings, split_models
 from superclaw.share import NotServing
 from superclaw.skills import load_skills
+from superclaw.text import clip
 from superclaw.tools import jail
 from superclaw.usercommands import expand, load_commands
 from superclaw.usercommands import find as find_command
 from superclaw.worktree import WorktreeError
 from superclaw.worktree import prepare as prepare_worktree
+from supergraph.core.errors import StoreInUse, SuperGraphError
 
 SCHEMA_VERSION = 1
 STORELESS = ("doctor", "mcp", "agents", "skills", "commands")

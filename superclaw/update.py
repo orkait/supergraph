@@ -52,7 +52,7 @@ def detect(direct_url: str | None = None, version: str = "", executable: str = s
 
 
 def _git(path: str, *args: str) -> str:
-    done = subprocess.run(["git", "-C", path, *args], capture_output=True, text=True)
+    done = subprocess.run(["git", "-C", path, *args], capture_output=True, text=True, check=False)
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
@@ -96,5 +96,5 @@ def describe(found: Plan) -> list[str]:
 def apply(found: Plan) -> int:
     if not found.available:
         return 0
-    done = subprocess.run(found.command, cwd=Path(found.install.source or "."), text=True)
+    done = subprocess.run(found.command, cwd=Path(found.install.source or "."), text=True, check=False)
     return done.returncode

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from superclaw.runtime import Message, message_tokens
 from superclaw.settings import LIMITS
@@ -94,15 +94,14 @@ def _call_line(name: str, arguments: str) -> str:
 
 
 def render_transcript(messages: list[Message]) -> str:
-    lines = []
+    lines: list[str] = []
     for m in messages:
         if m.role == "tool":
             lines.append(f"[tool {m.tool_call_id}{' error' if m.is_error else ''}] {_clamp(m.content, LIMITS.compaction_tool_result_clamp)}")
             continue
         if m.content:
             lines.append(f"[{m.role}] {m.content}")
-        for c in m.tool_calls:
-            lines.append(f"[{m.role} tool_call {c.id}] {c.name}({_clamp(c.arguments, LIMITS.compaction_tool_args_clamp)})")
+        lines.extend(f"[{m.role} tool_call {c.id}] {c.name}({_clamp(c.arguments, LIMITS.compaction_tool_args_clamp)})" for c in m.tool_calls)
     return "\n".join(lines)
 
 

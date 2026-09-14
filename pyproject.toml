@@ -206,31 +206,38 @@ include = ["supergraph*", "superclaw*"]
 # and unused locals, including a function imported into the REMEMBER handler
 # and never called, and a variable assigned twice in a row in the BFS.
 target-version = "py310"
+line-length = 160
 extend-exclude = ["models", "dist", "docs", "website", "apps", ".venv"]
 
 [tool.ruff.lint]
-# Deliberately narrow. This is a regression gate, not a style migration -
-# widening it would produce thousands of findings and get switched off.
-select = ["F401", "F841"]
+# superclaw/ is the strict zone; src/ and the repo scripts keep the dead-code
+# gate, since widening it there produces thousands of findings.
+select = ["B", "C4", "DTZ", "F", "I", "PERF", "PIE", "PLC", "PLE", "PLW", "RET", "RSE", "RUF", "S", "SIM", "SLF", "TID", "UP"]
+# Wrong for this codebase, not debt: deferred imports are deliberate, sha1 is a
+# content id, the DSL is not SQL, and the harness runs chosen commands by design.
+ignore = ["PERF203", "PLC0415", "RUF012", "S101", "S108", "S310", "S324", "S603", "S607", "S608", "UP005"]
 
 [tool.ruff.lint.per-file-ignores]
-# In a test, `r = call()` is often there for the call; ruff's F841 fix would
-# delete the statement and with it the assertion's subject.
-"tests/*" = ["F841"]
-"benchmarks/*" = ["F841"]
+"{src,tools,benchmarks,tests}/**" = [
+    "B", "C4", "DTZ", "F541", "F811", "F821", "I", "PERF", "PIE", "PLC", "PLE", "PLW",
+    "RET", "RSE", "RUF", "S", "SIM", "SLF", "TID", "UP",
+]
+# `r = call()` in a test is there for the call; the F841 fix deletes the call.
+"{tests,benchmarks}/**" = ["F841"]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
 
 [tool.mypy]
-# A ratchet, not a migration. `files` lists the modules that are clean under
-# --strict today; a gate that starts red gets switched off. Add a module here
-# when it passes, never remove one. The rest of superclaw is checked only as
-# an import dependency (follow_imports = silent).
+# A ratchet: add a module when it passes --strict, never remove one.
 python_version = "3.13"
 files = [
-    "superclaw/stages.py",
+    "superclaw/dsl.py",
+    "superclaw/intent.py",
     "superclaw/runtime.py",
     "superclaw/settings.py",
-    "superclaw/intent.py",
-    "superclaw/dsl.py",
+    "superclaw/stages.py",
+    "superclaw/text.py",
 ]
 strict = true
 ignore_missing_imports = true

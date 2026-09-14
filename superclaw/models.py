@@ -9,7 +9,7 @@ from typing import Any
 
 from superclaw.catalog import learned
 from superclaw.runtime import Usage
-from superclaw.settings import PRICED_FILE, LIMITS
+from superclaw.settings import LIMITS, PRICED_FILE
 
 
 @dataclass(frozen=True)

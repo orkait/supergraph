@@ -58,6 +58,11 @@ HOST_TOOLS = (("rg", "grep"), ("fd", "find"), ("sd", "sed"), ("xh", "curl"), ("j
               ("delta", ""), ("hyperfine", "time"), ("gh", ""), (YTDLP_BIN, ""), ("ffmpeg", ""))
 LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
 UTF8_MARK = "utf"
+THOUSAND = 1_000
+MILLION = 1_000_000
+PRICE_UNIT_TOKENS = MILLION
+PROC_DIR = "/proc"
+STOPPED_STATES = ("T", "t")
 
 
 @dataclass(frozen=True)

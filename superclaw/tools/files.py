@@ -4,22 +4,12 @@ import difflib
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path, PurePath
 from typing import Any
 
 from superclaw.settings import LIMITS, RG_BIN
-from superclaw.tools import (
-    Category,
-    Display,
-    Permission,
-    Result,
-    Safety,
-    SideEffect,
-    Tool,
-    ToolContext,
-    jail,
-    relative,
-)
+from superclaw.tools import Category, Display, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
 which = shutil.which
@@ -48,7 +38,7 @@ def _write(side_effect_reason: str) -> Safety:
     return Safety(SideEffect.WRITE, Permission.PROMPT, side_effect_reason)
 
 
-def _walk(root: Path, max_depth: int | None):
+def _walk(root: Path, max_depth: int | None) -> Iterator[Path]:
     stack = [(root, 0)]
     while stack:
         current, depth = stack.pop()
@@ -307,7 +297,7 @@ class Grep(Tool):
                 *(["-i"] if ignore_case else []), *(["-g", name_filter] if name_filter else []),
                 {"files_with_matches": "-l", "count": "-c"}.get(mode, "-n"), "-e", pattern, *(["--", base.name] if base.is_file() else [])]
         try:
-            proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=LIMITS.grep_timeout_s)
+            proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=LIMITS.grep_timeout_s, check=False)
         except (OSError, subprocess.TimeoutExpired):
             return None
         if proc.returncode not in (0, 1):
@@ -316,7 +306,8 @@ class Grep(Tool):
         return [f"{prefix}/{line}" if prefix and prefix != "." else line for line in proc.stdout.splitlines() if line]
 
     @staticmethod
-    def _matches(base: Path, roots: tuple[Path, ...], rx: re.Pattern[str], name_filter: str | None):
+    def _matches(base: Path, roots: tuple[Path, ...], rx: re.Pattern[str],
+                 name_filter: str | None) -> Iterator[tuple[str, list[tuple[int, str]]]]:
         files = [base] if base.is_file() else [p for p in _walk(base, None) if p.is_file()]
         for f in sorted(files):
             rel = relative(roots, f)

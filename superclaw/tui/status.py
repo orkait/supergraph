@@ -6,9 +6,8 @@ from dataclasses import dataclass, field
 from rich.text import Text
 from textual.widgets import Static
 
-from superclaw.runtime import compact
 from superclaw.settings import LIMITS
-from superclaw.settings import LIMITS
+from superclaw.text import compact
 from superclaw.tui.theme import ACCENT, MUTED
 
 

@@ -6,29 +6,29 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from superclaw import maintain
 from superclaw.agents import Agent, load_agents
 from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
 from superclaw.documents import Documents
+from superclaw.dsl import Store
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.kernel import READ_VERBS, Kernel, Python
-from superclaw import maintain
 from superclaw.loop import Options, Result, run
 from superclaw.mcp import Bridge, Source, claude_sources, connect_all, load_config
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Mode, Policy
-from superclaw.prompt import PromptInputs, build_system_prompt
-from superclaw.prompt import _git_branch
+from superclaw.prompt import PromptInputs, _git_branch, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.repomap import render, scan
 from superclaw.runtime import Message, Provider, approx_tokens
 from superclaw.sandbox import Backend, detect
 from superclaw.session import SessionStore, prompt_hash
-from superclaw.share import open_shared
 from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
+from superclaw.share import open_shared
 from superclaw.skills import load_skills
 from superclaw.stages import Intent, decompose
 from superclaw.tooling import host_tools
@@ -54,7 +54,7 @@ _started: set[str] = set()
 
 @dataclass
 class Runtime:
-    gs: Any
+    gs: Store
     store: SessionStore | None
     memory: Memory | None
     registry: Registry
@@ -104,7 +104,7 @@ class Runtime:
             self.gs.close()
 
 
-def kernel_resolver(observations: ObservationStore, gs: Any) -> Callable[[str, dict[str, Any]], Any]:
+def kernel_resolver(observations: ObservationStore, gs: Store) -> Callable[[str, dict[str, Any]], Any]:
     def resolve(kind: str, request: dict[str, Any]) -> Any:
         if kind == "obs":
             found = observations.load(str(request.get("ref") or ""))
@@ -121,7 +121,7 @@ def kernel_resolver(observations: ObservationStore, gs: Any) -> Callable[[str, d
     return resolve
 
 
-def build_kernel(workspace: Path, backend: Backend | None, observations: ObservationStore, gs: Any,
+def build_kernel(workspace: Path, backend: Backend | None, observations: ObservationStore, gs: Store,
                  extra_dirs: tuple[Path, ...] = ()) -> Kernel:
     return Kernel(workspace, backend, kernel_resolver(observations, gs), extra_dirs)
 

@@ -8,8 +8,18 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Any
 
-from superclaw.runtime import clip
-from superclaw.settings import DDGS_BACKEND, DUCKDUCKGO_LOCALE, DUCKDUCKGO_SEARCH_URL, ENGINE_GOOGLE, GOOGLE_CX_ENV, GOOGLE_KEY_ENV, GOOGLE_SEARCH_URL, LIMITS, Settings
+from superclaw.settings import (
+    DDGS_BACKEND,
+    DUCKDUCKGO_LOCALE,
+    DUCKDUCKGO_SEARCH_URL,
+    ENGINE_GOOGLE,
+    GOOGLE_CX_ENV,
+    GOOGLE_KEY_ENV,
+    GOOGLE_SEARCH_URL,
+    LIMITS,
+    Settings,
+)
+from superclaw.text import clip, oneline
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 from superclaw.tools.budget import Category
 
@@ -26,7 +36,6 @@ AD_MARKER = "duckduckgo.com/y.js"
 REDIRECT_PARAM = "uddg"
 now = time.monotonic
 pause = time.sleep
-_last_request = 0.0
 
 
 @dataclass(frozen=True)
@@ -87,17 +96,24 @@ class _DuckParser(HTMLParser):
         if tag != "a" or not self._field:
             return
         if self._field == "snippet" and self._url and AD_MARKER not in self._url:
-            self.hits.append(Hit(" ".join("".join(self._title).split()), self._url, " ".join("".join(self._snippet).split())))
+            self.hits.append(Hit(oneline("".join(self._title)), self._url, oneline("".join(self._snippet))))
             self._url = ""
         self._field = ""
 
 
-def throttle() -> None:
-    global _last_request
-    wait = LIMITS.web_search_min_interval_s - (now() - _last_request)
-    if wait > 0:
-        pause(wait)
-    _last_request = now()
+@dataclass
+class Throttle:
+    interval_s: float
+    last: float = 0.0
+
+    def wait(self) -> None:
+        idle = self.interval_s - (now() - self.last)
+        if idle > 0:
+            pause(idle)
+        self.last = now()
+
+
+_searches = Throttle(LIMITS.web_search_min_interval_s)
 
 
 def duckduckgo(query: str, limit: int) -> list[Hit]:
@@ -105,7 +121,7 @@ def duckduckgo(query: str, limit: int) -> list[Hit]:
     for attempt in range(LIMITS.web_search_attempts):
         if attempt:
             pause(LIMITS.web_search_retry_s)
-        throttle()
+        _searches.wait()
         page = fetch(DUCKDUCKGO_SEARCH_URL, BROWSER_HEADERS, form).decode("utf-8", "replace")
         parser = _DuckParser()
         parser.feed(page)

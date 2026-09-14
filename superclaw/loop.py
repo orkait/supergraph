@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
 from itertools import count
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
 
 from superclaw.agents import Agent
 from superclaw.compaction import TRANSCRIPT_NOTE, compact, cut_point, prune_tool_results, summary_instructions
 from superclaw.delegate import SPAWN_KEY
-from superclaw.hooks import Dispatcher
 from superclaw.guards import (
     DROPPED_TOOL_CALL_NOTICE,
     EMPTY_TURN_NUDGE,
@@ -29,14 +28,17 @@ from superclaw.guards import (
     tool_failure_stop_answer,
     truncated_stop_answer,
 )
+from superclaw.hooks import Dispatcher
 from superclaw.meter import ContextMeter, bounded
 from superclaw.models import ModelInfo
 from superclaw.policy import Action, Policy, validate_prefix
 from superclaw.prompt import agent_block
-from superclaw.runtime import Cancelled, Completion, Message, Provider, ToolCall, Usage, approx_tokens, clip, estimate_tokens
+from superclaw.runtime import Cancelled, Completion, Message, Provider, ToolCall, Usage, approx_tokens, estimate_tokens
 from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS, TOUCH_VERBS
-from superclaw.tools import PathEscapes, Registry, Result as ToolResult, ToolContext, jail
+from superclaw.text import clip
+from superclaw.tools import PathEscapes, Registry, ToolContext, jail
+from superclaw.tools import Result as ToolResult
 from superclaw.tools.ask import NON_INTERACTIVE_MESSAGE, parse_questions
 from superclaw.tools.plan import format_plan, pending_items
 from superclaw.verifier import verify

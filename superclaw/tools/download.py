@@ -8,15 +8,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from supergraph.core.errors import SuperGraphError
-
 from superclaw.documents import Documents
-from superclaw.runtime import clip, compact
 from superclaw.settings import AUDIO_FORMAT, LIMITS, YTDLP_BIN
+from superclaw.text import clip, compact
 from superclaw.tools import PathEscapes, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
 from superclaw.tools.budget import Category
 from superclaw.tools.fetch import HEADERS, Unsafe, open_url, validate
 from superclaw.tools.ingest import describe
+from supergraph.core.errors import SuperGraphError
 
 KINDS = ("auto", "video", "audio", "file")
 MEDIA_KINDS = ("video", "audio")

@@ -49,7 +49,7 @@ class Report:
 
 
 def _package_manager(root: Path, declared: str) -> str:
-    name = declared.split("@")[0].strip().lower()
+    name = declared.split("@", maxsplit=1)[0].strip().lower()
     for manager, locks in LOCKFILES:
         if name == manager or any((root / lock).exists() for lock in locks):
             return manager
@@ -96,7 +96,7 @@ def run(root: Path, checks: list[Check], only: tuple[str, ...] = (), timeout_s: 
             continue
         started = time.monotonic()
         try:
-            done = subprocess.run(check.command, cwd=report.root, capture_output=True, text=True, timeout=timeout_s)
+            done = subprocess.run(check.command, cwd=report.root, capture_output=True, text=True, timeout=timeout_s, check=False)
             output, code, status = done.stdout + done.stderr, done.returncode, "passed" if done.returncode == 0 else "failed"
         except subprocess.TimeoutExpired as e:
             output, code, status = (e.stdout or b"").decode("utf-8", errors="replace") + (e.stderr or b"").decode("utf-8", errors="replace"), -1, "timed_out"

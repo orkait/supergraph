@@ -11,8 +11,8 @@ from textual.widgets import Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 from superclaw.dsl import age
-from superclaw.runtime import compact
 from superclaw.settings import LIMITS
+from superclaw.text import compact
 from superclaw.tui.theme import ACCENT, MUTED
 
 UNTITLED = "(untitled)"
