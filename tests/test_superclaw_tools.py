@@ -14,8 +14,9 @@ from superclaw import checks, review
 from superclaw.attach import read as read_attachments
 from superclaw.clipboard import parse_drop
 from superclaw.delegate import SPAWN_KEY
+from superclaw.documents import Documents
 from superclaw.facts import Facts
-from superclaw.observations import ObservationStore, ref_in
+from superclaw.observations import ObservationStore, Recall, ref_in
 from superclaw.sandbox import Bubblewrap, Grant, detect
 from superclaw.settings import LIMITS, Settings
 from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, files, jail, relative, web
@@ -23,6 +24,7 @@ from superclaw.tools.budget import Category
 from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
+from superclaw.tools.ingest import Ingest
 from superclaw.tools.shell import Bash
 from superclaw.tools.web import WebSearch
 from superclaw.worktree import WorktreeError, prepare
@@ -317,6 +319,29 @@ def test_bash(tmp_path, monkeypatch):
     monkeypatch.setattr(fetch, "resolve", lambda host: ["10.0.0.9"])
     assert "private" in dl.run({"url": "https://public.example/x", "kind": "file"}, ctx).output
     assert Download.deferred and Download.safety.side_effect is SideEffect.NETWORK
+    gs = SuperGraph(embedder="none", enable_sentence_nodes=False)
+    docs = Documents(gs)
+    (tmp_path / "zebra.md").write_text("# Zebra notes\n\nZebra renders stripes fast.\n\nIt has no dependencies.\n")
+    (tmp_path / "empty.pdf").write_bytes(b"")
+    (tmp_path / "thing.xyz").write_text("x")
+    ingest = Ingest(docs)
+    kept = ingest.run({"path": "zebra.md"}, ctx)
+    doc_id = kept.output.split(" as ")[1].split(":")[0] + ":" + kept.output.split(" as ")[1].split(":")[1]
+    assert kept.ok and kept.output.startswith("Ingested zebra.md as doc:") and "1 chunk via direct, confidence 1.00, expires in 30 days" in kept.output
+    assert docs.load(doc_id).chunks == 1 and docs.search("stripes")[0].doc == doc_id and docs.search("stripes")[0].text.startswith("# Zebra notes")
+    assert "pinned" in ingest.run({"path": "zebra.md", "pin": True}, ctx).output and "supergraphdb[ingest]" in ingest.run({"path": "empty.pdf"}, ctx).output
+    assert "Unsupported format: .xyz" in ingest.run({"path": "thing.xyz"}, ctx).output and "not a file" in ingest.run({"path": "missing.md"}, ctx).output
+    reading = Recall(ObservationStore(gs), None, None, docs)
+    assert reading.run({"doc": doc_id}, ctx).output.startswith(f"[{doc_id}:chunk:0, chunk 1 of 1]\n# Zebra notes") and "no chunk 3" in reading.run({"doc": doc_id, "chunk": 3}, ctx).output
+    assert f"{doc_id}:chunk:0: '# Zebra notes" in reading.run({"query": "stripes"}, ctx).output
+    monkeypatch.setattr(fetch, "resolve", lambda host: ["93.184.216.34"])
+    files["https://public.example/kept.md"] = FakeResponse("https://public.example/kept.md", b"# Kept\n\nA kept page.\n", "text/markdown")
+    kept_dl = Download(docs).run({"url": "https://public.example/kept.md", "kind": "file", "keep": True}, ctx)
+    assert kept_dl.output.startswith("Saved kept.md (") and "\nIngested kept.md as doc:" in kept_dl.output
+    monkeypatch.setattr(download, "which", lambda name: str(fake))
+    assert "not ingested: Unsupported format: .mp4" in Download(docs).run({"url": "https://public.example/watch?v=2", "dest": "clips", "keep": True}, ctx).output
+    assert Ingest.deferred and Ingest.safety.side_effect is SideEffect.WRITE
+    gs.close()
     argv = Bubblewrap().wrap(["bash", "-c", "x"], tmp_path, tmp_path, Grant(network=True, paths=["/opt/extra"]))
     assert argv[0] == "bwrap" and "--unshare-net" not in argv and "/opt/extra" in argv
     if detect():

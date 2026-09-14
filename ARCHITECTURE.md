@@ -57,10 +57,11 @@ What the harness writes into the substrate, all through `gs.execute`:
 | `obs` | tool output bodies behind a `§ref` | `superclaw` | kept; web pages `EXPIRES IN 7d` |
 | `memory` | facts the user stated | default | kept, optional `EXPIRES` |
 | `fact` | facts learned from a source, asserted with confidence, source and event time | `superclaw` | kept until `RETRACT` |
+| `document`, `chunk`, `section` | a file parsed by `INGEST` on request, its retrieval chunks and sections | `superclaw` | `EXPIRES IN 30d` unless pinned |
 | `kernel` | python namespace checkpoint per session | `superclaw` | overwritten |
 | `cronjob` | scheduled prompts | `superclaw` | until deleted |
 
-Edges: `session -> session` (`fork`), `session -> file` (`read`, `wrote`), `obs -> session` (`produced`), `fact -> session` (`learned_in`), `fact -> obs` (`from`), `fact -> fact` (`supersedes`). `file` nodes hold the absolute path and live in the `superclaw` namespace. Memories carry no edges: they sit in the default namespace, and an edge across namespaces is accepted but invisible from both sides.
+Edges: `session -> session` (`fork`), `session -> file` (`read`, `wrote`), `obs -> session` (`produced`), `fact -> session` (`learned_in`), `fact -> obs` (`from`), `fact -> fact` (`supersedes`), `document -> session` (`ingested_in`), `document -> section` (`has_section`, made by the substrate). `file` nodes hold the absolute path and live in the `superclaw` namespace. Memories carry no edges: they sit in the default namespace, and an edge across namespaces is accepted but invisible from both sides.
 
 ## Why they live together
 

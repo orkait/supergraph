@@ -112,15 +112,24 @@ class Recall(Tool):
             "chunk": {"type": "integer", "minimum": 0, "default": 0},
             "query": {"type": "string", "description": "Find results by meaning when the id is unknown."},
             "path": {"type": "string", "description": "Workspace path; lists the sessions that touched it, their facts and stored results."},
+            "doc": {"type": "string", "description": "An ingested document id (doc:...); reads its chunk at chunk."},
         },
         "additionalProperties": False,
     }
     safety = Safety(SideEffect.READ, Permission.ALLOW, "Reads stored tool results.")
 
-    def __init__(self, store: ObservationStore, sessions: Any | None = None, facts: Any | None = None) -> None:
+    def __init__(self, store: ObservationStore, sessions: Any | None = None, facts: Any | None = None, documents: Any | None = None) -> None:
         self._store = store
         self._sessions = sessions
         self._facts = facts
+        self._documents = documents
+
+    def chunk(self, doc: str, index: int) -> Result:
+        found = self._documents.read(doc, index) if self._documents else None
+        if found is None:
+            return Result.error(f"Error: no chunk {index} in {doc}; recall with a query lists chunks")
+        total = self._documents.load(doc).chunks if self._documents.load(doc) else index + 1
+        return Result.success(f"[{found.id}, chunk {index + 1} of {total}]\n{found.text}")
 
     def around(self, path: str, ctx: ToolContext) -> Result:
         if self._sessions is None:
@@ -146,6 +155,8 @@ class Recall(Tool):
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         if args.get("path"):
             return self.around(str(args["path"]), ctx)
+        if args.get("doc"):
+            return self.chunk(str(args["doc"]), int(args.get("chunk") or 0))
         ref = str(args.get("ref") or "").lstrip("§").strip()
         if ref:
             obs = self._store.load(ref)
@@ -159,7 +170,9 @@ class Recall(Tool):
         if not query:
             return Result.error("Error: pass ref or query")
         hits = self._store.search(query)
-        if not hits:
+        chunks = self._documents.search(query) if self._documents else []
+        if not hits and not chunks:
             return Result.success("No stored result matches.")
         lines = [f"§{o.ref} {o.tool} {o.tokens:,} tokens: {o.body[:LIMITS.recall_preview_chars]!r}" for o in hits]
+        lines += [f"{c.id}: {c.text[:LIMITS.chunk_preview_chars]!r}" for c in chunks]
         return Result.success("\n".join(lines))

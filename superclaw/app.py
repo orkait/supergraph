@@ -11,6 +11,7 @@ from supergraph.ingest.llm.resolve import build_provider_chain
 from superclaw.agents import Agent, load_agents
 from superclaw.catalog import provider_of
 from superclaw.delegate import Delegate
+from superclaw.documents import Documents
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import classify
 from superclaw.kernel import READ_VERBS, Kernel, Python
@@ -35,6 +36,7 @@ from superclaw.tools.ask import AskUser
 from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
+from superclaw.tools.ingest import Ingest
 from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.search import ToolSearch
 from superclaw.tools.shell import Bash
@@ -130,12 +132,14 @@ def mcp_paths(settings: Settings, workspace: Path, trust_workspace: bool) -> lis
 
 
 def build_registry(memory: Memory, observations: ObservationStore, workspace: Path, backend: Backend | None = None,
-                   settings: Settings | None = None, kernel: Kernel | None = None, sessions: SessionStore | None = None) -> Registry:
+                   settings: Settings | None = None, kernel: Kernel | None = None, sessions: SessionStore | None = None,
+                   documents: Documents | None = None) -> Registry:
     settings = settings or Settings.from_env()
     registry = Registry(observations=observations)
     roots = settings.skill_roots(workspace)
-    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts), Download(),
-                 memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts), Delegate(), *([Python(kernel)] if kernel else [])):
+    for tool in (*core_file_tools(), Bash(backend, kernel), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts),
+                 Download(documents), Ingest(documents), memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts, documents), Delegate(),
+                 *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))
     return registry
@@ -170,7 +174,7 @@ def build_runtime(
         observations = ObservationStore(gs)
         sessions = SessionStore(gs)
         kernel = build_kernel(workspace, backend, observations, gs, extra_dirs)
-        registry = build_registry(memory, observations, workspace, backend, settings, kernel, sessions)
+        registry = build_registry(memory, observations, workspace, backend, settings, kernel, sessions, Documents(gs))
     bridge = connect_all(load_config(mcp_config), registry) if mcp_config else None
     policy = Policy(workspace, mode, sandboxed=backend is not None, allow_tools=allow_tools, deny_tools=deny_tools, extra_dirs=extra_dirs)
     if agent:
