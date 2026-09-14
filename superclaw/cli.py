@@ -421,7 +421,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--fallback-model", default="", metavar="MODELS",
                         help="comma or space separated models to try, in order, when the main model fails")
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
-    parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--max-turns", type=int, default=LIMITS.max_turns, metavar="N", help="stop after N model turns and ask for a final answer; 0 (default) is no cap, the loop guards and budgets end a run instead")
     parser.add_argument("--context-window", type=int, default=defaults.context_window, help="override the model's catalog context window (0 = from catalog)")
     parser.add_argument("--budget-tokens", type=int, default=defaults.budget_tokens, help="stop a run once this many tokens were spent (0 = unlimited)")
     parser.add_argument("--budget-usd", type=float, default=defaults.budget_usd, help="stop a run once this much was spent at catalog prices (0 = unlimited)")

@@ -106,7 +106,7 @@ Nothing superclaw writes into its namespace is visible to plain supergraph queri
 | Mode | `SUPERCLAW_MODE`, `--mode` | `ask` |
 | Reasoning effort | `SUPERCLAW_EFFORT`, `/effort low\|medium\|high\|off` in the TUI | off; when set it is sent as `reasoning_effort` on every call and shown in the status bar. litellm drops the parameter for models that do not support it, so it is a no-op there rather than an error |
 | Context window | `SUPERCLAW_CONTEXT_WINDOW`, `--context-window` | `0` = resolved from the bundled model catalog (1,000,000 for the default model); `128000` when the model is unknown |
-| Turn limit | `--max-turns` | `12` |
+| Turn limit | `--max-turns N` | off; a run ends when the model answers without tools, or when a guard fires (same-error streak, identical calls, promise nudges, `--budget-tokens`, `--budget-usd`). Set `N` to force a final answer after that many turns, which headless callers may want |
 | Token budget | `SUPERCLAW_BUDGET_TOKENS`, `--budget-tokens` | `0` (unlimited); a run stops as `incomplete` once spent |
 | Spend budget | `SUPERCLAW_BUDGET_USD`, `--budget-usd` | `0` (unlimited); priced per call from the catalog, cached input at the cache-read rate |
 | Glyphs | `SUPERCLAW_ASCII=1`, or a locale without `UTF-8` in `LC_ALL`, `LC_CTYPE` or `LANG` | Unicode set `❯ ◐ ✓ ✗ · ◔ ● ↳ … →`, rounded borders and the block wordmark; every glyph is in DejaVu Sans Mono, the `Monospace` alias on Ubuntu. The ASCII set `> ~ + x | # * -> ... ->` with plain borders takes over when the locale cannot carry them. superclaw never installs fonts or changes terminal settings |

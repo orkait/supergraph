@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field, replace
+from itertools import count
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
@@ -485,7 +486,7 @@ class _Run:
                     self.append(Message(role="user", content=f"[hook] {line}"))
             for line in o.hooks.dispatch("userPrompt", {"session": o.session_id, "prompt": prompt}).context:
                 self.append(Message(role="user", content=f"[hook] {line}"))
-        for turn in range(max(1, o.max_turns)):
+        for turn in (range(o.max_turns) if o.max_turns > 0 else count()):
             self.turns = turn + 1
             if spent := self.budget_spent() or self.stopped():
                 return spent
