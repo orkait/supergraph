@@ -82,6 +82,13 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert expand("$1 then $2 then $3", "a b") == "a then b then " and expand("Just do it.", "now") == "Just do it.\n\nnow" and expand("x", "") == "x"
     assert expand("title $1", '"fix build" now') == "title fix build" and expand("$1", "it's") == "it's"
     assert find_command("PR", [commands]).name == "pr" and find_command("nope", [commands]) is None
+    (commands / "bench.md").write_text("File wins")
+    with_skills = load_commands([commands], [tmp_path / "skills"])
+    assert [c.name for c in with_skills] == ["bench", "plain", "pr"] and with_skills[0].template == "File wins" and not with_skills[0].skill
+    (commands / "bench.md").unlink()
+    as_skill = find_command("bench", [commands], [tmp_path / "skills"])
+    assert as_skill.skill and as_skill.description == "Run benchmarks." and as_skill.path == str(skill / "SKILL.md") and find_command("bench", [commands]) is None
+    assert expand(as_skill.template, "the parser") == '<skill name="bench">\nBODY\n</skill>\n\nFollow the skill above for this request. the parser'
     bundle = tmp_path / "bundle" / "nested"
     (bundle / "skills" / "deploy").mkdir(parents=True)
     (bundle / "agents").mkdir()

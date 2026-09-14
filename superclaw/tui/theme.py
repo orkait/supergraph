@@ -26,7 +26,7 @@ ToolCard .more { color: $text-muted; text-style: italic; }
 #prompt { border: none; height: 1; padding: 0; background: transparent; }
 #prompt:focus { border: none; background: transparent; }
 #status { height: 1; padding: 0 2; color: $text-muted; }
-#palette { layer: popup; dock: bottom; margin: 0 0 5 2; height: auto; max-height: 8; width: 64; background: $surface; border: $border-kind $panel; }
+#palette { layer: popup; dock: bottom; margin: 0 0 5 2; height: auto; max-height: 8; width: 100; max-width: 100%; background: $surface; border: $border-kind $panel; }
 #palette.hidden { display: none; }
 ModalScreen { align: center middle; }
 #dialog { width: 80%; max-width: 100; height: auto; padding: 1 2; background: $surface; border: $border-kind $accent; }

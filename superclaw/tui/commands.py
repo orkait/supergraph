@@ -33,6 +33,7 @@ class Command:
 
 
 EXIT_WORDS = ("exit", "quit", ":q", ":q!", ":wq", ":wq!")
+SKILL_TAG = "skill:"
 
 
 def _mode(app: SuperclawApp, arg: str) -> None:
@@ -284,11 +285,11 @@ COMMANDS = (
 )
 
 
-def user_entries(roots: list[Path]) -> list[Command]:
+def user_entries(roots: list[Path], skill_roots: list[Path | tuple[Path, str]] | None = None) -> list[Command]:
     def runner(command: UserCommand) -> Callable[[SuperclawApp, str], None]:
         return lambda app, arg: app.run_user_command(command, arg)
 
-    return [Command(f"/{c.name}", f"/{c.name} [args]", c.description, runner(c)) for c in load_commands(roots)]
+    return [Command(f"/{c.name}", f"/{c.name} [args]", f"{SKILL_TAG} {c.description}" if c.skill else c.description, runner(c)) for c in load_commands(roots, skill_roots)]
 
 
 def matching(prefix: str, extra: list[Command] = []) -> list[Command]:
