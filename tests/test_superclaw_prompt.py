@@ -19,6 +19,8 @@ from superclaw.repomap import search as search_repo
 from superclaw.runtime import approx_tokens
 from superclaw.settings import LIMITS, Settings
 from superclaw.skills import Skill, load_skills
+from superclaw.tools import ToolContext
+from superclaw.tools.skill import SkillTool
 from superclaw.usercommands import expand, load_commands
 from superclaw.usercommands import find as find_command
 
@@ -118,7 +120,15 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     linked = install_plugin(str(claude), settings.user_plugins, link=True)
     assert linked.id == "hyper" and linked.format == "claude" and linked.path.is_symlink() and linked.parts == ["skills", "agents", "hooks", "mcp"]
     assert [p.id for p in settings.plugins(root)] == ["hyper"] and settings.plugin_dirs(root) == [linked.path]
-    assert any(s.name == "rulebook" and s.content == "LAWS" for s in load_skills(settings.skill_roots(root))) and any(a.name == "checks" for a in load_agents(settings.agent_roots(root)))
+    assert any(s.name == "hyper:rulebook" and s.content == "LAWS" for s in load_skills(settings.skill_roots(root))) and any(a.name == "checks" for a in load_agents(settings.agent_roots(root)))
+    (settings.config_dir / "skills" / "acme" / "ship").mkdir(parents=True)
+    (settings.config_dir / "skills" / "acme" / "ship" / "SKILL.md").write_text("---\nname: ship\ndescription: Ship.\n---\nSHIP")
+    (settings.config_dir / "skills" / "linked").symlink_to(claude / "skills", target_is_directory=True)
+    names = {s.name for s in load_skills(settings.skill_roots(root))}
+    assert {"acme:ship", "linked:rulebook", "hyper:rulebook"} <= names
+    skill_tool = SkillTool(settings.skill_roots(root))
+    assert skill_tool.run({"name": "hyper:rulebook"}, ToolContext(workspace=root)).output == "LAWS" and skill_tool.run({"name": "ship"}, ToolContext(workspace=root)).output == "SHIP"
+    assert "unknown skill 'rulebook'" in skill_tool.run({"name": "rulebook"}, ToolContext(workspace=root)).output
     hooks = load_hooks([(linked.hooks, linked.path)])
     assert [h.event for h in hooks] == ["sessionStart"] and hooks[0].command[:2] == ["/bin/sh", "-c"] and str(linked.path) in hooks[0].command[2] and hooks[0].timeout_s == 5
     dispatcher = Dispatcher(hooks, root)

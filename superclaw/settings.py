@@ -544,12 +544,12 @@ class Settings:
     def plugin_dirs(self, workspace: Path | None = None, trusted: bool = True) -> list[Path]:
         return [plugin.path for plugin in self.plugins(workspace, trusted)]
 
-    def skill_roots(self, workspace: Path | None = None) -> list[Path]:
-        roots = [self.skills_dir] if self.skills_dir else []
+    def skill_roots(self, workspace: Path | None = None) -> list[Path | tuple[Path, str]]:
+        roots: list[Path | tuple[Path, str]] = [self.skills_dir] if self.skills_dir else []
         roots += [self.config_dir / "skills", Path.home() / ".agents" / "skills"]
         if workspace is not None:
             roots.append(Path(workspace) / WORKSPACE_DIR / "skills")
-        return roots + [plugin.skills for plugin in self.plugins(workspace) if plugin.skills]
+        return roots + [(plugin.skills, plugin.id) if plugin.format == FORMAT_CLAUDE else plugin.skills for plugin in self.plugins(workspace) if plugin.skills]
 
     def agent_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / AGENTS_DIR]
