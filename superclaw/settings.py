@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
+from typing import Any
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -134,6 +135,15 @@ SHARE_DIR = "superclaw"
 PLUGINS_DIR = "plugins"
 PLUGIN_MANIFEST = "plugin.json"
 PLUGIN_PARTS = ("skills", "agents", "commands", "hooks.json", MCP_FILE)
+CLAUDE_PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+CLAUDE_HOOKS_FILE = "hooks/hooks.json"
+CLAUDE_MCP_FILE = ".mcp.json"
+CLAUDE_INSTALLED_FILE = ".claude/plugins/installed_plugins.json"
+CLAUDE_PLUGINS_ENV = "SUPERCLAW_CLAUDE_PLUGINS"
+PLUGIN_ROOT_VARS = ("CLAUDE_PLUGIN_ROOT", "SUPERCLAW_PLUGIN_ROOT")
+FORMAT_SUPERCLAW = "superclaw"
+FORMAT_CLAUDE = "claude"
+HOOK_SHELL = "/bin/sh"
 PACKAGE = "supergraphdb"
 PYPI_URL = f"https://pypi.org/pypi/{PACKAGE}/json"
 UV_TOOLS_MARKER = "/uv/tools/"
@@ -412,6 +422,7 @@ class Settings:
     google_search_key: str
     google_search_cx: str
     reader_url: str
+    claude_plugins: bool
     context_window: int
     budget_tokens: int
     budget_usd: float
@@ -451,6 +462,7 @@ class Settings:
             google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
             google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
             reader_url=e.get(READER_ENV, "").strip(),
+            claude_plugins=e.get(CLAUDE_PLUGINS_ENV, "").strip().lower() not in OFF_VALUES,
             context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
             budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
             budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
@@ -524,26 +536,29 @@ class Settings:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / PLUGINS_DIR)
         return roots
 
+    def plugins(self, workspace: Path | None = None, trusted: bool = True) -> list[Any]:
+        from superclaw.plugins import discover
+
+        return discover(self, workspace, trusted)
+
     def plugin_dirs(self, workspace: Path | None = None, trusted: bool = True) -> list[Path]:
-        roots = self.plugin_roots(workspace) if trusted else [self.user_plugins]
-        return [entry for root in roots if root.is_dir()
-                for entry in sorted(root.iterdir(), key=lambda p: p.name) if (entry / PLUGIN_MANIFEST).is_file()]
+        return [plugin.path for plugin in self.plugins(workspace, trusted)]
 
     def skill_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.skills_dir] if self.skills_dir else []
         roots += [self.config_dir / "skills", Path.home() / ".agents" / "skills"]
         if workspace is not None:
             roots.append(Path(workspace) / WORKSPACE_DIR / "skills")
-        return roots + [d / "skills" for d in self.plugin_dirs(workspace)]
+        return roots + [plugin.skills for plugin in self.plugins(workspace) if plugin.skills]
 
     def agent_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / AGENTS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / AGENTS_DIR)
-        return roots + [d / AGENTS_DIR for d in self.plugin_dirs(workspace)]
+        return roots + [plugin.agents for plugin in self.plugins(workspace) if plugin.agents]
 
     def command_roots(self, workspace: Path | None = None) -> list[Path]:
         roots = [self.config_dir / COMMANDS_DIR]
         if workspace is not None:
             roots.insert(0, Path(workspace) / WORKSPACE_DIR / COMMANDS_DIR)
-        return roots + [d / COMMANDS_DIR for d in self.plugin_dirs(workspace)]
+        return roots + [plugin.commands for plugin in self.plugins(workspace) if plugin.commands]

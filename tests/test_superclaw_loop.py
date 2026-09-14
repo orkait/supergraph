@@ -339,6 +339,18 @@ def test_intent_hooks_and_deferral(ws, gs):
         {"id": "block-writes", "event": "beforeTool", "matcher": "^write_file$", "command": [str(block)]},
         {"id": "note-reads", "event": "afterTool", "matcher": "read_file", "command": [str(note)]},
     ]}))
+    claude_hooks = ws / "claude-hooks.json"
+    claude_hooks.write_text(json.dumps({"hooks": {
+        "PreToolUse": [{"matcher": "write_file", "hooks": [{"type": "command", "command": "printf '{\"decision\": \"block\", \"reason\": \"policy says no\"}'"}]}],
+        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "printf '{\"additionalContext\": \"prompt seen\"}'"}]}],
+        "SessionStart": [{"matcher": "startup", "hooks": [{"type": "command", "command": "printf '{\"hookSpecificOutput\": {\"additionalContext\": \"booted\"}}'"}]}],
+    }}))
+    claude_dispatch = Dispatcher(load_hooks([claude_hooks]), ws)
+    assert claude_dispatch.dispatch("beforeTool", {"tool": "write_file", "args": {}}, "write_file").blocked and claude_dispatch.dispatch("beforeTool", {"tool": "read_file", "args": {}}, "read_file").blocked is False
+    booted = run("go", Scripted(Completion(text="fine")), options(ws, hooks=claude_dispatch))
+    assert [m.content for m in booted.messages if m.role == "user"] == ["go", "[hook] booted", "[hook] prompt seen"]
+    resumed = run("go", Scripted(Completion(text="fine")), options(ws, hooks=claude_dispatch, session_start=False))
+    assert [m.content for m in resumed.messages if m.role == "user"] == ["go", "[hook] prompt seen"]
     provider = Scripted(Completion(tool_calls=[call("read_file", "c1", path="a.txt"), call("write_file", "c2", path="b.txt", description="d", content="y")]), Completion(text="final"))
     events, store = [], ObservationStore(gs)
     res = run("go", provider, options(ws, store=store, hooks=Dispatcher(load_hooks([config]), ws), on_event=events.append))

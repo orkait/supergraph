@@ -4,7 +4,9 @@ from pathlib import Path
 import pytest
 
 from superclaw.agents import load_agents
-from superclaw.plugins import PluginError, load_plugins
+from superclaw.hooks import Dispatcher, load_hooks
+from superclaw.mcp import load_config
+from superclaw.plugins import PluginError, claude_installed, load_plugins
 from superclaw.plugins import install as install_plugin
 from superclaw.plugins import remove as remove_plugin
 from superclaw.agents import resolve as resolve_agent
@@ -87,7 +89,7 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     (bundle / "hooks.json").write_text("{}")
     settings = Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfg")})
     installed = install_plugin(str(tmp_path / "bundle"), settings.user_plugins)
-    assert installed.path == settings.user_plugins / "acme-tools" and installed.parts == ["skills", "agents", "commands", "hooks.json"]
+    assert installed.path == settings.user_plugins / "acme-tools" and installed.parts == ["skills", "agents", "commands", "hooks"] and installed.format == "superclaw"
     assert [p.id for p in load_plugins(settings.plugin_roots(root))] == ["acme-tools"] and settings.plugin_dirs(root) == [installed.path]
     assert any(s.name == "deploy" for s in load_skills(settings.skill_roots(root))) and any(a.name == "ops" for a in load_agents(settings.agent_roots(root)))
     assert find_command("ship", settings.command_roots(root)).template == "Ship $ARGUMENTS"
@@ -100,6 +102,36 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert remove_plugin("acme-tools", settings.user_plugins) == installed.path and load_plugins(settings.plugin_roots(root)) == []
     with pytest.raises(PluginError):
         remove_plugin("acme-tools", settings.user_plugins)
+    claude = tmp_path / "hyper"
+    (claude / ".claude-plugin").mkdir(parents=True)
+    (claude / "skills" / "rulebook").mkdir(parents=True)
+    (claude / "agents").mkdir()
+    (claude / "hooks").mkdir()
+    (claude / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "Hyper", "description": "Skills and hooks.", "version": "1.5.0", "skills": "./skills/"}))
+    (claude / "skills" / "rulebook" / "SKILL.md").write_text("---\nname: rulebook\ndescription: Laws.\ntriggers:\n  - \"build\"\n---\nLAWS")
+    (claude / "agents" / "checks.md").write_text("# Checks\n\nPlain agent body.")
+    (claude / "hooks" / "start.sh").write_text('#!/bin/sh\nprintf \'{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "bootstrap from %s"}}\' "$CLAUDE_PLUGIN_ROOT"\n')
+    (claude / "hooks" / "start.sh").chmod(0o755)
+    (claude / "hooks" / "hooks.json").write_text(json.dumps({"hooks": {"SessionStart": [{"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/start.sh"', "timeout": 5}]}],
+                                                                       "Notification": [{"hooks": [{"type": "command", "command": "true"}]}]}}))
+    (claude / ".mcp.json").write_text(json.dumps({"mcpServers": {"hyper": {"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/server.mjs"]}}}))
+    linked = install_plugin(str(claude), settings.user_plugins, link=True)
+    assert linked.id == "hyper" and linked.format == "claude" and linked.path.is_symlink() and linked.parts == ["skills", "agents", "hooks", "mcp"]
+    assert [p.id for p in settings.plugins(root)] == ["hyper"] and settings.plugin_dirs(root) == [linked.path]
+    assert any(s.name == "rulebook" and s.content == "LAWS" for s in load_skills(settings.skill_roots(root))) and any(a.name == "checks" for a in load_agents(settings.agent_roots(root)))
+    hooks = load_hooks([(linked.hooks, linked.path)])
+    assert [h.event for h in hooks] == ["sessionStart"] and hooks[0].command[:2] == ["/bin/sh", "-c"] and str(linked.path) in hooks[0].command[2] and hooks[0].timeout_s == 5
+    dispatcher = Dispatcher(hooks, root)
+    assert dispatcher.dispatch("sessionStart", {"session": "s1", "prompt": "hi"}, "startup").context == [f"bootstrap from {linked.path}"]
+    assert dispatcher.dispatch("sessionStart", {"session": "s1", "prompt": "hi"}, "resume").context == []
+    servers = load_config([linked.mcp]).servers
+    assert servers[0].name == "hyper" and servers[0].args == [f"{linked.path}/bin/server.mjs"]
+    assert remove_plugin("hyper", settings.user_plugins) == linked.path and claude.is_dir() and settings.plugins(root) == []
+    registry = tmp_path / "home" / ".claude" / "plugins"
+    registry.mkdir(parents=True)
+    (registry / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {"hyper@hyper": [{"scope": "user", "installPath": str(claude)}], "gone@x": [{"installPath": str(tmp_path / "missing")}]}}))
+    assert claude_installed(tmp_path / "home") == [claude] and claude_installed(tmp_path / "nohome") == []
+    assert settings.claude_plugins is False and Settings.from_env({"SUPERCLAW_CLAUDE_PLUGINS": "1"}).claude_plugins
     tree = tmp_path / "repo"
     for rel in ("README.md", "pyproject.toml", "src/app/main.py", "src/app/auth/tokens.py", "tests/test_auth.py", "node_modules/x/index.js", "docs/a/b/c/d/e/f/deep.md"):
         (tree / rel).parent.mkdir(parents=True, exist_ok=True)
