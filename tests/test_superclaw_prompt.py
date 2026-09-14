@@ -62,7 +62,7 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert "Host tools present: rg, fd, jq. In bash prefer rg over grep, fd over find." in equipped and "Host tools" not in build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK))
     assert tooling.guidance(("jq",)) == "Host tools present: jq." and tooling.guidance(()) == ""
     monkeypatch.setattr(tooling, "which", lambda name: "/usr/bin/" + name if name in ("rg", "uv") else None)
-    assert tooling.detect() == ("rg", "uv")
+    assert tooling.host_tools() == ("rg", "uv")
     commands = tmp_path / "commands"
     commands.mkdir()
     (commands / "pr.md").write_text("---\ndescription: Open a PR.\nagent: reviewer\n---\nOpen a PR titled $1 for $ARGUMENTS; cost $$5")

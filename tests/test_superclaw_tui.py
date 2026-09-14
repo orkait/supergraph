@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
 from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
+from superclaw.tools import ToolContext
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
 from superclaw.tui.cards import ToolCard
@@ -63,6 +65,19 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     lean = build_runtime(replace(rt.settings, db_path=locked), tmp_path, Mode.ASK, require_provider=False, open_store=False)
     assert lean.gs is None and lean.store is None and doctor_lines(lean, "/setup")[3].startswith(f"store {locked}")
     lean.close()
+    full = build_runtime(replace(rt.settings, db_path=tmp_path / "full"), tmp_path, Mode.ASK, require_provider=False)
+    assert full.registry.run("bash", {"command": "echo ok"}, ToolContext(workspace=tmp_path)).output == "ok"
+    outcome: dict[str, object] = {}
+
+    def off_main_thread() -> None:
+        outcome["python"] = full.registry.run("python", {"code": "print(2 + 2)"}, ToolContext(workspace=tmp_path)).output
+        outcome["slow"] = full.kernel.execute("import time; time.sleep(5)", 0.3)
+
+    worker = threading.Thread(target=off_main_thread)
+    worker.start()
+    worker.join(30)
+    assert "4" in str(outcome["python"]) and outcome["slow"] == (False, "Error: kernel timed out after 0.3s; the namespace was reset")
+    full.close()
     with pytest.raises(StoreInUse):
         SuperGraph(path=str(locked), embedder="none")
     holder.close()

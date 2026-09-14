@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -113,12 +113,19 @@ class Kernel:
 
     def _serve(self, timeout_s: float) -> dict[str, Any]:
         proc = self._proc
-        signal.setitimer(signal.ITIMER_REAL, timeout_s)
+        expired = threading.Event()
+
+        def expire() -> None:
+            expired.set()
+            proc.kill()
+
+        watchdog = threading.Timer(timeout_s, expire)
+        watchdog.start()
         try:
             while True:
                 line = proc.stdout.readline()
                 if not line:
-                    raise BrokenPipeError("kernel exited")
+                    raise TimeoutError(f"timed out after {timeout_s:g}s") if expired.is_set() else BrokenPipeError("kernel exited")
                 reply = json.loads(line)
                 if "rpc" not in reply:
                     return reply
@@ -129,10 +136,9 @@ class Kernel:
                 proc.stdin.write(json.dumps(answer) + "\n")
                 proc.stdin.flush()
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            watchdog.cancel()
 
     def execute(self, code: str, timeout_s: float) -> tuple[bool, str]:
-        previous = signal.signal(signal.SIGALRM, _raise_timeout)
         try:
             self._send({"code": code})
             reply = self._serve(timeout_s)
@@ -140,8 +146,6 @@ class Kernel:
         except (TimeoutError, BrokenPipeError, ValueError, OSError) as e:
             self.close()
             return False, f"Error: kernel {e}; the namespace was reset"
-        finally:
-            signal.signal(signal.SIGALRM, previous)
 
     def bind(self, name: str, out: str, code: int) -> None:
         self._send({"bind": name, "value": {"out": out, "code": code}})
@@ -149,15 +153,12 @@ class Kernel:
     def checkpoint(self) -> str:
         if not self.alive:
             return ""
-        previous = signal.signal(signal.SIGALRM, _raise_timeout)
         try:
             self._send({"dump": True})
             return str(self._serve(LIMITS.kernel_checkpoint_timeout_s)["out"])
         except (TimeoutError, BrokenPipeError, ValueError, OSError):
             self.close()
             return ""
-        finally:
-            signal.signal(signal.SIGALRM, previous)
 
     def restore(self, blob: str) -> None:
         if blob:
@@ -168,10 +169,6 @@ class Kernel:
             os.killpg(self._proc.pid, signal.SIGKILL)
             self._proc.wait()
         self._proc = None
-
-
-def _raise_timeout(signum: int, frame: Any) -> None:
-    raise TimeoutError("timed out")
 
 
 _MS_PER_SECOND = 1000
