@@ -152,7 +152,7 @@ def load_config(entries: list[Path | Source]) -> Config:
     for entry in entries:
         if isinstance(entry, Path):
             data = _read_json(entry, config.problems)
-            servers, root, disabled = _servers_of(data), entry.parent, set()
+            servers, root, disabled = _servers_of(data), entry.parent, set[str]()
         else:
             _, servers, root, disabled = entry
         for name, raw in sorted(servers.items()):
@@ -195,7 +195,30 @@ def _validate(name: str, raw: dict[str, Any]) -> str:
     return ""
 
 
-class Client:
+class Transport:
+    server: Server
+
+    def start(self) -> None:
+        raise NotImplementedError
+
+    def handshake(self, timeout_s: float) -> None:
+        raise NotImplementedError
+
+    def close(self) -> None:
+        raise NotImplementedError
+
+    def request(self, method: str, params: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def list_tools(self, timeout_s: float) -> list[dict[str, Any]]:
+        found = self.request("tools/list", {}, timeout_s).get("tools")
+        return [t for t in found or [] if isinstance(t, dict) and str(t.get("name") or "").strip()]
+
+    def call(self, name: str, arguments: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+        return self.request("tools/call", {"name": name, "arguments": arguments}, timeout_s)
+
+
+class Client(Transport):
     def __init__(self, server: Server) -> None:
         self.server = server
         self._proc: subprocess.Popen[str] | None = None
@@ -271,13 +294,6 @@ class Client:
         }, timeout_s)
         self.notify("notifications/initialized", {})
 
-    def list_tools(self, timeout_s: float) -> list[dict[str, Any]]:
-        found = self.request("tools/list", {}, timeout_s).get("tools")
-        return [t for t in found or [] if isinstance(t, dict) and str(t.get("name") or "").strip()]
-
-    def call(self, name: str, arguments: dict[str, Any], timeout_s: float) -> dict[str, Any]:
-        return self.request("tools/call", {"name": name, "arguments": arguments}, timeout_s)
-
     def close(self) -> None:
         proc, self._proc = self._proc, None
         if proc is None or proc.poll() is not None:
@@ -307,7 +323,7 @@ def _sse_messages(body: str) -> list[dict[str, Any]]:
     return found
 
 
-class HttpClient:
+class HttpClient(Transport):
     def __init__(self, server: Server) -> None:
         self.server = server
         self._http: httpx.Client | None = None
@@ -358,13 +374,6 @@ class HttpClient:
         }, timeout_s)
         self.notify("notifications/initialized", {}, timeout_s)
 
-    def list_tools(self, timeout_s: float) -> list[dict[str, Any]]:
-        found = self.request("tools/list", {}, timeout_s).get("tools")
-        return [t for t in found or [] if isinstance(t, dict) and str(t.get("name") or "").strip()]
-
-    def call(self, name: str, arguments: dict[str, Any], timeout_s: float) -> dict[str, Any]:
-        return self.request("tools/call", {"name": name, "arguments": arguments}, timeout_s)
-
     def close(self) -> None:
         http, self._http = self._http, None
         if http is not None:
@@ -384,7 +393,7 @@ def text_content(blocks: Any) -> tuple[str, int]:
 class RemoteTool(Tool):
     deferred = True
 
-    def __init__(self, client: Client | HttpClient, remote: dict[str, Any]) -> None:
+    def __init__(self, client: Transport, remote: dict[str, Any]) -> None:
         self._client = client
         self._remote = str(remote["name"]).strip()
         self.server = client.server.name
@@ -415,7 +424,7 @@ class Skipped:
 
 @dataclass
 class Bridge:
-    clients: list[Client | HttpClient] = field(default_factory=list)
+    clients: list[Transport] = field(default_factory=list)
     tools: list[RemoteTool] = field(default_factory=list)
     skipped: list[Skipped] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
@@ -426,8 +435,8 @@ class Bridge:
         self.clients.clear()
 
 
-def _connect(server: Server, timeout_s: float) -> tuple[Client | HttpClient, list[dict[str, Any]]]:
-    client: Client | HttpClient = HttpClient(server) if server.url else Client(server)
+def _connect(server: Server, timeout_s: float) -> tuple[Transport, list[dict[str, Any]]]:
+    client: Transport = HttpClient(server) if server.url else Client(server)
     client.start()
     try:
         client.handshake(timeout_s)
