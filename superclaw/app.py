@@ -72,6 +72,7 @@ class Runtime:
     mcp: Bridge | None = None
     agent: Agent | None = None
     session_id: str = ""
+    sandbox: str = ""
 
     @property
     def model_info(self) -> ModelInfo:
@@ -198,6 +199,7 @@ def build_runtime(
         gs=gs, store=sessions, memory=memory, registry=registry, policy=policy,
         provider=provider, workspace=workspace, model=settings.model, settings=settings, extra_dirs=extra_dirs, max_turns=max_turns,
         token_budget=settings.budget_tokens, intent_gate=intent_gate, hooks=hooks, kernel=kernel, mcp=bridge, agent=agent,
+        sandbox=getattr(backend, "name", "") if backend else "",
     )
 
 
@@ -258,7 +260,7 @@ def context_for(rt: Runtime, prompt: str) -> Context:
         memory=rt.memory.render(hits), facts=rt.memory.facts.render(facts), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
         agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
-        tools=host_tools(), claude_config=rt.settings.claude_config,
+        tools=host_tools(), claude_config=rt.settings.claude_config, sandbox=rt.sandbox,
     ))
     return Context(system_prompt, len(hits), len(facts), len(skills), len(found.files) if found else 0)
 

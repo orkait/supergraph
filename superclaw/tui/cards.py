@@ -15,13 +15,19 @@ from superclaw.tui.theme import ACCENT, ADD, ADD_ROW, DEL, DEL_ROW, MUTED
 
 TARGET_KEYS = ("path", "pattern", "command", "code", "name", "query", "ref", "task")
 DIFF_TOOLS = {"edit_file", "write_file"}
+MULTILINE_KEYS = ("command", "code", "task")
 
 
 def target_of(name: str, args: dict[str, Any]) -> str:
     for key in TARGET_KEYS:
         value = args.get(key)
-        if value:
-            return clip(str(value).splitlines()[0] if key in ("command", "code", "task") else str(value), LIMITS.card_arg_chars)
+        if not value:
+            continue
+        if key in MULTILINE_KEYS:
+            lines = str(value).splitlines()
+            said = str(args.get("description") or "").strip()
+            return clip(said if said and len(lines) > 1 else lines[0].strip(), LIMITS.card_arg_chars)
+        return clip(str(value), LIMITS.card_arg_chars)
     return clip(json.dumps(args), LIMITS.card_arg_chars) if args else ""
 
 

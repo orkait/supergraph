@@ -23,7 +23,7 @@ from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyph
 from superclaw.tools import ToolContext
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
-from superclaw.tui.cards import ToolCard
+from superclaw.tui.cards import ToolCard, target_of
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
 from superclaw.tui.status import WorkingLine
@@ -205,6 +205,8 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             assert working.label == "bash" and working.detail == "pytest -q"
             app.render_event({"type": "permission_request", "tool": "bash", "args": {"command": "pytest -q"}, "reason": "r", "risk": "low", "categories": [], "prefix": []})
             assert working.label == "waiting for you" and working.detail == "bash  pytest -q"
+            assert target_of("bash", {"command": "export X=1\ndocker run repo pytest", "description": "Run the suite in the container"}) == "Run the suite in the container"
+            assert target_of("bash", {"command": "ls -la", "description": "List"}) == "ls -la" and target_of("read_file", {"path": "a/b.py"}) == "a/b.py"
             app.render_event({"type": "permission_decision", "tool": "bash", "decision": "allow"})
             assert working.label == "bash" and "permission bash: allow" in str(app.query(".note").last().content)
             app.render_event({"type": "tool_result", "id": "t9", "ok": True, "output": "3 passed\n", "display": {}, "ref": ""})
@@ -225,7 +227,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             assert app.session_id != sid and app.stats.used == 0 and app.stats.cost == 0 and app.query_one("#welcome").display and not app.query_one("#transcript").display
 
     asyncio.run(drive())
-    assert [e["type"] for e in rt.store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    assert [e["type"] for e in rt.store.events(sid) if e["type"] != "usage"] == ["prompt", "message", "message", "tool_result", "message"]
     rt.memory.note("The user's name is Kai.")
     rt.provider, events = Scripted(Completion(text="you are Kai")), []
     run_once(rt, "what is my name", sid, Callbacks(on_event=events.append))

@@ -474,6 +474,8 @@ class _Run:
         cost = self.o.model_info.cost(usage) if self.o.model_info else 0.0
         self.tokens_used += usage.total
         self.cost_usd += cost
+        self.persist("usage", {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+                               "cache_read_tokens": usage.cache_read_tokens, "cost_usd": round(cost, LIMITS.usd_decimals)})
         self.emit({"type": "usage", "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
                    "cache_read_tokens": usage.cache_read_tokens, "run_total": self.tokens_used,
                    "cost_usd": round(cost, LIMITS.usd_decimals), "run_cost_usd": round(self.cost_usd, LIMITS.usd_decimals),

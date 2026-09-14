@@ -110,7 +110,7 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     res = run("read a.txt", Scripted(read(), Completion(text="it says hello")), options(ws, session=store, session_id=sid))
     assert res.final_answer == "it says hello" and [m.role for m in res.messages] == ["system", "user", "assistant", "tool", "assistant"]
     assert res.messages[3].content.startswith('<untrusted source="read_file">')
-    assert [e["type"] for e in store.events(sid)] == ["prompt", "message", "message", "tool_result", "message"]
+    assert [e["type"] for e in store.events(sid)] == ["prompt", "message", "usage", "message", "tool_result", "usage", "message"] and store.usage(sid)["calls"] == 2
     touched = str((ws / "a.txt").resolve())
     assert store.files_of(sid) == [(touched, "read")] and [s["id"] for s in store.touching(touched)] == [sid] and store.touching(str(ws / "zz.txt")) == []
     around = Recall(store=ObservationStore(gs), sessions=store).run({"path": "a.txt"}, ToolContext(workspace=ws)).output
@@ -313,7 +313,7 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     events, store = [], ObservationStore(gs)
     provider = Scripted(read("c0", "big0.txt"), read("c1", "big0.txt"), read("c2", "big1.txt"), read("c3", "big2.txt"), read("c4", "big0.txt"), Completion(text="ok"))
     res = run("go", provider, options(ws, store=store, context_window=20_000, reserve_tokens=1000, keep_tokens=2000, summarize=lambda b: "SUMMARY", on_event=events.append))
-    assert [e["type"] for e in events if e["type"] in ("prune", "compaction")][:2] == ["prune", "compaction"] and res.final_answer == "ok"
+    assert {e["type"] for e in events if e["type"] in ("prune", "compaction")} == {"prune", "compaction"} and res.final_answer == "ok"
     outputs = {e["id"]: e["output"] for e in events if e["type"] == "tool_result"}
     assert "1→y0" in outputs["c0"] and "already in your context" in outputs["c1"] and "1→y0" in outputs["c4"]
     ref = next(e["ref"] for e in events if e["type"] == "tool_result" and e["id"] == "c0")

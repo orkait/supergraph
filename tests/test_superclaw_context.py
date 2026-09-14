@@ -84,6 +84,10 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert ModelInfo("m", 1000, 100, input_per_token=1.0, output_per_token=10.0, cache_read_per_token=0.1).cost(Usage(100, 1, 40)) == 74
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).window() == info.context_window and Settings.from_env({"SUPERCLAW_CONTEXT_WINDOW": "4096"}).window() == 4096
     assert Settings.from_env({"SUPERCLAW_MODEL": info.id}).output_cap() == min(info.max_output_tokens, LIMITS.completion_max_tokens) and Settings.from_env({"SUPERCLAW_MAX_OUTPUT_TOKENS": "1234"}).output_cap() == 1234
+    big, small = ContextMeter(1_000_000), ContextMeter(40_000)
+    assert big.limit() == int(1_000_000 * LIMITS.compaction_trigger_share) and big.pressure(700_000) and not big.pressure(500_000)
+    assert small.limit() == int(40_000 * LIMITS.compaction_trigger_share) and small.pressure(25_000) and not small.pressure(23_000)
+    assert ContextMeter(1_000, reserve=100).limit() == 600 and ContextMeter(0).pressure(10_000) is False
     assert Settings.from_env({"SUPERCLAW_MODEL": "nobody/no-such-model"}).output_cap() == LIMITS.max_output_tokens_fallback
     assert parse_response(_resp("hello", prompt=50, cached=30)).usage.cache_read_tokens == 30
     import superclaw.provider as mod
@@ -153,7 +157,7 @@ def test_meter_cut_prune_and_compaction():
     meter = ContextMeter(window=1000, reserve=100)
     meter.observe(Usage(input_tokens=880, output_tokens=10))
     meter.append(user("x" * 80))
-    assert meter.pressure(estimate=1) and ContextMeter(window=4000, reserve=16_384).pressure(estimate=2999) is False
+    assert meter.pressure(estimate=1) and ContextMeter(window=4000, reserve=16_384).pressure(estimate=2399) is False
     msgs = [Message(role="system", content="s"), user("u0"), assistant("a0"), user("u1"), assistant("", [ToolCall("c", "t", "{}")]), tool("c", "r" * 400), assistant("a1"), user("u2")]
     assert cut_point(msgs, keep_tokens=8) == 7 and cut_point(msgs, keep_tokens=115) == 4 and cut_point(msgs, keep_tokens=10_000) == 1
     big = "x" * (LIMITS.prune_threshold_chars + 10)

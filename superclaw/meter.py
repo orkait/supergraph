@@ -27,8 +27,11 @@ class ContextMeter:
     def used(self, estimate: int) -> int:
         return self.anchor + self.since if self.anchor else estimate
 
+    def limit(self) -> int:
+        return min(self.window - bounded(self.reserve, self.window), int(self.window * LIMITS.compaction_trigger_share))
+
     def pressure(self, estimate: int) -> bool:
-        return self.window > 0 and self.used(estimate) > self.window - bounded(self.reserve, self.window)
+        return self.window > 0 and self.used(estimate) > self.limit()
 
 
 def bounded(tokens: int, window: int) -> int:

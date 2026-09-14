@@ -84,7 +84,7 @@ def _fork(app: SuperclawApp, arg: str) -> None:
 def _usage(app: SuperclawApp, arg: str) -> None:
     u = app.rt.store.usage(app.session_id)
     dot = app.glyphs.dot
-    app.note(f"this session: {u['calls']} calls {dot} {u['tokens']:,} tokens {dot} ${u['cost_usd']:.4f}")
+    app.note(f"this session: {u['calls']} calls {dot} {u['tokens']:,} tokens {dot} {u['cached']:,} cached {dot} ${u['cost_usd']:.4f}")
 
 
 def _context(app: SuperclawApp, arg: str) -> None:
