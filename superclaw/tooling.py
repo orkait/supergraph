@@ -7,7 +7,7 @@ from superclaw.settings import HOST_TOOLS
 which = shutil.which
 
 
-def detect() -> tuple[str, ...]:
+def host_tools() -> tuple[str, ...]:
     return tuple(name for name, _ in HOST_TOOLS if which(name))
 
 

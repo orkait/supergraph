@@ -29,7 +29,7 @@ from superclaw.session import SessionStore, prompt_hash
 from superclaw.share import open_shared
 from superclaw.settings import MCP_FILE, PROVIDERS, WORKSPACE_DIR, Settings
 from superclaw.skills import load_skills
-from superclaw.tooling import detect
+from superclaw.tooling import host_tools
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
 from superclaw.tools.download import Download
@@ -230,7 +230,7 @@ def context_for(rt: Runtime, prompt: str) -> Context:
         memory=rt.memory.render(hits), user_guidelines=rt.settings.user_guidelines, extra_dirs=rt.extra_dirs,
         agent=rt.agent.prompt if rt.agent else "", repo_map=render(found) if found else "",
         provider=rt.model.split("/", 1)[0], model=rt.model, request_kind=rt.policy.request_kind if rt.intent_gate else None,
-        tools=detect(),
+        tools=host_tools(),
     ))
     return Context(system_prompt, len(hits), len(skills), len(found.files) if found else 0)
 
