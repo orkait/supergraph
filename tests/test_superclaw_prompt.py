@@ -59,6 +59,14 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     loaded = load_agents([profiles, tmp_path / "missing"])
     assert [a.name for a in loaded] == ["reviewer"] and loaded[0].tools == frozenset({"read_file", "grep"}) and loaded[0].model == "p/m"
     assert resolve_agent("reviewer", [profiles]).prompt == "Only review."
+    builtin = {a.name: a for a in load_agents(Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "empty")}).agent_roots())}
+    assert set(builtin) == {"explore", "review"} and "write_file" not in builtin["explore"].tools and "bash" not in builtin["explore"].tools
+    assert {"read_file", "grep", "glob"} <= builtin["explore"].tools and "findings, not files" in builtin["explore"].prompt
+    assert "bash" in builtin["review"].tools and "write" not in builtin["review"].tools and builtin["review"].description.startswith("Read-only review")
+    local = tmp_path / "cfgown" / "superclaw" / "agents"
+    local.mkdir(parents=True)
+    (local / "explore.md").write_text("---\nname: explore\ndescription: Mine.\n---\nMINE")
+    assert resolve_agent("explore", Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "cfgown")}).agent_roots()).prompt == "MINE"
     with pytest.raises(KeyError):
         resolve_agent("nope", [profiles])
     with_agent = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", agent=loaded[0].prompt))
