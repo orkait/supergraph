@@ -38,7 +38,7 @@ from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, a
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
-from superclaw.stages import Intent, decompose, parse_intent
+from superclaw.stages import Intent, Unknown, decompose, parse_intent, recall_settled, settled_note
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.ask import parse_questions
 from superclaw.tools.files import core_file_tools
@@ -487,6 +487,15 @@ def test_intent_hooks_and_deferral(ws, gs):
             asked.append(messages[0].content)
             return Completion(text='{"goal": "map the seam", "queries": ["where is the bridge"], "unknowns": ["which adapter?"]}')
 
+    once = Unknown("What retry count do you want?", ("3", "5"), "3")
+    blocked = Intent(goal="add retry", unknowns=(once,))
+    assert blocked.blocked and recall_settled([], blocked.unknowns) == ()
+    kept = blocked.settled(["5"])
+    notes = [settled_note(q, a) for q, a in kept.answered]
+    assert notes == ["Settled by the user: What retry count do you want? -> 5"]
+    warm = Intent(goal="add retry elsewhere", unknowns=(once,)).remembered(recall_settled(notes, (once,)))
+    assert not warm.blocked and warm.answered == (("What retry count do you want?", "5"),) and "Settled by the user" in warm.block()
+    assert Intent(unknowns=(once,)).remembered(()).blocked and recall_settled(["unrelated note"], (once,)) == ()
     heard = decompose(Decomposer(), "map the resolve bridge for me please")
     assert heard.queries == ("where is the bridge",) and heard.blocked and "intent stage" in asked[0]
     reg = options(ws).registry
