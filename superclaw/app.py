@@ -300,10 +300,23 @@ class Callbacks:
     on_ask_user: Callable[[list[dict[str, Any]]], list[str]] | None = None
 
 
+def stored_evidence(rt: Runtime, queries: tuple[str, ...]) -> list[tuple[str, str]]:
+    store = rt.registry.observations
+    if store is None:
+        return []
+    found: list[tuple[str, str]] = []
+    for query in queries:
+        hit = next(iter(store.search(query, limit=1)), None)
+        if hit is not None:
+            found.append((query, hit.ref))
+    return found
+
+
 def read_intent(rt: Runtime, prompt: str, cb: Callbacks, cancelled: Callable[[], bool] | None, wanted: bool = True) -> Intent:
     if not (wanted and rt.intent_stage) or rt.provider is None:
         return Intent()
     intent = decompose(rt.provider, prompt, cancelled)
+    intent = intent.with_evidence(stored_evidence(rt, intent.queries))
     if intent.blocked:
         remembered = recall_settled([text for _, text, _ in rt.memory.hits(prompt)], intent.unknowns)
         intent = intent.remembered(remembered)
