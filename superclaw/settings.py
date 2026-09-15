@@ -284,6 +284,8 @@ class Limits:
     verifier_transcript_bytes: int = 24_000
 
     max_empty_turns: int = 3
+    pending_items_named: int = 3
+    pending_item_chars: int = 80
     ask_options_min: int = 3
     ask_options_max: int = 5
     intent_items_max: int = 8
