@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
+
+_WORD = re.compile(r"[a-z0-9_]+")
+NAME_WEIGHT = 3
 
 
 class ToolSearch(Tool):
@@ -35,10 +39,13 @@ class ToolSearch(Tool):
             wanted = [n.strip() for n in query[len("select:"):].split(",") if n.strip()]
             matches = [deferred[n] for n in wanted if n in deferred]
         else:
-            words = [w.lower() for w in query.split()]
-            matches = [t for t in deferred.values() if any(w in f"{t.name} {t.description}".lower() for w in words)][:LIMITS.tool_search_matches]
+            words = {w for w in _WORD.findall(query.lower()) if len(w) >= LIMITS.tool_search_min_word}
+            scored = [(sum(w in t.name.lower() for w in words) * NAME_WEIGHT + sum(w in t.description.lower() for w in words), t)
+                      for t in deferred.values()]
+            matches = [t for score, t in sorted(scored, key=lambda pair: -pair[0]) if score][:LIMITS.tool_search_matches]
         if not matches:
-            return Result.error(f"Error: no deferred tool matches {query!r}. Available: {', '.join(deferred) or '(none)'}")
+            return Result.error(f"Error: no tool matches {query!r}. Search for the capability you need, not the subject you need it for: "
+                                f"'search the web' rather than the thing you want to look up. Available: {', '.join(deferred) or '(none)'}")
         rendered = "\n\n".join(json.dumps(t.definition()["function"], indent=1) for t in matches)
         return Result.success(f"Loaded for the next turn: {', '.join(t.name for t in matches)}\n\n{rendered}",
                               meta={"load_tools": [t.name for t in matches]})

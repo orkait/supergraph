@@ -554,6 +554,10 @@ def test_intent_hooks_and_deferral(ws, gs):
     reg = build_registry(Memory(gs), ObservationStore(gs), Path(ws))
     eager = reg.definitions(loaded=set())
     assert [d["function"]["name"] for d in eager] == ["bash", "edit_file", "grep", "read_file", "skill", "tool_search", "write_file"] and approx_tokens(json.dumps(eager)) < LIMITS.eager_schema_tokens
+    ranked = reg.run("tool_search", {"query": "search the web"}, ToolContext(workspace=ws))
+    assert ranked.ok and ranked.output.splitlines()[0].startswith("Loaded for the next turn: web_search")
+    assert reg.run("tool_search", {"query": "read a url"}, ToolContext(workspace=ws)).output.splitlines()[0].startswith("Loaded for the next turn: web_fetch")
+    assert "Search for the capability" in reg.run("tool_search", {"query": "zzz qqq"}, ToolContext(workspace=ws)).output
     provider = Scripted(Completion(tool_calls=[call("tool_search", query="plan")]), Completion(text="ok"))
     run("go", provider, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="S"))
     assert "update_plan" not in provider.requests[0][1] and "update_plan" in provider.requests[1][1]
