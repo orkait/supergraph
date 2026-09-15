@@ -23,6 +23,7 @@ HEADER: Final = (
 SUBGOALS_TITLE: Final = "Subgoals, in order, each one independently checkable:"
 QUERIES_TITLE: Final = "Open questions about this workspace; answer each by reading, searching or running something, never by guessing:"
 SETTLED_TITLE: Final = "Settled by the user, treat as given:"
+ANSWER_PREFIX: Final = "Answer by reading or running something:"
 SETTLED_PREFIX: Final = "Settled by the user:"
 SETTLED_SEP: Final = " -> "
 UNRESOLVED_TITLE: Final = "The user did not settle these; say which assumption you made rather than deciding silently:"
@@ -57,6 +58,9 @@ class Intent:
     @property
     def blocked(self) -> bool:
         return bool(self.unknowns)
+
+    def plan_seed(self) -> tuple[str, ...]:
+        return tuple(f"{ANSWER_PREFIX} {query}" for query in self.queries) + self.subgoals
 
     def remembered(self, known: Sequence[tuple[str, str]]) -> Intent:
         if not known:
