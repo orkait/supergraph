@@ -77,3 +77,6 @@ website/.cache-loader/
 
 # Local-only Dockerfile variants with BuildKit cache mounts (not for distribution)
 Dockerfile*.test
+
+# stray store if a probe passes ":memory:" as a filesystem path
+:memory:/
