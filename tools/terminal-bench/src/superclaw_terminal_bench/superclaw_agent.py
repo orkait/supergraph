@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import shlex
+from pathlib import Path
 from typing import override
 
 from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
@@ -18,9 +20,29 @@ PROVIDER_KEYS = (
     "GEMINI_API_KEY",
     "GROQ_API_KEY",
     "OPENAI_API_KEY",
+    "OPENCODE_API_KEY",
+    "OPENCODE_API_BASE",
     "OPENROUTER_API_KEY",
     "XAI_API_KEY",
 )
+OPENCODE_GO_BASE = "https://opencode.ai/zen/go/v1"
+OPENCODE_AUTH_ENTRY = "opencode-go"
+
+
+def opencode_go_env() -> dict[str, str]:
+    """superclaw reads the opencode-go key from a local auth file; a container cannot."""
+    if os.environ.get("OPENCODE_API_KEY"):
+        return {}
+    default = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+    path = Path(os.environ.get("OPENCODE_AUTH_PATH") or default)
+    try:
+        entry = json.loads(path.read_text()).get(OPENCODE_AUTH_ENTRY)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(entry, dict) or str(entry.get("type", "")).strip().lower() != "api":
+        return {}
+    key = str(entry.get("key") or "").strip()
+    return {"OPENCODE_API_KEY": key, "OPENCODE_API_BASE": OPENCODE_GO_BASE} if key else {}
 
 
 class Superclaw(BaseInstalledAgent):
@@ -64,6 +86,7 @@ class Superclaw(BaseInstalledAgent):
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         access = self.model_connection
         env = {key: os.environ[key] for key in PROVIDER_KEYS if os.environ.get(key)}
+        env.update(opencode_go_env())
         env.update(access.env)
         if self.model_name:
             env["SUPERCLAW_MODEL"] = self.model_name
