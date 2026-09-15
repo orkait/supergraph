@@ -22,6 +22,8 @@ from superclaw.guards import (
     continue_nudge,
     ends_with_continuation_cue,
     ends_with_promise,
+    identical_call_reminder,
+    identical_call_stop_answer,
     no_output_stop_answer,
     promise_nudge,
     tool_failure_hint,
@@ -493,14 +495,18 @@ class _Run:
             if self.o.cancelled and self.o.cancelled():
                 self.abort_rest(calls[index:])
                 return self.stopped()
-            if repeated := self.guards.observe_identical(call.name, call.arguments):
-                followups.append(repeated)
             outcome, hint = self.run_call(call)
             if hint:
                 followups.append(hint)
             if outcome.stop:
                 self.abort_rest(calls[index + 1:])
                 return self.result(tool_failure_stop_answer(call.name, outcome.count), stop_reason="tool_failure_loop")
+            repeat = self.guards.observe_repeat(call.name, call.arguments, self.messages[-1].content)
+            if repeat.stop:
+                self.abort_rest(calls[index + 1:])
+                return self.result(identical_call_stop_answer(call.name, repeat.count), stop_reason="identical_call_loop")
+            if repeat.hint:
+                followups.append(identical_call_reminder(call.name, repeat.count))
             if self.control:
                 self.abort_rest(calls[index + 1:])
                 return self.result(self.messages[-1].content, stop_reason=self.control)

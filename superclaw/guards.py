@@ -116,6 +116,13 @@ def promise_nudge() -> str:
     )
 
 
+def identical_call_stop_answer(name: str, count: int) -> str:
+    return (
+        f"Agent stopped: `{name}` was called {count} times with identical input, so I halted instead of repeating it further. "
+        "The same call returns the same result; the task needs a different approach or a decision from you."
+    )
+
+
 def identical_call_reminder(name: str, count: int) -> str:
     return (
         f"You have called `{name}` {count} times with identical input. Repeating the same call returns the same result; "
@@ -166,14 +173,13 @@ class Guards:
         self._failure_count = 0
         self._calls_since_plan = 0
         self._plan_reminded = False
-        self._identical: tuple[str, str] | None = None
-        self._identical_count = 0
+        self._repeats: dict[tuple[str, str, str], int] = {}
 
-    def observe_identical(self, name: str, arguments: str) -> str | None:
-        key = (name, arguments)
-        self._identical_count = self._identical_count + 1 if key == self._identical else 1
-        self._identical = key
-        return identical_call_reminder(name, self._identical_count) if self._identical_count == LIMITS.identical_call_at else None
+    def observe_repeat(self, name: str, arguments: str, output: str) -> FailureOutcome:
+        """A call that returns what it already returned made no progress, however many turns apart."""
+        key = (name, arguments, error_signature(output))
+        count = self._repeats[key] = self._repeats.get(key, 0) + 1
+        return FailureOutcome(count, count == LIMITS.identical_call_at, count >= LIMITS.identical_call_stop_at)
 
     def observe_turn(self, text: str, tool_calls: int) -> bool:
         if not text.strip() and tool_calls == 0:

@@ -297,6 +297,7 @@ class Limits:
     tool_only_reminder_at: int = 6
     max_continue_nudges: int = 3
     identical_call_at: int = 3
+    identical_call_stop_at: int = 8
     max_calls_per_turn: int = 42
 
     hook_timeout_s: int = 60
