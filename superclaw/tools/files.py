@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import difflib
 import re
 import shutil
@@ -8,7 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path, PurePath
 from typing import Any
 
-from superclaw.settings import LIMITS, RG_BIN
+from superclaw.settings import LIMITS, PYTHON_SUFFIX, RG_BIN
 from superclaw.tools import Category, Display, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail, relative
 
 IGNORED_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
@@ -36,6 +37,26 @@ def _read(side_effect_reason: str) -> Safety:
 
 def _write(side_effect_reason: str) -> Safety:
     return Safety(SideEffect.WRITE, Permission.PROMPT, side_effect_reason)
+
+
+def _syntax_error(path: Path, text: str) -> str:
+    if path.suffix != PYTHON_SUFFIX:
+        return ""
+    try:
+        ast.parse(text)
+    except SyntaxError as e:
+        return f"{e.msg} at line {e.lineno}"
+    except ValueError as e:
+        return str(e)
+    return ""
+
+
+def _written(rel: str, summary: str, before: str, after: str, target: Path) -> Result:
+    display = _diff_display(rel, before, after, summary)
+    if problem := _syntax_error(target, after):
+        return Result.error(f"Error: {rel} was written but no longer parses: {problem}. Read it and fix the syntax before doing anything else.",
+                            changed_files=[rel], display=display)
+    return Result.success(summary, changed_files=[rel], display=display)
 
 
 def _walk(root: Path, max_depth: int | None) -> Iterator[Path]:
@@ -127,8 +148,7 @@ class WriteFile(Tool):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(args["content"])
         ctx.files.record(target, args["content"].encode())
-        summary = f"Wrote {len(args['content'])} chars to {rel}"
-        return Result.success(summary, changed_files=[rel], display=_diff_display(rel, before, args["content"], summary))
+        return _written(rel, f"Wrote {len(args['content'])} chars to {rel}", before, args["content"], target)
 
 
 class EditFile(Tool):
@@ -170,8 +190,7 @@ class EditFile(Tool):
         updated = text.replace(old, args["new_string"])
         target.write_text(updated)
         ctx.files.record(target, updated.encode())
-        summary = f"Replaced {count} occurrence(s) in {rel}"
-        return Result.success(summary, changed_files=[rel], display=_diff_display(rel, text, updated, summary))
+        return _written(rel, f"Replaced {count} occurrence(s) in {rel}", text, updated, target)
 
 
 class ListDirectory(Tool):

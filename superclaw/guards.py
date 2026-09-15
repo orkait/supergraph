@@ -184,8 +184,6 @@ class Guards:
 
     def observe_tool_result(self, name: str, failed: bool, output: str) -> FailureOutcome:
         if not failed:
-            self._failure = None
-            self._failure_count = 0
             return FailureOutcome(0, False, False)
         key = (name, error_signature(output))
         if key == self._failure:

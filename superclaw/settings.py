@@ -65,6 +65,7 @@ PROC_DIR = "/proc"
 STOPPED_STATES = ("T", "t")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 RECOMMENDED_MARK = "(recommended)"
+PYTHON_SUFFIX = ".py"
 
 
 @dataclass(frozen=True)

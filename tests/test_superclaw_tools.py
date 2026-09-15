@@ -285,6 +285,12 @@ def test_file_tools(reg, ws, monkeypatch):
     wide = ToolContext(workspace=ws, extra_dirs=(vendor,))
     assert wide.roots == (ws, vendor) and reg.run("read_file", {"path": str(vendor / "lib.py")}, wide).output == "1→vendored"
     assert reg.run("grep", {"pattern": "vendored", "path": str(vendor)}, wide).output == "lib.py:1:vendored"
+    assert reg.run("write_file", {"path": "ok.py", "description": "d", "content": "def f():\n    return 1\n"}, ctx).ok
+    broken = reg.run("write_file", {"path": "broken.py", "description": "d", "content": "def f():\nreturn 1\n"}, ctx)
+    assert not broken.ok and "no longer parses" in broken.output and (ws / "broken.py").exists()
+    assert reg.run("write_file", {"path": "notes.txt", "description": "d", "content": "def f():\nreturn 1\n"}, ctx).ok
+    ctx.files.record(ws / "ok.py", (ws / "ok.py").read_bytes())
+    assert not reg.run("edit_file", {"path": "ok.py", "description": "d", "old_string": "    return 1", "new_string": "  return 1\n     x"}, ctx).ok
 
 
 def test_bash(tmp_path, monkeypatch):
