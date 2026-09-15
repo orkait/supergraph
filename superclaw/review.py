@@ -4,10 +4,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, PROMPTS_DIR
 from superclaw.tools.budget import Budget, Category, budget_output
-
-_PROMPTS = Path(__file__).parent / "prompts"
 
 
 class ReviewError(RuntimeError):
@@ -45,7 +43,7 @@ def commit(cwd: Path, sha: str) -> Change:
 
 
 def instruction() -> str:
-    return (_PROMPTS / "review.md").read_text().strip()
+    return (PROMPTS_DIR / "review.md").read_text().strip()
 
 
 def prompt(change: Change, extra: str = "") -> str:

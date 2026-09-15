@@ -305,11 +305,10 @@ def read_intent(rt: Runtime, prompt: str, cb: Callbacks, cancelled: Callable[[],
         return Intent()
     intent = decompose(rt.provider, prompt, cancelled)
     if intent.blocked and cb.on_ask_user is not None:
-        questions = [{"question": unknown, "options": []} for unknown in intent.unknowns]
-        intent = intent.settled(cb.on_ask_user(questions))
+        intent = intent.settled(cb.on_ask_user([unknown.asked() for unknown in intent.unknowns]))
     if cb.on_event and not intent.empty:
-        cb.on_event({"type": "decomposed", "goal": intent.goal, "subgoals": list(intent.subgoals),
-                     "queries": list(intent.queries), "unknowns": list(intent.unknowns), "answered": len(intent.answered)})
+        cb.on_event({"type": "decomposed", "goal": intent.goal, "subgoals": list(intent.subgoals), "queries": list(intent.queries),
+                     "unknowns": [unknown.question for unknown in intent.unknowns], "answered": len(intent.answered)})
     return intent
 
 

@@ -5,11 +5,9 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-from superclaw.skills import Skill, frontmatter, load_skills
+from superclaw.skills import Skill, frontmatter, load_skills, render_skill
 
 SUFFIX = ".md"
-_PROMPTS = Path(__file__).parent / "prompts"
-SKILL_TEMPLATE = "skill.md"
 _NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _PLACEHOLDER = re.compile(r"\$(\$|ARGUMENTS|[1-9])")
 
@@ -53,8 +51,7 @@ def _load_root(root: Path) -> list[UserCommand]:
 
 
 def from_skill(skill: Skill) -> UserCommand:
-    template = (_PROMPTS / SKILL_TEMPLATE).read_text().replace("{name}", skill.name).replace("{body}", skill.content)
-    return UserCommand(skill.name.lower(), skill.description or f"Skill: {skill.name}", template.strip(), path=skill.path, skill=True)
+    return UserCommand(skill.name.lower(), skill.description or f"Skill: {skill.name}", render_skill(skill).strip(), path=skill.path, skill=True)
 
 
 def load_commands(roots: list[Path], skill_roots: list[Path | tuple[Path, str]] | None = None) -> list[UserCommand]:

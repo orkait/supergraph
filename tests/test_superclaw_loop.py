@@ -39,6 +39,7 @@ from superclaw.settings import LIMITS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
 from superclaw.stages import Intent, decompose, parse_intent
 from superclaw.tools import Registry, SideEffect, ToolContext
+from superclaw.tools.ask import parse_questions
 from superclaw.tools.files import core_file_tools
 from superclaw.tools.plan import UpdatePlan
 from superclaw.tools.shell import Bash
@@ -518,8 +519,14 @@ def test_intent_hooks_and_deferral(ws, gs):
     assert "denied by hook" in [m.content for m in frozen.messages if m.role == "tool"][1] and "edits are frozen" in [m.content for m in frozen.messages if m.role == "tool"][1] and (ws / "a.txt").read_text() == "hello\n"
     prompted = run("write", Scripted(Completion(tool_calls=[call("bash", "b1", command="true", description="d")]), Completion(text="done")), options(ws, mode="ask", hooks=more_dispatch, on_permission=lambda req: "deny"))
     assert prompted.final_answer == "done" and marks.read_text() == "permission_prompt\n"
-    asked = run("ask", Scripted(Completion(tool_calls=[call("ask_user", "q1", questions=[{"question": "Which?", "options": ["a", "b"]}])]), Completion(text="ok")), options(ws, hooks=more_dispatch, on_ask_user=lambda qs: ["a"]))
+    asked = run("ask", Scripted(Completion(tool_calls=[call("ask_user", "q1", questions=[{"question": "Which?", "options": ["a", "b", "c"], "recommended": "b"}])]), Completion(text="ok")),
+                options(ws, hooks=more_dispatch, on_ask_user=lambda qs: ["a"]))
     assert asked.final_answer == "ok" and marks.read_text() == "permission_prompt\nelicitation_dialog\n"
+    with pytest.raises(ValueError, match="needs 3 to 5 options"):
+        parse_questions({"questions": [{"question": "Which?", "options": ["a", "b"]}]})
+    with pytest.raises(ValueError, match="recommended must be one of"):
+        parse_questions({"questions": [{"question": "Which?", "options": ["a", "b", "c"], "recommended": "z"}]})
+    assert parse_questions({"questions": [{"question": "Which?", "options": ["a", "b", "c"]}]})[0]["recommended"] == "a"
     compacting = _Run(Scripted(Completion(text="S")), options(ws, hooks=more_dispatch, session_id="s9"))
     compacting.compact_notes = more_dispatch.dispatch("preCompact", {"trigger": "auto"}, "auto").context
     assert compacting.summarize("brief") == "S" and compacting.provider.requests[0][0][0].content.endswith("Additional instructions from the user's hooks:\nFOCUS ON TESTS")

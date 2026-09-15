@@ -63,6 +63,8 @@ MILLION = 1_000_000
 PRICE_UNIT_TOKENS = MILLION
 PROC_DIR = "/proc"
 STOPPED_STATES = ("T", "t")
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+RECOMMENDED_MARK = "(recommended)"
 
 
 @dataclass(frozen=True)
@@ -269,6 +271,8 @@ class Limits:
     verifier_transcript_bytes: int = 24_000
 
     max_empty_turns: int = 3
+    ask_options_min: int = 3
+    ask_options_max: int = 5
     intent_items_max: int = 8
     intent_goal_chars: int = 240
     intent_min_chars: int = 12
@@ -289,7 +293,7 @@ class Limits:
     memory_recall_limit: int = 5
     guideline_file_bytes: int = 8 * 1024
     guideline_total_bytes: int = 32 * 1024
-    skills_index_bytes: int = 4096
+    skills_index_bytes: int = 8192
     skill_description_chars: int = 200
 
     compaction_head_share: float = 0.4

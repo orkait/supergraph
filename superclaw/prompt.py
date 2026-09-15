@@ -6,15 +6,14 @@ from pathlib import Path
 
 from superclaw.intent import GUIDANCE, Kind
 from superclaw.policy import Mode
-from superclaw.settings import CLAUDE_GUIDELINES, LIMITS
+from superclaw.settings import CLAUDE_GUIDELINES, LIMITS, PROMPTS_DIR
 from superclaw.skills import Skill
+from superclaw.text import clip, oneline
 from superclaw.tooling import guidance
 
 PROJECT_FILES = ("AGENTS.md", "SUPERCLAW.md", ".superclaw/AGENTS.md")
 USER_FILE = "SUPERCLAW.md"
 TRUNCATION_MARKER = "\n… (truncated)"
-
-_PROMPTS = Path(__file__).parent / "prompts"
 
 
 @dataclass
@@ -38,11 +37,11 @@ class PromptInputs:
 
 
 def core_prompt() -> str:
-    return (_PROMPTS / "system.md").read_text().strip()
+    return (PROMPTS_DIR / "system.md").read_text().strip()
 
 
 def confirmation_policy() -> str:
-    return (_PROMPTS / "confirmation_policy.md").read_text().strip()
+    return (PROMPTS_DIR / "confirmation_policy.md").read_text().strip()
 
 
 def find_git_root(cwd: Path) -> Path | None:
@@ -161,21 +160,12 @@ def user_guidelines(path: Path | None) -> str:
 def skills_block(skills: list[Skill]) -> str:
     if not skills:
         return ""
+    room = LIMITS.skills_index_bytes - sum(len(f"- {skill.name}: …\n") for skill in skills)
+    share = min(LIMITS.skill_description_chars, max(0, room // len(skills)))
     lines: list[str] = []
-    spent = 0
-    omitted = 0
     for skill in skills:
-        desc = skill.description.strip()
-        if len(desc) > LIMITS.skill_description_chars:
-            desc = desc[:LIMITS.skill_description_chars].rstrip() + "…"
-        line = f"- {skill.name}: {desc}" if desc else f"- {skill.name}"
-        if lines and spent + len(line) > LIMITS.skills_index_bytes:
-            omitted += 1
-            continue
-        lines.append(line)
-        spent += len(line) + 1
-    if omitted:
-        lines.append(f"- …and {omitted} more (call skill with a name; an unknown name lists them all)")
+        desc = clip(oneline(skill.description), share) if share else ""
+        lines.append(f"- {skill.name}: {desc}" if desc else f"- {skill.name}")
     return (
         "<available_skills>\n"
         "On-demand instruction sets. When a request matches a skill's name or description, call skill with that exact name first and follow it.\n"
