@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.text import Text
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -55,7 +55,7 @@ WORDMARK_ART = (
 )
 TAGLINE = "Any model. Every tool. A graph for memory."
 EXAMPLES = ('Try  "explain this codebase"', '"fix the failing test"', '"add a --json flag"')
-HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "drop a file to attach", "ctrl+o unfold output", "esc cancel", "ctrl+c quit")
+HINTS = ("/ commands", "up down history", "shift+tab mode", "ctrl+v paste image", "select to copy", "drop a file to attach", "ctrl+o unfold output", "esc cancel", "ctrl+c quit")
 HOOK_LINE = "[hook] "
 PHASE_RECALLING = "recalling"
 PHASE_THINKING = "thinking"
@@ -168,6 +168,7 @@ class SuperclawApp(App[None]):
         Binding("tab", "palette_complete", "Complete command", show=False, priority=True),
         Binding("shift+tab", "cycle_mode", "Cycle mode", show=False, priority=True),
         Binding("ctrl+o", "toggle_verbose", "Unfold tool output", show=False, priority=True),
+        Binding("ctrl+shift+c", "copy_selection", "Copy selection", show=False, priority=True),
     ]
     limits = LIMITS
 
@@ -416,6 +417,23 @@ class SuperclawApp(App[None]):
 
     def note(self, text: str, error: bool = False) -> None:
         self.add(Static(text, classes="error" if error else "note"))
+
+    def copy_selection(self) -> str:
+        selected = self.screen.get_selected_text() or ""
+        if not selected:
+            return ""
+        if not clipboard.put(selected):
+            self.copy_to_clipboard(selected)
+        return selected
+
+    def on_text_selected(self, event: events.TextSelected) -> None:
+        event.stop()
+        if copied := self.copy_selection():
+            self.note(f"copied {count(len(copied), 'character')} to the clipboard")
+
+    def action_copy_selection(self) -> None:
+        if not self.copy_selection():
+            self.note("nothing selected; drag over text to select it", error=True)
 
     def clear_transcript(self) -> None:
         self.query_one("#transcript", VerticalScroll).remove_children()
