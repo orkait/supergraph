@@ -31,7 +31,20 @@ from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
-from superclaw.settings import LIMITS, MCP_FILE, MCP_SCOPES, PROVIDERS, SESSION_END_EXIT, SESSION_END_OTHER, WORKSPACE_DIR, Glyphs, Settings, split_models
+from superclaw.settings import (
+    LIMITS,
+    MCP_FILE,
+    MCP_SCOPES,
+    PROVIDERS,
+    RENDERER_INLINE,
+    RENDERERS,
+    SESSION_END_EXIT,
+    SESSION_END_OTHER,
+    WORKSPACE_DIR,
+    Glyphs,
+    Settings,
+    split_models,
+)
 from superclaw.share import NotServing
 from superclaw.skills import load_skills
 from superclaw.text import clip
@@ -399,7 +412,9 @@ def cmd_context(rt: Runtime, args: argparse.Namespace) -> int:
 def cmd_tui(rt: Runtime, args: argparse.Namespace) -> int:
     from superclaw.tui import SuperclawApp
 
-    SuperclawApp(rt, resolve_session(rt, args.resume, args.fork)).run()
+    renderer = args.tui or rt.settings.renderer
+    app = SuperclawApp(rt, resolve_session(rt, args.resume, args.fork))
+    app.run(inline=renderer == RENDERER_INLINE, inline_no_clear=True)
     return 0
 
 
@@ -414,6 +429,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
+    parser.add_argument("--tui", choices=RENDERERS, default=None,
+                        help=f"renderer for the interactive shell: default draws under your prompt and keeps scrollback, "
+                             f"fullscreen takes the alternate screen (saved default: {defaults.renderer})")
     parser.add_argument("--model", default="", help=f"model for this session (default: {defaults.model})")
     parser.add_argument("--agent", default="", metavar="NAME",
                         help="agent profile from <config>/agents or <workspace>/.superclaw/agents; `agents` lists them")

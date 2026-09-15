@@ -20,7 +20,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
-from superclaw.settings import ASCII, PROVIDERS, UNICODE, Settings, choose_glyphs
+from superclaw.settings import ASCII, PROVIDERS, RENDERER_ENV, RENDERER_INLINE, UNICODE, Settings, choose_glyphs
 from superclaw.tools import ToolContext
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
@@ -165,6 +165,13 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             app.post_message(TextSelected())
             await _wait_for(pilot, lambda: "to the clipboard" in str(app.query(".note").last().content))
             assert len(written) == 2 and written[-1] == written[0]
+            await pilot.press(*"/tui sideways", "enter")
+            await pilot.pause(0.05)
+            assert "usage: /tui default|fullscreen" in str(app.query(".error").last().content)
+            await pilot.press(*"/tui default", "enter")
+            await pilot.pause(0.05)
+            assert f"{RENDERER_ENV}={RENDERER_INLINE}" in rt.settings.credentials.read_text()
+            assert "next time you start superclaw" in str(app.query(".note").last().content)
             await pilot.press(*"/tools", "enter")
             await pilot.pause(0.05)
             assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))

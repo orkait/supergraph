@@ -30,7 +30,19 @@ from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
 from superclaw.runtime import Message
-from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, RECOMMENDED_MARK, SESSION_END_CLEAR, TRANSCRIPT_TEMPLATE, Glyphs, Provider
+from superclaw.settings import (
+    EFFORT_OFF,
+    EFFORTS,
+    LIMITS,
+    RECOMMENDED_MARK,
+    RENDERER_FULLSCREEN,
+    RENDERER_INLINE,
+    RENDERERS,
+    SESSION_END_CLEAR,
+    TRANSCRIPT_TEMPLATE,
+    Glyphs,
+    Provider,
+)
 from superclaw.text import clip, compact, count
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard, target_of
@@ -573,6 +585,17 @@ class SuperclawApp(App[None]):
         apply_effort(self.rt, "" if value == EFFORT_OFF else value)
         self.refresh_status()
         self.note(f"effort {value}")
+
+    def set_renderer(self, value: str) -> None:
+        if value not in RENDERERS:
+            self.note(f"usage: /tui {'|'.join(RENDERERS)}", error=True)
+            return
+        self.rt.settings.save_renderer(value)
+        running = RENDERER_INLINE if self.is_inline else RENDERER_FULLSCREEN
+        if value == running:
+            self.note(f"already on the {value} renderer; saved as your default")
+        else:
+            self.note(f"saved {value} as your renderer; it applies the next time you start superclaw")
 
     def retry(self) -> None:
         if self.running:

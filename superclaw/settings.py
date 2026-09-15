@@ -14,6 +14,11 @@ DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
 EFFORTS = ("low", "medium", "high")
 EFFORT_OFF = "off"
+RENDERER_INLINE = "default"
+RENDERER_FULLSCREEN = "fullscreen"
+RENDERERS = (RENDERER_INLINE, RENDERER_FULLSCREEN)
+RENDERER_ENV = "SUPERCLAW_TUI"
+NO_ALT_SCREEN_ENV = "SUPERCLAW_DISABLE_ALTERNATE_SCREEN"
 CREDENTIALS_FILE = "credentials.env"
 CREDENTIALS_MODE = 0o600
 TRANSCRIPT_TEMPLATE = "superclaw-transcript-{sid}.md"
@@ -96,6 +101,13 @@ def choose_engine(e: Mapping[str, str]) -> str:
     if wanted in ENGINES:
         return wanted
     return ENGINE_GOOGLE if e.get(GOOGLE_KEY_ENV, "").strip() and e.get(GOOGLE_CX_ENV, "").strip() else ENGINE_DUCKDUCKGO
+
+
+def choose_renderer(e: Mapping[str, str]) -> str:
+    if e.get(NO_ALT_SCREEN_ENV, "").strip().lower() not in OFF_VALUES:
+        return RENDERER_INLINE
+    wanted = e.get(RENDERER_ENV, "").strip().lower()
+    return wanted if wanted in RENDERERS else RENDERER_FULLSCREEN
 
 
 def choose_glyphs(e: Mapping[str, str]) -> Glyphs:
@@ -462,6 +474,7 @@ class Settings:
     fallback_models: tuple[str, ...]
     mode: str
     effort: str
+    renderer: str
     stream: bool
     repo_map: bool
     search_engine: str
@@ -506,6 +519,7 @@ class Settings:
             fallback_models=split_models(e.get("SUPERCLAW_FALLBACK_MODELS", "")),
             mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
             effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
+            renderer=choose_renderer(e),
             stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
             repo_map=e.get("SUPERCLAW_REPO_MAP", "1").strip().lower() not in OFF_VALUES,
             search_engine=choose_engine(e),
@@ -563,6 +577,9 @@ class Settings:
 
     def save_effort(self, effort: str) -> None:
         self._save({"SUPERCLAW_EFFORT": effort})
+
+    def save_renderer(self, renderer: str) -> None:
+        self._save({RENDERER_ENV: renderer})
 
     def _save(self, values: dict[str, str]) -> None:
         merged = {**read_env_file(self.credentials), **values}
