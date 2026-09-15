@@ -140,8 +140,10 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     kw.clear()
     LitellmProvider([{"litellm_model": "m", "api_key": "k", "api_base": None, "extra_headers": {"x-opencode-session": "ses_x"}}]).complete([user("hi")], [])
     assert kw["extra_headers"] == {"x-opencode-session": "ses_x"}
-    assert Settings.from_env({"SUPERCLAW_EFFORT": "high"}).effort == "high" and Settings.from_env({"SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env({}).effort == ""
-    assert Settings.from_env({"SUPERCLAW_FALLBACK_MODELS": "a/b, c/d"}).fallback_models == ("a/b", "c/d") and Settings.from_env({}).fallback_models == ()
+    bare = {"XDG_CONFIG_HOME": str(tmp_path / "config")}
+    assert Settings.from_env({**bare, "SUPERCLAW_EFFORT": "high"}).effort == "high"
+    assert Settings.from_env({**bare, "SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env(bare).effort == ""
+    assert Settings.from_env({**bare, "SUPERCLAW_FALLBACK_MODELS": "a/b, c/d"}).fallback_models == ("a/b", "c/d") and Settings.from_env(bare).fallback_models == ()
     import superclaw.app as app_mod
 
     asked: list[list[str]] = []

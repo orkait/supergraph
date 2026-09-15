@@ -5,13 +5,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from textual.events import Paste
+from textual.events import Paste, TextSelected
+from textual.selection import SELECT_ALL
 from textual.widgets import Input, Markdown, Static
 
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
 
-from superclaw import catalog
+from superclaw import catalog, clipboard
 from superclaw.app import Callbacks, Runtime, build_registry, build_runtime, run_once
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
@@ -154,6 +155,16 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             far = RunStats(window=1_000_000, used=100_000)
             far.limit = ContextMeter(1_000_000).limit()
             assert app.query_one("#status", StatusBar).context(far).endswith("10%")
+            written: list[str] = []
+            monkeypatch.setattr(clipboard, "put", lambda value: written.append(value) or True)
+            app.action_copy_selection()
+            await pilot.pause(0.05)
+            assert not written and "nothing selected" in str(app.query(".error").last().content)
+            app.screen.selections = {app.query(".note").last(): SELECT_ALL}
+            assert app.copy_selection() and written and "my work" in written[-1]
+            app.post_message(TextSelected())
+            await _wait_for(pilot, lambda: "to the clipboard" in str(app.query(".note").last().content))
+            assert len(written) == 2 and written[-1] == written[0]
             await pilot.press(*"/tools", "enter")
             await pilot.pause(0.05)
             assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))

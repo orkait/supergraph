@@ -65,6 +65,23 @@ def text() -> str:
     return ""
 
 
+def put(value: str) -> bool:
+    candidates = [["pbcopy"]] if sys.platform == "darwin" else [["wl-copy"], ["xclip", "-selection", "clipboard"]]
+    for argv in candidates:
+        if not shutil.which(argv[0]):
+            continue
+        try:
+            # wl-copy and xclip fork a daemon that owns the selection; capturing its
+            # output would keep the pipes open and block until the timeout.
+            done = subprocess.run(argv, input=value.encode("utf-8"), stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, timeout=LIMITS.clipboard_timeout_s, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if done.returncode == 0:
+            return True
+    return False
+
+
 def parse_drop(pasted: str) -> list[Path]:
     stripped = pasted.strip()
     if not stripped or ("\n" in stripped.strip("\n") and stripped.count("\n") > LIMITS.drop_paths_max):
