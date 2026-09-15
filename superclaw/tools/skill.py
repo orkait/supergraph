@@ -17,7 +17,6 @@ def _from_workspace(path: str, workspace: Path) -> bool:
 
 class SkillTool(Tool):
     name = "skill"
-    deferred = True
     description = "Load a named skill and return its full instructions. Call it before acting on a request that matches a listed skill."
     parameters = {
         "type": "object",

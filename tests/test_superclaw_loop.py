@@ -22,6 +22,7 @@ from superclaw.agents import Agent
 from superclaw.app import Runtime, build_registry
 from superclaw.cli import cmd_spec, cmd_verify, draft_spec
 from superclaw.delegate import Delegate
+from superclaw.guards import Guards
 from superclaw.hooks import Dispatcher, load_hooks
 from superclaw.intent import Kind, parse_kind
 from superclaw.compaction import TRANSCRIPT_NOTE
@@ -283,6 +284,11 @@ def test_guards_gates_and_verifier(ws):
     bad = [Completion(tool_calls=[call("edit_file", f"c{i}", path="a.txt", description="d", old_string="zzz", new_string="y")]) for i in range(8)]
     res = run("edit", Scripted(*bad), options(ws))
     assert res.stop_reason == "tool_failure_loop" and sum("match it exactly" in m.content for m in res.messages if m.role == "user") == 1
+    alternating = Guards()
+    counts = [(alternating.observe_tool_result("edit_file", False, "Replaced 1 occurrence(s)"),
+               alternating.observe_tool_result("bash", True, "ImportError: attempted relative import"))[1] for _ in range(LIMITS.failure_stop_at)]
+    assert [c.count for c in counts] == list(range(1, LIMITS.failure_stop_at + 1)) and counts[-1].stop and counts[LIMITS.failure_hint_at - 1].hint
+    assert Guards().observe_tool_result("bash", True, "a different failure").count == 1
     provider = Scripted(read("c1"), read("c2"), Completion(text="summary"))
     assert run("loop", provider, options(ws, max_turns=2)).final_answer == "summary" and provider.requests[-1][1] == []
     long = Scripted(*[read(f"r{i}") for i in range(LIMITS.identical_call_at * 6)], Completion(text="done"))
@@ -547,7 +553,7 @@ def test_intent_hooks_and_deferral(ws, gs):
     assert "sk-proj-" not in tool_msgs[0] and "[hook] api_key=[REDACTED]" in saved and "blocked by hook block-writes" in tool_msgs[1]
     reg = build_registry(Memory(gs), ObservationStore(gs), Path(ws))
     eager = reg.definitions(loaded=set())
-    assert [d["function"]["name"] for d in eager] == ["bash", "edit_file", "grep", "read_file", "tool_search", "write_file"] and approx_tokens(json.dumps(eager)) < LIMITS.eager_schema_tokens
+    assert [d["function"]["name"] for d in eager] == ["bash", "edit_file", "grep", "read_file", "skill", "tool_search", "write_file"] and approx_tokens(json.dumps(eager)) < LIMITS.eager_schema_tokens
     provider = Scripted(Completion(tool_calls=[call("tool_search", query="plan")]), Completion(text="ok"))
     run("go", provider, Options(registry=reg, policy=Policy(ws, Mode.AUTO, sandboxed=True), workspace=ws, system_prompt="S"))
     assert "update_plan" not in provider.requests[0][1] and "update_plan" in provider.requests[1][1]
