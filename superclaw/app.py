@@ -30,7 +30,7 @@ from superclaw.session import SessionStore, prompt_hash
 from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.share import open_shared
 from superclaw.skills import load_skills
-from superclaw.stages import Intent, decompose
+from superclaw.stages import Intent, decompose, recall_settled, settled_note
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
@@ -304,8 +304,14 @@ def read_intent(rt: Runtime, prompt: str, cb: Callbacks, cancelled: Callable[[],
     if not (wanted and rt.intent_stage) or rt.provider is None:
         return Intent()
     intent = decompose(rt.provider, prompt, cancelled)
+    if intent.blocked:
+        remembered = recall_settled([text for _, text, _ in rt.memory.hits(prompt)], intent.unknowns)
+        intent = intent.remembered(remembered)
     if intent.blocked and cb.on_ask_user is not None:
-        intent = intent.settled(cb.on_ask_user([unknown.asked() for unknown in intent.unknowns]))
+        asked = intent.unknowns
+        intent = intent.settled(cb.on_ask_user([unknown.asked() for unknown in asked]))
+        for question, answer in intent.answered[-len(asked):]:
+            rt.memory.note(settled_note(question, answer))
     if cb.on_event and not intent.empty:
         cb.on_event({"type": "decomposed", "goal": intent.goal, "subgoals": list(intent.subgoals), "queries": list(intent.queries),
                      "unknowns": [unknown.question for unknown in intent.unknowns], "answered": len(intent.answered)})

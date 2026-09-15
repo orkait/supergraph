@@ -10,7 +10,7 @@ from superclaw.settings import LIMITS, PROMPTS_DIR, RECOMMENDED_MARK
 from superclaw.text import oneline
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterable, Iterator, Sequence
 
     from superclaw.runtime import CancelCheck, Provider
 
@@ -23,6 +23,8 @@ HEADER: Final = (
 SUBGOALS_TITLE: Final = "Subgoals, in order, each one independently checkable:"
 QUERIES_TITLE: Final = "Open questions about this workspace; answer each by reading, searching or running something, never by guessing:"
 SETTLED_TITLE: Final = "Settled by the user, treat as given:"
+SETTLED_PREFIX: Final = "Settled by the user:"
+SETTLED_SEP: Final = " -> "
 UNRESOLVED_TITLE: Final = "The user did not settle these; say which assumption you made rather than deciding silently:"
 
 
@@ -55,6 +57,14 @@ class Intent:
     @property
     def blocked(self) -> bool:
         return bool(self.unknowns)
+
+    def remembered(self, known: Sequence[tuple[str, str]]) -> Intent:
+        if not known:
+            return self
+        answers = dict(known)
+        kept = tuple((question, answers[question]) for question in (u.question for u in self.unknowns) if question in answers)
+        unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in answers)
+        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept))
 
     def settled(self, answers: Sequence[str]) -> Intent:
         replies = tuple(zip(self.unknowns, answers, strict=False))
@@ -140,6 +150,26 @@ def parse_intent(text: str) -> Intent:
         if not parsed.empty:
             return parsed
     return Intent()
+
+
+def settled_note(question: str, answer: str) -> str:
+    return f"{SETTLED_PREFIX} {oneline(question)}{SETTLED_SEP}{oneline(answer)}"
+
+
+def settled_answer(note: str) -> str:
+    asked, sep, given = note.partition(SETTLED_SEP)
+    return oneline(given) if sep and SETTLED_PREFIX in asked else ""
+
+
+def recall_settled(notes: Iterable[str], unknowns: tuple[Unknown, ...]) -> tuple[tuple[str, str], ...]:
+    known = [note for note in notes if settled_answer(note)]
+    found: list[tuple[str, str]] = []
+    for unknown in unknowns:
+        asked = oneline(unknown.question).lower()
+        hit = next((note for note in known if asked and asked in note.lower()), "")
+        if hit:
+            found.append((unknown.question, settled_answer(hit)))
+    return tuple(found)
 
 
 def decompose(provider: Provider, request: str, cancelled: CancelCheck | None = None) -> Intent:
