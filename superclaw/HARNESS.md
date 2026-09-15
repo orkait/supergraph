@@ -21,7 +21,7 @@ Each rule names the Terminal-Bench failure mode it guards against. The eight mod
 
 | # | Rule | Guards against | What broke on 2026-09-15 | Enforced at |
 |---|---|---|---|---|
-| 1 | Recover the acceptance condition and the boundary before acting. Everything not listed as a subgoal is outside the task | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block. **Gap:** it is advice. Subgoals do not gate the end of the run and an edit outside the boundary is not flagged |
+| 1 | Recover the acceptance condition and the boundary before acting. Everything not listed as a subgoal is outside the task | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block; the subgoals seed the plan and `loop.py` `incomplete_reason` refuses a no-tool answer while any is pending. **Gap:** an edit outside the boundary is still not flagged |
 | 2 | Literal tokens stay literal. Classify a word as a name or a description before normalising anything | reasoning-action mismatch | "codemode this repo" was decomposed to "Code the specified repository"; a skill name became a verb | `prompts/decompose.md`: an unrecognised term is carried through verbatim and never queried |
 | 3 | An underdetermined request gets three to five options with one recommended. Never an open question, never a silent guess | disobey task specification | "make the code faster" produced no question and an edit. After the fix it produces five options with Python recommended; "rename the fetch helper in src/net.py" correctly produces none | `tools/ask.py` `parse_questions`, `settings.ask_options_min`, `stages.Unknown` |
 | 4 | Done lives outside the model. Every claim of progress passes a check the model cannot vote on | no or irrelevant verification, weak verification | a run ended `status: success` over Python that raised `IndentationError` on import; on Terminal-Bench a solution passed 5 of 6 tests and scored 0, because the verifier, not the agent, defines solved | `tools/files.py` `_written` parses every `.py` write; `prompts/verifier.md` rejects proxy signals behind `--verify`. **Gap:** `--verify` is off by default and judges the whole run, not each subgoal |
@@ -67,15 +67,16 @@ Same request, same model, same repository, before and after the rules were enfor
 
 ## What is still advisory
 
-The rules above hold where they are enforced. Three are not, and they are the highest-value remaining work in that order.
+The rules above hold where they are enforced. Two are not, and they are the highest-value remaining work in that order.
 
 | # | Gap | Why it matters |
 |---|---|---|
-| 1 | Subgoals are injected as prompt text and never checked. The run can end with a subgoal unaddressed and report success | this is the difference between advice and a contract; Terminal-Bench scores 0 for one missed requirement |
 | 1 | A changed file outside the listed subgoals is not detected | the retry run spent 90% of its turns outside the boundary and nothing noticed |
 | 7 | Repeated identical failure halts the run but does not force a change of approach | halting is safer than looping; reclassifying and trying another route is what a strong engineer does |
 
-A fourth item is a quality problem in the intent stage rather than a missing enforcement: it sometimes raises as an unknown a question the workspace answers, such as which language the code is written in. The prompt already says ambiguity the code settles is a query. The fix is observation on a stronger model, not more prompt text.
+Closed since this document was written: subgoals no longer end a run unmet. They seed the plan, and the completion gate refuses a no-tool answer while any item is pending, naming the one that is outstanding. Measured at 0.110 ms per run against 0.022 ms for a run with no decomposition, with no extra model call.
+
+A third item is a quality problem in the intent stage rather than a missing enforcement: it sometimes raises as an unknown a question the workspace answers, such as which language the code is written in. The prompt already says ambiguity the code settles is a query. The fix is observation on a stronger model, not more prompt text.
 
 ## Verification
 
