@@ -11,7 +11,17 @@ from superclaw.tui.status import RunStats
 from superclaw.models import ModelInfo, lookup, priced
 from superclaw.provider import LitellmProvider, hint, parse_response
 from superclaw.runtime import Message, ToolCall, Usage, approx_tokens, message_tokens, to_wire
-from superclaw.settings import LIMITS, PRICED_FILE, PROVIDERS, Settings, read_opencode_key
+from superclaw.settings import (
+    LIMITS,
+    NO_ALT_SCREEN_ENV,
+    PRICED_FILE,
+    PROVIDERS,
+    RENDERER_ENV,
+    RENDERER_FULLSCREEN,
+    RENDERER_INLINE,
+    Settings,
+    read_opencode_key,
+)
 from supergraph.ingest.llm.resolve import build_provider_chain, resolve_model
 
 
@@ -144,6 +154,13 @@ def test_catalog_pricing_and_provider_fallback(monkeypatch, tmp_path):
     assert Settings.from_env({**bare, "SUPERCLAW_EFFORT": "high"}).effort == "high"
     assert Settings.from_env({**bare, "SUPERCLAW_EFFORT": "bogus"}).effort == "" and Settings.from_env(bare).effort == ""
     assert Settings.from_env({**bare, "SUPERCLAW_FALLBACK_MODELS": "a/b, c/d"}).fallback_models == ("a/b", "c/d") and Settings.from_env(bare).fallback_models == ()
+    assert Settings.from_env(bare).renderer == RENDERER_FULLSCREEN and Settings.from_env({**bare, RENDERER_ENV: "bogus"}).renderer == RENDERER_FULLSCREEN
+    assert Settings.from_env({**bare, RENDERER_ENV: "default"}).renderer == RENDERER_INLINE
+    assert Settings.from_env({**bare, NO_ALT_SCREEN_ENV: "1", RENDERER_ENV: "fullscreen"}).renderer == RENDERER_INLINE
+    assert Settings.from_env({**bare, NO_ALT_SCREEN_ENV: "0"}).renderer == RENDERER_FULLSCREEN
+    saved = Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path / "saved")})
+    saved.save_renderer(RENDERER_INLINE)
+    assert f"{RENDERER_ENV}={RENDERER_INLINE}" in saved.credentials.read_text()
     import superclaw.app as app_mod
 
     asked: list[list[str]] = []

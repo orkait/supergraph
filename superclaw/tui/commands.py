@@ -244,6 +244,10 @@ def _effort(app: SuperclawApp, arg: str) -> None:
     app.set_effort(arg.strip())
 
 
+def _tui(app: SuperclawApp, arg: str) -> None:
+    app.set_renderer(arg.strip().lower())
+
+
 def _help(app: SuperclawApp, arg: str) -> None:
     for command in (*COMMANDS, *app.user_commands):
         app.note(f"{command.usage:<24} {command.help}")
@@ -262,6 +266,7 @@ COMMANDS = (
     Command("/mode", "/mode ask|auto|plan|unsafe", "switch the permission mode", _mode),
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
+    Command("/tui", "/tui default|fullscreen", "pick the renderer for the next launch and save it", _tui),
     Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
     Command("/resume", "/resume [id|latest]", "pick an earlier session to continue, or name one", _resume),
     Command("/sessions", "/sessions [query|touching <path>]", "list recent sessions, search their events, or see who touched a file", _sessions),
