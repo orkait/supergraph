@@ -359,6 +359,7 @@ class Limits:
     glob_max_limit: int = 1000
     grep_head_limit: int = 50
     tool_search_matches: int = 10
+    tool_search_min_word: int = 3
     web_search_results: int = 5
     web_search_results_max: int = 10
     web_search_timeout_s: float = 10.0
