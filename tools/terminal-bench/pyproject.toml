@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superclaw-terminal-bench"
+version = "0.1.0"
+description = "Harbor agent adapter that runs superclaw against Terminal-Bench"
+requires-python = ">=3.11"
+dependencies = ["harbor"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"superclaw_terminal_bench" = ["*.j2"]

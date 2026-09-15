@@ -77,16 +77,18 @@ def _visible(text: str) -> str:
     return cleaned if start < 0 else cleaned[:start]
 
 
-def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[], bool] | None = None, deadline: float = 0.0) -> Completion:
+def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[], bool] | None = None, stall_s: float = 0.0) -> Completion:
     parts: list[str] = []
     calls: dict[Any, ToolCall] = {}
     order: list[Any] = []
     shown, finish, usage = "", "", Usage()
+    deadline = time.monotonic() + stall_s if stall_s else 0.0
     for chunk in chunks:
         if cancelled is not None and cancelled():
             raise Cancelled("the user stopped the run")
         if deadline and time.monotonic() > deadline:
-            raise TimeoutError(f"the provider timed out: the stream stalled after {LIMITS.completion_timeout_s}s")
+            raise TimeoutError(f"the provider timed out: the stream stalled for {stall_s:g}s")
+        deadline = time.monotonic() + stall_s if stall_s else 0.0
         chunk_usage = getattr(chunk, "usage", None)
         if chunk_usage is not None:
             details = getattr(chunk_usage, "prompt_tokens_details", None)
@@ -185,10 +187,9 @@ class LitellmProvider:
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
-            deadline = time.monotonic() + self._timeout_s
             try:
                 response = with_deadline(lambda sent=kwargs: _completion(**sent), self._timeout_s)
-                return collect(response, on_text, cancelled, deadline) if streaming else parse_response(response)
+                return collect(response, on_text, cancelled, self._timeout_s) if streaming else parse_response(response)
             except Cancelled:
                 raise
             except Exception as e:

@@ -267,8 +267,14 @@ def test_guards_gates_and_verifier(ws):
     stream = iter([Completion(text="a"), Completion(text="b")])
     with pytest.raises(Cancelled):
         collect(stream, lambda _: None, cancelled=lambda: True)
+    def paced(count, gap):
+        for _ in range(count):
+            time.sleep(gap)
+            yield Completion(text="a")
+
     with pytest.raises(TimeoutError, match="stream stalled"):
-        collect(iter([Completion(text="a")]), lambda _: None, deadline=time.monotonic() - 1)
+        collect(paced(2, 0.3), lambda _: None, stall_s=0.05)
+    assert collect(paced(6, 0.02), lambda _: None, stall_s=0.1) is not None
 
     class Hanging:
         streams = False
