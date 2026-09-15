@@ -24,6 +24,7 @@ SUBGOALS_TITLE: Final = "Subgoals, in order, each one independently checkable:"
 QUERIES_TITLE: Final = "Open questions about this workspace; answer each by reading, searching or running something, never by guessing:"
 SETTLED_TITLE: Final = "Settled by the user, treat as given:"
 ANSWER_PREFIX: Final = "Answer by reading or running something:"
+KNOWN_TITLE: Final = "An earlier session already read this; recall the stored result before reading it again:"
 SETTLED_PREFIX: Final = "Settled by the user:"
 SETTLED_SEP: Final = " -> "
 UNRESOLVED_TITLE: Final = "The user did not settle these; say which assumption you made rather than deciding silently:"
@@ -50,10 +51,11 @@ class Intent:
     queries: tuple[str, ...] = ()
     unknowns: tuple[Unknown, ...] = ()
     answered: tuple[tuple[str, str], ...] = ()
+    known: tuple[tuple[str, str], ...] = ()
 
     @property
     def empty(self) -> bool:
-        return not (self.goal or self.subgoals or self.queries or self.unknowns or self.answered)
+        return not (self.goal or self.subgoals or self.queries or self.unknowns or self.answered or self.known)
 
     @property
     def blocked(self) -> bool:
@@ -68,14 +70,17 @@ class Intent:
         answers = dict(known)
         kept = tuple((question, answers[question]) for question in (u.question for u in self.unknowns) if question in answers)
         unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in answers)
-        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept))
+        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known)
+
+    def with_evidence(self, found: Sequence[tuple[str, str]]) -> Intent:
+        return self if not found else Intent(self.goal, self.subgoals, self.queries, self.unknowns, self.answered, tuple(found))
 
     def settled(self, answers: Sequence[str]) -> Intent:
         replies = tuple(zip(self.unknowns, answers, strict=False))
         kept = tuple((unknown.question, oneline(answer)) for unknown, answer in replies if answer.strip())
         settled = {question for question, _ in kept}
         unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in settled)
-        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept))
+        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known)
 
     def block(self) -> str:
         if self.empty:
@@ -87,6 +92,7 @@ class Intent:
                 f"Goal: {self.goal}" if self.goal else "",
                 _listed(SUBGOALS_TITLE, self.subgoals),
                 _listed(QUERIES_TITLE, self.queries),
+                _listed(KNOWN_TITLE, tuple(f"{query} recall §{ref}" for query, ref in self.known)),
                 _listed(SETTLED_TITLE, tuple(f"{question} {answer}" for question, answer in self.answered)),
                 _listed(UNRESOLVED_TITLE, tuple(unknown.line() for unknown in self.unknowns)),
             )

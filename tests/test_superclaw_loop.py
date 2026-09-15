@@ -487,6 +487,9 @@ def test_intent_hooks_and_deferral(ws, gs):
             asked.append(messages[0].content)
             return Completion(text='{"goal": "map the seam", "queries": ["where is the bridge"], "unknowns": ["which adapter?"]}')
 
+    warm = Intent(queries=("where is fetch?",)).with_evidence([("where is fetch?", "ab12cd34")])
+    assert warm.known == (("where is fetch?", "ab12cd34"),) and "recall §ab12cd34" in warm.block()
+    assert warm.settled([]).known == warm.known and Intent(queries=("q",)).with_evidence([]).known == ()
     assert Intent(subgoals=("do it",)).plan_seed() == ("do it",)
     contract = Intent(subgoals=("implement retry",), queries=("where is fetch defined?",)).plan_seed()
     assert contract == ("Answer by reading or running something: where is fetch defined?", "implement retry")
