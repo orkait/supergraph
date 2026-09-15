@@ -293,11 +293,11 @@ def test_guards_gates_and_verifier(ws):
     plain = Scripted(Completion(text="all done"))
     assert run("go", plain, options(ws)).final_answer == "all done" and len(plain.requests) == 1
     stalled = Scripted(Completion(text="all done"), Completion(text="still nothing"))
-    seeded = run("go", stalled, options(ws, subgoals=("find the helper", "add the retry")))
+    seeded = run("go", stalled, options(ws, plan_seed=("find the helper", "add the retry")))
     assert len(stalled.requests) > 1 and "find the helper" in next(m.content for m in seeded.messages if m.role == "user" and "pending" in m.content)
     marked = json.dumps({"plan": [{"content": s, "status": "completed"} for s in ("find the helper", "add the retry")]})
     honest = Scripted(Completion(tool_calls=[call("update_plan", "p1", plan=json.loads(marked)["plan"])]), Completion(text="retry added"))
-    assert run("go", honest, options(ws, subgoals=("find the helper", "add the retry"))).final_answer == "retry added" and len(honest.requests) == 2
+    assert run("go", honest, options(ws, plan_seed=("find the helper", "add the retry"))).final_answer == "retry added" and len(honest.requests) == 2
     alternating = Guards()
     counts = [(alternating.observe_tool_result("edit_file", False, "Replaced 1 occurrence(s)"),
                alternating.observe_tool_result("bash", True, "ImportError: attempted relative import"))[1] for _ in range(LIMITS.failure_stop_at)]
@@ -487,6 +487,9 @@ def test_intent_hooks_and_deferral(ws, gs):
             asked.append(messages[0].content)
             return Completion(text='{"goal": "map the seam", "queries": ["where is the bridge"], "unknowns": ["which adapter?"]}')
 
+    assert Intent(subgoals=("do it",)).plan_seed() == ("do it",)
+    contract = Intent(subgoals=("implement retry",), queries=("where is fetch defined?",)).plan_seed()
+    assert contract == ("Answer by reading or running something: where is fetch defined?", "implement retry")
     once = Unknown("What retry count do you want?", ("3", "5"), "3")
     blocked = Intent(goal="add retry", unknowns=(once,))
     assert blocked.blocked and recall_settled([], blocked.unknowns) == ()
