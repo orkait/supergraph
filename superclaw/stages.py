@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from superclaw.runtime import Message
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, PROMPTS_DIR, RECOMMENDED_MARK
 from superclaw.text import oneline
 
 if TYPE_CHECKING:
@@ -16,7 +15,6 @@ if TYPE_CHECKING:
     from superclaw.runtime import CancelCheck, Provider
 
 _OBJECT_START: Final = re.compile(r"\{")
-_PROMPTS: Final = Path(__file__).parent / "prompts"
 
 HEADER: Final = (
     "An intent stage read the request before you and decomposed it. This is the contract for this turn, not a suggestion: "
@@ -29,11 +27,25 @@ UNRESOLVED_TITLE: Final = "The user did not settle these; say which assumption y
 
 
 @dataclass(frozen=True, slots=True)
+class Unknown:
+    question: str
+    options: tuple[str, ...] = ()
+    recommended: str = ""
+
+    def asked(self) -> dict[str, object]:
+        return {"question": self.question, "options": list(self.options), "recommended": self.recommended}
+
+    def line(self) -> str:
+        shown = ", ".join(f"{o} {RECOMMENDED_MARK}" if o == self.recommended else o for o in self.options)
+        return f"{self.question} [{shown}]" if shown else self.question
+
+
+@dataclass(frozen=True, slots=True)
 class Intent:
     goal: str = ""
     subgoals: tuple[str, ...] = ()
     queries: tuple[str, ...] = ()
-    unknowns: tuple[str, ...] = ()
+    unknowns: tuple[Unknown, ...] = ()
     answered: tuple[tuple[str, str], ...] = ()
 
     @property
@@ -46,8 +58,9 @@ class Intent:
 
     def settled(self, answers: Sequence[str]) -> Intent:
         replies = tuple(zip(self.unknowns, answers, strict=False))
-        kept = tuple((question, oneline(answer)) for question, answer in replies if answer.strip())
-        unresolved = tuple(question for question in self.unknowns if question not in {q for q, _ in kept})
+        kept = tuple((unknown.question, oneline(answer)) for unknown, answer in replies if answer.strip())
+        settled = {question for question, _ in kept}
+        unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in settled)
         return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept))
 
     def block(self) -> str:
@@ -61,7 +74,7 @@ class Intent:
                 _listed(SUBGOALS_TITLE, self.subgoals),
                 _listed(QUERIES_TITLE, self.queries),
                 _listed(SETTLED_TITLE, tuple(f"{question} {answer}" for question, answer in self.answered)),
-                _listed(UNRESOLVED_TITLE, self.unknowns),
+                _listed(UNRESOLVED_TITLE, tuple(unknown.line() for unknown in self.unknowns)),
             )
             if line
         )
@@ -79,7 +92,7 @@ def _listed(title: str, items: tuple[str, ...]) -> str:
 
 
 def decompose_prompt() -> str:
-    return (_PROMPTS / "decompose.md").read_text().strip()
+    return (PROMPTS_DIR / "decompose.md").read_text().strip()
 
 
 def _strings(value: object) -> tuple[str, ...]:
@@ -87,6 +100,21 @@ def _strings(value: object) -> tuple[str, ...]:
         return ()
     cleaned = [oneline(item) for item in value if isinstance(item, str) and item.strip()]
     return tuple(cleaned[: LIMITS.intent_items_max])
+
+
+def _unknowns(value: object) -> tuple[Unknown, ...]:
+    if not isinstance(value, list):
+        return ()
+    found: list[Unknown] = []
+    for item in value[: LIMITS.intent_items_max]:
+        if isinstance(item, str) and item.strip():
+            found.append(Unknown(oneline(item)))
+        elif isinstance(item, dict) and isinstance(question := item.get("question"), str) and question.strip():
+            options = _strings(item.get("options"))[: LIMITS.ask_options_max]
+            offered = item.get("recommended")
+            chosen = oneline(offered) if isinstance(offered, str) else ""
+            found.append(Unknown(oneline(question), options, chosen if chosen in options else next(iter(options), "")))
+    return tuple(found)
 
 
 def _objects(text: str) -> Iterator[dict[str, object]]:
@@ -107,7 +135,7 @@ def parse_intent(text: str) -> Intent:
             oneline(goal)[: LIMITS.intent_goal_chars] if isinstance(goal, str) else "",
             _strings(raw.get("subgoals")),
             _strings(raw.get("queries")),
-            _strings(raw.get("unknowns")),
+            _unknowns(raw.get("unknowns")),
         )
         if not parsed.empty:
             return parsed

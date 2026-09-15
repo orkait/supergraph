@@ -6,9 +6,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from superclaw.settings import LIMITS
+from superclaw.settings import LIMITS, PROMPTS_DIR
 
-_PROMPTS = Path(__file__).parent / "prompts"
 SCRIPTS = (("typecheck", "typecheck"), ("test", "tests"), ("build", "build"), ("lint", "lint"))
 LOCKFILES = (("bun", ("bun.lock", "bun.lockb")), ("pnpm", ("pnpm-lock.yaml",)), ("yarn", ("yarn.lock",)), ("npm", ("package-lock.json",)))
 
@@ -110,7 +109,7 @@ def run(root: Path, checks: list[Check], only: tuple[str, ...] = (), timeout_s: 
 def remediation_prompt(report: Report) -> str:
     blocks = [f"<check id=\"{r.check.id}\" command=\"{' '.join(r.check.command)}\" status=\"{r.status}\" exit=\"{r.exit_code}\">\n"
               + "\n".join(r.tail) + "\n</check>" for r in report.failed]
-    return (_PROMPTS / "verify.md").read_text().strip() + "\n\n" + "\n\n".join(blocks)
+    return (PROMPTS_DIR / "verify.md").read_text().strip() + "\n\n" + "\n\n".join(blocks)
 
 
 def lines(report: Report) -> list[str]:

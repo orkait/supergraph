@@ -30,7 +30,7 @@ from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
 from superclaw.runtime import Message
-from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, SESSION_END_CLEAR, TRANSCRIPT_TEMPLATE, Glyphs, Provider
+from superclaw.settings import EFFORT_OFF, EFFORTS, LIMITS, RECOMMENDED_MARK, SESSION_END_CLEAR, TRANSCRIPT_TEMPLATE, Glyphs, Provider
 from superclaw.text import clip, compact, count
 from superclaw.tools import ToolContext
 from superclaw.tui.cards import ToolCard, target_of
@@ -136,18 +136,19 @@ class QuestionScreen(ModalScreen[str]):
     def __init__(self, question: dict[str, Any]) -> None:
         super().__init__()
         self.question = question
+        self.options = [str(o) for o in question.get("options") or []]
+        self.recommended = str(question.get("recommended") or "")
 
     def compose(self) -> ComposeResult:
-        options = self.question.get("options") or []
         with Vertical(id="dialog"):
             yield Label(self.question["question"], classes="title")
-            if options:
-                yield OptionList(*options, id="options")
-            yield Input(placeholder="type an answer and press enter", id="answer")
+            if self.options:
+                yield OptionList(*(f"{o} {RECOMMENDED_MARK}" if o == self.recommended else o for o in self.options), id="options")
+            yield Input(placeholder="or type your own answer and press enter", id="answer")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
-        self.dismiss(str(event.option.prompt))
+        self.dismiss(self.options[event.option_index])
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()

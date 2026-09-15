@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from superclaw.settings import PROMPTS_DIR
+
 SKILL_FILE = "SKILL.md"
+SKILL_TEMPLATE = "skill.md"
 BLOCK_SCALARS = ("|", ">", "|-", ">-")
 
 
@@ -72,6 +75,11 @@ def load_skills(roots: list[Path | tuple[Path, str]]) -> list[Skill]:
         for skill in _load_root(Path(path), f"{namespace}:" if namespace else ""):
             seen.setdefault(skill.name, skill)
     return sorted(seen.values(), key=lambda s: s.name)
+
+
+def render_skill(skill: Skill, arguments: str | None = None) -> str:
+    text = (PROMPTS_DIR / SKILL_TEMPLATE).read_text().replace("{name}", skill.name).replace("{body}", skill.content)
+    return text if arguments is None else text.replace("$ARGUMENTS", arguments).strip()
 
 
 def find_skill(skills: list[Skill], name: str) -> Skill | None:

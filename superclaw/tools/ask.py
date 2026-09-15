@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from superclaw.settings import LIMITS
 from superclaw.tools import Permission, Result, Safety, SideEffect, Tool, ToolContext
 
 NON_INTERACTIVE_MESSAGE = (
@@ -18,7 +19,14 @@ def parse_questions(args: dict[str, Any]) -> list[dict[str, Any]]:
     for i, q in enumerate(raw):
         if not isinstance(q, dict) or not str(q.get("question") or "").strip():
             raise ValueError(f"question {i + 1} needs a non-empty question")
-        out.append(q)
+        options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+        if not LIMITS.ask_options_min <= len(options) <= LIMITS.ask_options_max:
+            raise ValueError(f"question {i + 1} needs {LIMITS.ask_options_min} to {LIMITS.ask_options_max} options; "
+                             "the user can still type an answer of their own, so offer the likely ones rather than asking an open question")
+        recommended = str(q.get("recommended") or "").strip()
+        if recommended and recommended not in options:
+            raise ValueError(f"question {i + 1}: recommended must be one of its options")
+        out.append({**q, "options": options, "recommended": recommended or options[0]})
     return out
 
 
@@ -26,8 +34,9 @@ class AskUser(Tool):
     name = "ask_user"
     deferred = True
     description = (
-        "Ask the user one or more clarifying questions and wait for their answers. "
-        "Only for decisions that are genuinely theirs to make; include 2-4 options and a recommended one when the answer is likely one of a small set."
+        "Ask the user one or more clarifying questions and wait for their answers. Only for decisions that are genuinely theirs to make. "
+        "Never ask an open question: every question carries 3 to 5 concrete options with one marked recommended. "
+        "The user can always type something else, so options are your best reading of the likely answers, not a limit on theirs."
     )
     parameters = {
         "type": "object",
@@ -41,10 +50,11 @@ class AskUser(Tool):
                     "properties": {
                         "question": {"type": "string", "description": "The question to ask."},
                         "header": {"type": "string", "description": "Optional 2-3 word tab label."},
-                        "options": {"type": "array", "items": {"type": "string"}, "description": "Optional 2-4 suggested answers."},
-                        "recommended": {"type": "string", "description": "Optional recommended option; must be one of options."},
+                        "options": {"type": "array", "items": {"type": "string"}, "description": "The likely answers, as concrete choices.",
+                                    "minItems": LIMITS.ask_options_min, "maxItems": LIMITS.ask_options_max},
+                        "recommended": {"type": "string", "description": "The option you recommend; must be one of options."},
                     },
-                    "required": ["question"],
+                    "required": ["question", "options", "recommended"],
                 },
             },
         },

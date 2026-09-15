@@ -49,10 +49,10 @@ FLUSH_ANCHOR = "memory_note"
 FLUSH_TOOLS = frozenset({FLUSH_ANCHOR, "update_plan"})
 
 
-def label_untrusted(tool: str, output: str) -> str:
-    if tool in OWN_STATE_TOOLS or output.startswith("Error:"):
-        return output
-    return f'<untrusted source="{tool}">\n{output}\n</untrusted>'
+def label_untrusted(tool: str, res: ToolResult) -> str:
+    if tool in OWN_STATE_TOOLS or res.meta.get("trusted") or res.output.startswith("Error:"):
+        return res.output
+    return f'<untrusted source="{tool}">\n{res.output}\n</untrusted>'
 
 
 @dataclass
@@ -458,7 +458,7 @@ class _Run:
             self.refs.append(res.artifact.ref)
         if res.diagnostics:
             self.saved_tokens += max(0, res.diagnostics.original_tokens - res.diagnostics.model_tokens)
-        self.append(Message(role="tool", content=label_untrusted(call.name, res.output), tool_call_id=call.id, is_error=not res.ok))
+        self.append(Message(role="tool", content=label_untrusted(call.name, res), tool_call_id=call.id, is_error=not res.ok))
         self.emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": res.ok, "output": res.output, "changed_files": res.changed_files,
                    "display": asdict(res.display), "ref": res.artifact.ref if res.artifact else "",
                    "diagnostics": asdict(res.diagnostics) if res.diagnostics else {}})

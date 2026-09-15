@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from superclaw.settings import LIMITS, SPECS_DIR, WORKSPACE_DIR
+from superclaw.settings import LIMITS, PROMPTS_DIR, SPECS_DIR, WORKSPACE_DIR
 from superclaw.tools import Display, Permission, Result, Safety, SideEffect, Tool, ToolContext
 
 TOOL_NAME = "submit_spec"
 CONTROL = "spec_review_required"
-_PROMPTS = Path(__file__).parent / "prompts"
 _SLUG = re.compile(r"[^a-z0-9]+")
 
 
@@ -75,7 +74,7 @@ def list_specs(workspace: Path) -> list[Path]:
 
 
 def draft_prompt() -> str:
-    return (_PROMPTS / "spec.md").read_text().strip()
+    return (PROMPTS_DIR / "spec.md").read_text().strip()
 
 
 def implementation_prompt(body: str, path: Path, note: str = "") -> str:
