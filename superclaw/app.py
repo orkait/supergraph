@@ -341,7 +341,7 @@ def run_once(rt: Runtime, prompt: str, sid: str, callbacks: Callbacks | None = N
         max_turns=rt.max_turns, token_budget=rt.token_budget, budget_usd=rt.settings.budget_usd,
         context_window=rt.context_window, model_info=rt.model_info,
         agents={a.name: a for a in load_agents(rt.settings.agent_roots(rt.workspace))},
-        require_completion_signal=require_completion, verify=verify,
+        require_completion_signal=require_completion, verify=verify, subgoals=intent.subgoals,
         on_event=cb.on_event, on_permission=cb.on_permission, on_ask_user=cb.on_ask_user,
         session=rt.store, session_id=sid, hooks=rt.hooks, cancelled=cancelled, session_start=sid not in _started,
     ))

@@ -72,6 +72,7 @@ class Options:
     reserve_tokens: int = LIMITS.compaction_reserve_tokens
     keep_tokens: int = LIMITS.compaction_keep_tokens
     require_completion_signal: bool = False
+    subgoals: tuple[str, ...] = ()
     verify: bool = False
     flush_before_compaction: bool = True
     on_event: Callable[[dict[str, Any]], None] | None = None
@@ -123,6 +124,8 @@ class _Run:
         self.kept_out_tokens = 0
         self.control = ""
         plan = options.session.plan(options.session_id) if options.session and options.session_id else []
+        if not plan and options.subgoals:
+            plan = [{"content": subgoal, "status": "pending"} for subgoal in options.subgoals]
         self.ctx = ToolContext(workspace=options.workspace, session_id=options.session_id, extra_dirs=options.extra_dirs,
                                state={"plan": plan, SPAWN_KEY: self.spawn}, cancelled=options.cancelled)
         self.compact_notes: list[str] = []
@@ -342,7 +345,8 @@ class _Run:
     def incomplete_reason(self, text: str) -> str:
         pending = pending_items(self.ctx.state)
         if pending:
-            return f"{len(pending)} plan item(s) still pending"
+            named = "; ".join(clip(item, LIMITS.pending_item_chars) for item in pending[:LIMITS.pending_items_named])
+            return f"{len(pending)} plan item(s) still pending: {named}"
         if ends_with_continuation_cue(text):
             return "the message ends mid-step"
         return ""
@@ -373,7 +377,7 @@ class _Run:
                 self.nudges += 1
                 self.append(Message(role="user", content=f"A stop hook ({stop.blocked_by}) asked you to continue: {' '.join(stop.context) or 'work remains'}"))
                 return None
-        if not self.o.require_completion_signal:
+        if not (self.o.require_completion_signal or self.o.subgoals):
             return self.result(text)
         reason = self.incomplete_reason(text)
         if reason:
