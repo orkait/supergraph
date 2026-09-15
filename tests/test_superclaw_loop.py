@@ -305,9 +305,12 @@ def test_guards_gates_and_verifier(ws):
     assert Guards().observe_tool_result("bash", True, "a different failure").count == 1
     provider = Scripted(read("c1"), read("c2"), Completion(text="summary"))
     assert run("loop", provider, options(ws, max_turns=2)).final_answer == "summary" and provider.requests[-1][1] == []
-    long = Scripted(*[read(f"r{i}") for i in range(LIMITS.identical_call_at * 6)], Completion(text="done"))
+    turns = LIMITS.identical_call_at * 6
+    for i in range(turns):
+        (ws / f"turn{i}.txt").write_text(f"turn {i}\n")
+    long = Scripted(*[read(f"r{i}", path=f"turn{i}.txt") for i in range(turns)], Completion(text="done"))
     unlimited = run("loop", long, options(ws))
-    assert unlimited.final_answer == "done" and unlimited.stop_reason != "max_turns" and len(long.requests) == LIMITS.identical_call_at * 6 + 1 and LIMITS.max_turns == 0
+    assert unlimited.final_answer == "done" and unlimited.stop_reason != "max_turns" and len(long.requests) == turns + 1 and LIMITS.max_turns == 0
     class Capped(Scripted):
         max_tokens = 32_768
 
@@ -439,7 +442,11 @@ def test_pressure_prune_recall_and_budgets(ws, gs):
     assert "Only review." in child_prompt[0].content and child_tools == ["read_file"] and "delegate" not in child_tools
     assert next(e for e in events if e["type"] == "delegate")["agent"] == "reviewer"
     assert "as reviewer] done" in next(m.content for m in res.messages if m.role == "tool") and res.final_answer == "parent done"
-    deep = Scripted(Completion(tool_calls=[call("delegate", task="read a lot")]), *[read(f"d{i}") for i in range(30)], Completion(text="child read 30"), Completion(text="parent done"))
+    for i in range(30):
+        (ws / f"deep{i}.txt").write_text(f"file {i}\n")
+    deep = Scripted(Completion(tool_calls=[call("delegate", task="read a lot")]),
+                    *[read(f"d{i}", path=f"deep{i}.txt") for i in range(30)],
+                    Completion(text="child read 30"), Completion(text="parent done"))
     assert run("go", deep, options(ws)).final_answer == "parent done" and len(deep.requests) == 33 and "maximum" not in Delegate().parameters["properties"]["max_turns"]
     capped = Scripted(Completion(tool_calls=[call("delegate", task="read", max_turns=2)]), read("e1"), read("e2"), Completion(text="child cut"), Completion(text="parent done"))
     assert run("go", capped, options(ws)).final_answer == "parent done" and capped.requests[3][1] == []
