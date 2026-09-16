@@ -16,12 +16,14 @@ superclaw is the harness half of supergraph: a terminal coding agent (TUI and he
 ## 🚀 Quickstart
 
 ```bash
-pip install 'supergraphdb[superclaw]'
+curl -LsSf https://raw.githubusercontent.com/orkait/supergraph/main/install.sh | sh
 superclaw setup                      # stores a provider key in ~/.config/superclaw/credentials.env (or set OPENROUTER_API_KEY)
 cd your-project
 superclaw                            # TUI, mode=ask
 superclaw --mode auto exec "test_calc.py fails; find the bug, fix it, run pytest -q"
 ```
+
+The installer brings uv if it is missing, then installs superclaw and supergraph as one tool. `--ref <branch|tag>` pins a revision, `--local <checkout>` installs editable from a clone, `--python` picks the interpreter (3.10 to 3.14, default 3.13). `supergraphdb` is not on PyPI, so `pip install` does not work; `superclaw update` compares an existing install with its source and `--apply` upgrades it.
 
 First launch downloads the default embedder (model2vec, ~30 MB) into the store.
 
