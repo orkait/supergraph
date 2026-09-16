@@ -21,7 +21,7 @@ Each rule names the Terminal-Bench failure mode it guards against. The eight mod
 
 | # | Rule | Guards against | What broke on 2026-09-15 | Enforced at |
 |---|---|---|---|---|
-| 1 | Recover the acceptance condition and the boundary before acting. Everything not listed as a subgoal is outside the task | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block; the subgoals seed the plan and `loop.py` `incomplete_reason` refuses a no-tool answer while any is pending. **Gap:** an edit outside the boundary is still not flagged |
+| 1 | Recover the acceptance condition and the boundary before acting. Everything not listed as a subgoal is outside the task | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block. Under `--require-completion` they also seed the plan and `loop.py` `incomplete_reason` refuses a no-tool answer while any is pending. **Gap:** by default the block is advice, and an edit outside the boundary is never flagged |
 | 2 | Literal tokens stay literal. Classify a word as a name or a description before normalising anything | reasoning-action mismatch | "codemode this repo" was decomposed to "Code the specified repository"; a skill name became a verb | `prompts/decompose.md`: an unrecognised term is carried through verbatim and never queried |
 | 3 | An underdetermined request gets three to five options with one recommended. Never an open question, never a silent guess | disobey task specification | "make the code faster" produced no question and an edit. After the fix it produces five options with Python recommended; "rename the fetch helper in src/net.py" correctly produces none | `tools/ask.py` `parse_questions`, `settings.ask_options_min`, `stages.Unknown` |
 | 4 | Done lives outside the model. Every claim of progress passes a check the model cannot vote on | no or irrelevant verification, weak verification | a run ended `status: success` over Python that raised `IndentationError` on import; on Terminal-Bench a solution passed 5 of 6 tests and scored 0, because the verifier, not the agent, defines solved | `tools/files.py` `_written` parses every `.py` write; `prompts/verifier.md` rejects proxy signals behind `--verify`. **Gap:** `--verify` is off by default and judges the whole run, not each subgoal |
@@ -67,14 +67,23 @@ Same request, same model, same repository, before and after the rules were enfor
 
 ## What is still advisory
 
-The rules above hold where they are enforced. Two are not, and they are the highest-value remaining work in that order.
+The rules above hold where they are enforced. Three are not, and they are the highest-value remaining work in that order.
 
 | # | Gap | Why it matters |
 |---|---|---|
+| 1 | The decomposition is advice unless `--require-completion` is passed | enforcing it by default was tried and made three task types worse; see below |
 | 1 | A changed file outside the listed subgoals is not detected | the retry run spent 90% of its turns outside the boundary and nothing noticed |
 | 7 | Repeated identical failure halts the run but does not force a change of approach | halting is safer than looping; reclassifying and trying another route is what a strong engineer does |
 
-Closed since this document was written: subgoals no longer end a run unmet. They seed the plan, and the completion gate refuses a no-tool answer while any item is pending, naming the one that is outstanding. Measured at 0.110 ms per run against 0.022 ms for a run with no decomposition, with no extra model call.
+Tried and withdrawn: making the decomposition binding by default. Subgoals and queries seeded the run's plan automatically, so the completion gate refused a no-tool answer while any item was pending. It was reverted to `--require-completion` after the live battery, and the numbers are the reason to leave it alone.
+
+| Task | Baseline | Seeded by default | After the revert |
+|---|---:|---:|---:|
+| Question, ask mode | 1 call, 6s | 31 turns, 72s | 1 call, 7s |
+| Plan mode | 4 turns, 16s | 24 turns, 176s, incomplete | 4 turns, 18s |
+| Debug, auto mode | 9 calls, 31s | 155 calls, timeout | 6 calls, 20s |
+
+The gate was never the mechanism: neither regressed run produced a pending nudge. A four-item plan sitting in context was enough on its own to turn "what does this file do, change nothing" into a task list the agent tried to satisfy with writes. The lesson generalises past this one change: a contract the model can see changes what it does, whether or not anything enforces it, so adding structure to the prompt is a behavioural change and needs the same live evidence as a code path.
 
 A third item is a quality problem in the intent stage rather than a missing enforcement: it sometimes raises as an unknown a question the workspace answers, such as which language the code is written in. The prompt already says ambiguity the code settles is a query. The fix is observation on a stronger model, not more prompt text.
 
