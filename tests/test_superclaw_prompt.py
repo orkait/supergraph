@@ -242,3 +242,24 @@ def test_prompt_assembly_guidelines_and_skills(tmp_path, monkeypatch):
     assert scan_repo(tree, max_files=2).truncated and len(scan_repo(tree, max_files=2).files) == 2
     mapped = build_system_prompt(PromptInputs(cwd=root, mode=Mode.ASK, model="m", provider="p", repo_map=text))
     assert "<repo_map>" in mapped and "table of contents" in mapped and "src/app/main.py" in mapped
+
+
+def test_agent_profiles_in_role_directories(tmp_path):
+    root = tmp_path / "agents"
+    for role in ("conductor", "builder"):
+        (root / role).mkdir(parents=True)
+        (root / role / "PROFILE.md").write_text(f"---\nname: {role}\nkind: core\nauto_invoke_when:\n  - every user request\n---\n# {role} profile\n\nRoute work.")
+        (root / role / "CHECKS.md").write_text("# Checks\n\n## Preconditions\n\n- request classified")
+    (root / "conductor" / "notes.txt").write_text("---\nname: notes\n---\nignored")
+    loaded = load_agents([root])
+    assert [a.name for a in loaded] == ["builder", "conductor"]
+    assert resolve_agent("conductor", [root]).prompt == "# conductor profile\n\nRoute work." and loaded[1].tools == frozenset()
+    (root / "reviewer.md").write_text("---\nname: conductor\n---\nFLAT")
+    assert resolve_agent("conductor", [root]).prompt == "FLAT"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "PROFILE.md").write_text("---\nname: escaped\n---\nNO")
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    (root / "deep" / "inner").mkdir(parents=True)
+    (root / "deep" / "inner" / "PROFILE.md").write_text("---\nname: buried\n---\nNO")
+    assert {a.name for a in load_agents([root])} == {"builder", "conductor"}
