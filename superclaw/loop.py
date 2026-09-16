@@ -379,7 +379,7 @@ class _Run:
                 self.nudges += 1
                 self.append(Message(role="user", content=f"A stop hook ({stop.blocked_by}) asked you to continue: {' '.join(stop.context) or 'work remains'}"))
                 return None
-        if not (self.o.require_completion_signal or self.o.plan_seed):
+        if not self.o.require_completion_signal:
             return self.result(text)
         reason = self.incomplete_reason(text)
         if reason:
