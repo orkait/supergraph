@@ -84,6 +84,15 @@ case "$OS" in
     *) die "$OS is not supported; superclaw needs Linux or macOS" ;;
 esac
 command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || die "curl or wget is required"
+if [ -z "$SOURCE" ] && ! command -v git >/dev/null 2>&1; then
+    die "git is required to install from the repository.
+  Debian, Ubuntu   apt install git
+  Fedora, RHEL     dnf install git
+  Alpine           apk add git
+  macOS            xcode-select --install
+Already have a clone? Use: install.sh --local <path>"
+fi
+[ -z "$SOURCE" ] && ok "git $(git --version 2>/dev/null | cut -d' ' -f3)"
 
 if command -v uv >/dev/null 2>&1; then
     ok "uv $(uv --version 2>/dev/null | cut -d' ' -f2)"
@@ -152,6 +161,7 @@ superclaw --help >/dev/null 2>&1 || die "superclaw will not start; run superclaw
 ok "starts"
 DOCTOR=$(superclaw doctor 2>/dev/null || true)
 KEYED=$(printf '%s' "$DOCTOR" | sed -n 's/^providers with a key: //p')
+case "$KEYED" in none*|"") KEYED="" ;; esac
 MODEL=$(printf '%s' "$DOCTOR" | sed -n 's/^model \([^ ]*\).*/\1/p')
 [ -n "$MODEL" ] && ok "model $MODEL"
 printf '%s' "$DOCTOR" | grep -q '^sandbox on' && ok "sandbox on" || warn "sandbox off"
