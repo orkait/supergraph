@@ -27,6 +27,15 @@ pip install supergraphdb
 The distribution is `supergraphdb`; the import package is `supergraph`. The
 plain name was already taken on PyPI by an unrelated project.
 
+`supergraphdb` is not published yet, so the `pip install` lines below describe the
+extras rather than a command that works today. Install from the repository until it
+is: `uv pip install 'supergraphdb[<extra>] @ git+https://github.com/orkait/supergraph'`.
+For superclaw specifically, `install.sh` does this and brings uv with it:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/orkait/supergraph/main/install.sh | sh
+```
+
 Core ships with [model2vec](https://github.com/MinishLab/model2vec) as the default embedder. Swap for Jina v5, bge-*, EmbeddingGemma, or any ONNX / GGUF model via `supergraph install-embedder`. PDFs, images, audio, GPU, and the web UI are opt-in extras.
 
 ```bash
