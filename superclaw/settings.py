@@ -176,6 +176,11 @@ CLAUDE_INSTALLED_FILE = "plugins/installed_plugins.json"
 CLAUDE_STATE_FILE = ".claude.json"
 CLAUDE_SETTINGS_FILES = ("settings.json", "settings.local.json")
 CLAUDE_GUIDELINES = ("CLAUDE.md", ".claude/CLAUDE.md")
+CLAUDE_CLI_BIN = "claude"
+CLAUDE_CLI_READ_TOOLS = ("Read", "Grep", "Glob", "WebSearch", "WebFetch")
+CLAUDE_CLI_EDIT_MODE = "acceptEdits"
+CLAUDE_CLI_RESULT_TYPE = "result"
+CLAUDE_CLI_SYSTEM_TYPE = "system"
 PLUGIN_ROOT_VARS = ("CLAUDE_PLUGIN_ROOT", "SUPERCLAW_PLUGIN_ROOT")
 FORMAT_SUPERCLAW = "superclaw"
 FORMAT_CLAUDE = "claude"
@@ -428,6 +433,8 @@ class Limits:
     delegate_min_budget_tokens: int = 20_000
     delegate_handoff_tokens: int = 8000
     delegate_answer_tokens: int = 1500
+    claude_cli_timeout_s: float = 900.0
+    claude_cli_budget_usd: float = 5.0
 
     id_hash_chars: int = 16
     run_id_bytes: int = 4

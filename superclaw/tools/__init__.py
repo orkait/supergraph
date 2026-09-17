@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import signal
+import subprocess
+import time
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -185,6 +190,34 @@ def relative(roots: Path | str | Sequence[Path], target: Path) -> str:
         if root in target.parents:
             return target.relative_to(root).as_posix()
     return str(target)
+
+
+class Stopped(RuntimeError):
+    pass
+
+
+class TimedOut(RuntimeError):
+    pass
+
+
+def halt(proc: subprocess.Popen[bytes]) -> None:
+    with suppress(OSError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    proc.communicate()
+
+
+def wait(proc: subprocess.Popen[bytes], timeout: float, cancelled: Callable[[], bool] | None = None) -> tuple[bytes, bytes]:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return proc.communicate(timeout=LIMITS.shell_poll_s)
+        except subprocess.TimeoutExpired:
+            if cancelled is not None and cancelled():
+                halt(proc)
+                raise Stopped("stopped by the user") from None
+            if time.monotonic() >= deadline:
+                halt(proc)
+                raise TimedOut(f"timed out after {timeout:g}s") from None
 
 
 class Tool:
