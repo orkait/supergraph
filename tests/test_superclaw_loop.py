@@ -35,8 +35,9 @@ from superclaw.observations import ObservationStore, Recall
 from superclaw.policy import Action, Mode, Policy
 from superclaw.provider import collect, with_deadline
 from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, approx_tokens
+from superclaw.serve import serve as serve_mcp
 from superclaw.session import SessionStore
-from superclaw.settings import LIMITS, Settings
+from superclaw.settings import LIMITS, SERVED_TITLE, SERVED_TOOLS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
 from superclaw.stages import Intent, Unknown, decompose, parse_intent, recall_settled, settled_note
 from superclaw.tools import Registry, SideEffect, ToolContext
@@ -178,6 +179,29 @@ def test_round_trip_permissions_and_persistence(ws, gs):
     send(id=5, method="session/new", params={"cwd": "relative/path", "mcpServers": []})
     assert recv()["error"]["code"] == -32602
     client_out.close()
+
+    mcp_r, mcp_w = os.pipe()
+    back_r, back_w = os.pipe()
+    threading.Thread(target=serve_mcp, args=(acp_rt, os.fdopen(mcp_r), os.fdopen(back_w, "w")), daemon=True).start()
+    mcp_out, mcp_in = os.fdopen(mcp_w, "w"), os.fdopen(back_r)
+
+    def ask(**message):
+        mcp_out.write(json.dumps({"jsonrpc": "2.0", **message}) + "\n")
+        mcp_out.flush()
+        return json.loads(mcp_in.readline())
+
+    assert ask(id=1, method="initialize", params={"protocolVersion": "2025-06-18"})["result"]["serverInfo"]["name"] == "superclaw"
+    served = ask(id=2, method="tools/list", params={})["result"]["tools"]
+    assert [t["name"] for t in served] == list(SERVED_TOOLS) and all(t["inputSchema"]["type"] == "object" for t in served)
+    noted = ask(id=3, method="tools/call", params={"name": "memory_note", "arguments": {"text": "Kai ships from a branch.", "origin": "user_stated"}})
+    assert not noted["result"]["isError"] and noted["result"]["content"][0]["text"].startswith("mem:")
+    found = ask(id=4, method="tools/call", params={"name": "memory_search", "arguments": {"query": "how does Kai ship"}})["result"]
+    assert "Kai ships from a branch." in found["content"][0]["text"] and not found["isError"]
+    assert ask(id=5, method="tools/call", params={"name": "bash", "arguments": {"command": "id"}})["error"]["code"] == -32602
+    refused = ask(id=6, method="tools/call", params={"name": "memory_note", "arguments": {"text": "", "origin": "user_stated"}})["result"]
+    assert refused["isError"] and "must not be empty" in refused["content"][0]["text"]
+    assert acp_rt.store.recent()[0]["title"] == SERVED_TITLE
+    mcp_out.close()
     acp_gs.close()
     clock = {"now": 1_800_000_000_000}
     jobs = cron.CronStore(gs, now_ms=lambda: clock["now"])
