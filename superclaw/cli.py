@@ -31,6 +31,7 @@ from superclaw.schema import extract as schema_extract
 from superclaw.schema import instruction as schema_instruction
 from superclaw.schema import load as load_schema
 from superclaw.schema import problems as schema_problems
+from superclaw.serve import serve as serve_mcp
 from superclaw.settings import (
     LIMITS,
     MCP_FILE,
@@ -38,6 +39,7 @@ from superclaw.settings import (
     PROVIDERS,
     RENDERER_INLINE,
     RENDERERS,
+    SERVED_TOOLS,
     SESSION_END_EXIT,
     SESSION_END_OTHER,
     WORKSPACE_DIR,
@@ -345,6 +347,10 @@ def cmd_ask(rt: Runtime, args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(rt: Runtime, args: argparse.Namespace) -> int:
+    if args.mcp_command == "serve":
+        print(f"superclaw: serving {', '.join(SERVED_TOOLS)} from {rt.settings.db_path} ({rt.gs.role}) over MCP stdio", file=sys.stderr)
+        serve_mcp(rt)
+        return 0
     bridge = rt.mcp
     for tool in bridge.tools if bridge else []:
         print(f"{tool.server:<{_NAME_WIDTH}} {tool.name:<{LIMITS.model_id_width}} {tool.summary()}")
@@ -517,6 +523,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     mcp = sub.add_parser("mcp", help="list the configured MCP servers and the tools they expose, or add and remove servers")
     mcp_sub = mcp.add_subparsers(dest="mcp_command")
     mcp_sub.add_parser("list", help="connect to every configured server and list its tools")
+    mcp_sub.add_parser("serve", help=f"serve this brain to another agent over MCP stdio: {', '.join(SERVED_TOOLS)}")
     mcp_add = mcp_sub.add_parser("add", help="add a server: `mcp add NAME -- CMD ARGS...` for stdio, `mcp add NAME --url URL` for streamable HTTP")
     mcp_add.add_argument("name")
     mcp_add.add_argument("argv", nargs="*", metavar="CMD", help="the stdio command and its arguments, after --")
@@ -721,8 +728,10 @@ def main(argv: list[str] | None = None) -> int:
                            hooks=build_hooks(settings, workspace, args.trust_workspace),
                            require_provider=args.command not in (None, *STORELESS) and not (args.command == "verify" and args.attempts <= 1)
                            and not (args.command == "spec" and args.spec_command != "approve")
-                           and not (args.command == "cron" and args.cron_command not in ("run", "add")),
-                           open_store=args.command not in STORELESS and not (args.command == "verify" and args.attempts <= 1)
+                           and not (args.command == "cron" and args.cron_command not in ("run", "add"))
+                           and not (args.command == "mcp" and args.mcp_command == "serve"),
+                           open_store=(args.command not in STORELESS or (args.command == "mcp" and args.mcp_command == "serve"))
+                           and not (args.command == "verify" and args.attempts <= 1)
                            and not (args.command == "spec" and args.spec_command != "approve"),
                            allow_tools=_tool_set(args.allow_tools), deny_tools=_tool_set(args.deny_tools), extra_dirs=extra_dirs,
                            mcp_config=mcp_paths(settings, workspace, args.trust_workspace), agent=agent)
