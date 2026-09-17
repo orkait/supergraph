@@ -28,7 +28,7 @@ from superclaw.intent import Kind, parse_kind
 from superclaw.compaction import TRANSCRIPT_NOTE
 from superclaw.compaction import compact as compact_messages
 from superclaw.loop import Options, _Run, run
-from superclaw.mcp import MCPError, add_server, connect_all, load_config, remove_server
+from superclaw.mcp import MCPError, add_server, connect_all, load_config, remove_server, serves_this_brain
 from superclaw.memory import Memory
 from superclaw.models import ModelInfo
 from superclaw.observations import ObservationStore, Recall
@@ -632,9 +632,12 @@ def test_intent_hooks_and_deferral(ws, gs):
         "off": {"command": "nope", "disabled": True},
         "broken": {"command": "definitely-not-a-binary"},
         "remote": {"url": "https://example.com", "command": "also-local"},
+        "itself": {"command": "/usr/local/bin/superclaw", "args": ["--db", "/tmp/b", "mcp", "serve"]},
     }}))
     config = load_config([mcp_config])
     assert [s.name for s in config.servers] == ["broken", "fake"] and any("stdio transport" in p for p in config.problems)
+    assert any("serving its own brain" in p for p in config.problems) and serves_this_brain("superclaw", ["mcp", "serve"])
+    assert not serves_this_brain("superclaw", ["mcp", "list"]) and not serves_this_brain("npx", ["-y", "mcp", "serve"])
     added = add_server(mcp_config, "later", [sys.executable, str(server)], env=["MODE=x"])
     assert added.transport == "stdio" and added.env == {"MODE": "x"} and add_server(ws / "fresh" / "mcp.json", "web", [], url="https://h/mcp", headers=["Authorization=Bearer t"]).headers == {"Authorization": "Bearer t"}
     assert [s.name for s in load_config([mcp_config]).servers] == ["broken", "fake", "later"] and json.loads((ws / "fresh" / "mcp.json").read_text()) == {"mcpServers": {"web": {"url": "https://h/mcp", "headers": {"Authorization": "Bearer t"}}}}

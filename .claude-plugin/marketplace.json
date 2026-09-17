@@ -1,0 +1,14 @@
+{
+  "name": "orkait",
+  "owner": {
+    "name": "orkait"
+  },
+  "plugins": [
+    {
+      "name": "superclaw-memory",
+      "source": "./integrations/claude",
+      "description": "Long-term memory shared with superclaw: search what earlier sessions learned, file what this one is told."
+    }
+  ],
+  "description": "superclaw integrations for Claude Code, from the orkait/supergraph repository."
+}

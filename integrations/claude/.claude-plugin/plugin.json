@@ -1,0 +1,7 @@
+{
+  "name": "superclaw-memory",
+  "description": "Search and file long-term memory in the superclaw brain on this machine, shared with any superclaw session running here.",
+  "version": "0.1.0",
+  "author": {"name": "orkait"},
+  "homepage": "https://github.com/orkait/supergraph"
+}
