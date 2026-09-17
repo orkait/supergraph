@@ -5,7 +5,6 @@ import re
 import signal
 import subprocess
 import threading
-import time
 from contextlib import suppress
 from typing import Any
 
@@ -13,7 +12,7 @@ from superclaw.kernel import Kernel
 from superclaw.runtime import approx_tokens
 from superclaw.sandbox import Backend, Grant
 from superclaw.settings import LIMITS
-from superclaw.tools import Category, Permission, Result, Safety, SideEffect, Tool, ToolContext, jail
+from superclaw.tools import Category, Permission, Result, Safety, SideEffect, Stopped, TimedOut, Tool, ToolContext, jail, wait
 
 SANDBOX_MODES = ("use_default", "with_additional_permissions", "require_escalated")
 _MS_PER_SECOND = 1000
@@ -124,12 +123,6 @@ class Bash(Tool):
     def category(self, args: dict[str, Any]) -> Category:
         return Category.TEST if _TEST_RUNNER.search(str(args.get("command") or "")) else Category.PROCESS
 
-    @staticmethod
-    def halt(proc: subprocess.Popen[bytes]) -> None:
-        with suppress(OSError):
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()
-
     def run(self, args: dict[str, Any], ctx: ToolContext) -> Result:
         cwd = jail(ctx.roots, args.get("cwd") or ".")
         if not cwd.is_dir():
@@ -147,18 +140,12 @@ class Bash(Tool):
         if args.get("run_in_background"):
             job = self.jobs.start(str(args["command"]), proc)
             return Result.success(f"Started {job.id} in the background: {job.command}\nRead it with bash_output(id=\"{job.id}\"); it keeps running until it exits or you pass kill=true.")
-        deadline = time.monotonic() + timeout
-        while True:
-            try:
-                stdout, stderr = proc.communicate(timeout=LIMITS.shell_poll_s)
-                break
-            except subprocess.TimeoutExpired:
-                if ctx.cancelled is not None and ctx.cancelled():
-                    self.halt(proc)
-                    return Result.error("Error: stopped by the user")
-                if time.monotonic() >= deadline:
-                    self.halt(proc)
-                    return Result.error(f"Error: command timed out after {timeout:g}s")
+        try:
+            stdout, stderr = wait(proc, timeout, ctx.cancelled)
+        except Stopped:
+            return Result.error("Error: stopped by the user")
+        except TimedOut as e:
+            return Result.error(f"Error: command {e}")
         out = stdout[:LIMITS.shell_capture_bytes].decode("utf-8", errors="replace").rstrip("\n")
         err = stderr[:LIMITS.shell_capture_bytes].decode("utf-8", errors="replace").rstrip("\n")
         if err:

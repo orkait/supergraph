@@ -10,10 +10,10 @@ from superclaw.dsl import Store
 from superclaw.maintain import health_line
 from superclaw.prompt import PromptInputs, confirmation_policy, core_prompt, environment_block, find_git_root, project_guidelines, skills_block, user_guidelines
 from superclaw.runtime import approx_tokens
-from superclaw.settings import ASCII, EFFORT_OFF, LIMITS
+from superclaw.settings import ASCII, CLAUDE_CLI_BIN, EFFORT_OFF, LIMITS
 from superclaw.skills import load_skills
 from superclaw.text import compact
-from superclaw.tooling import host_tools
+from superclaw.tooling import host_tools, which
 
 _PERCENT = 100
 
@@ -96,7 +96,8 @@ def doctor_lines(rt: Runtime, setup_hint: str) -> list[str]:
         graph_line(rt.gs, dot),
         health_line(rt.gs, dot),
         "host tools " + (" ".join(host_tools()) or "none of the modern set"),
-        f"claude config {'on' if rt.settings.claude_config else 'off'} {dot} {rt.settings.claude_dir}",
+        f"claude config {'on' if rt.settings.claude_config else 'off'} {dot} {rt.settings.claude_dir} {dot} "
+        f"cli {'present, the claude tool can delegate to it' if which(CLAUDE_CLI_BIN) else 'not installed'}",
         cache_line(rt, dot),
         "providers with a key: " + (f" {dot} ".join(p.name for p in keyed_providers()) or f"none; {setup_hint}"),
     ]

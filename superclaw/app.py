@@ -34,6 +34,7 @@ from superclaw.stages import Intent, decompose, recall_settled, settled_note
 from superclaw.tooling import host_tools
 from superclaw.tools import Registry
 from superclaw.tools.ask import AskUser
+from superclaw.tools.claude import ClaudeCode
 from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
@@ -153,7 +154,7 @@ def build_registry(memory: Memory, observations: ObservationStore, workspace: Pa
     roots = settings.skill_roots(workspace)
     jobs = Jobs()
     for tool in (*core_file_tools(), Bash(backend, kernel, jobs), BashOutput(jobs), UpdatePlan(), SkillTool(roots=roots), AskUser(), WebSearch(settings), WebFetch(observations, settings, memory.facts),
-                 Download(documents), Ingest(documents), memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts, documents), Delegate(),
+                 Download(documents), Ingest(documents), memory.search_tool(), memory.note_tool(), Recall(observations, sessions, memory.facts, documents), Delegate(), ClaudeCode(),
                  *([Python(kernel)] if kernel else [])):
         registry.register(tool)
     registry.register(ToolSearch(registry))

@@ -19,8 +19,9 @@ from superclaw.facts import Facts
 from superclaw.observations import ObservationStore, Recall, ref_in
 from superclaw.sandbox import Bubblewrap, Grant, detect, sockets
 from superclaw.settings import LIMITS, Settings
-from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, download, fetch, files, jail, relative, web
+from superclaw.tools import PathEscapes, Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext, claude, download, fetch, files, jail, relative, web
 from superclaw.tools.budget import Category
+from superclaw.tools.claude import ClaudeCode
 from superclaw.tools.download import Download
 from superclaw.tools.fetch import WebFetch
 from superclaw.tools.files import core_file_tools
@@ -367,6 +368,32 @@ def test_bash(tmp_path, monkeypatch):
     monkeypatch.setattr(download, "which", lambda name: str(fake))
     assert "not ingested: Unsupported format: .mp4" in Download(docs).run({"url": "https://public.example/watch?v=2", "dest": "clips", "keep": True}, ctx).output
     assert Ingest.deferred and Ingest.safety.side_effect is SideEffect.WRITE
+    cli = tmp_path / "bin" / "claude"
+    cli.write_text('#!/bin/sh\nprintf "%s" "$*" > "$(dirname "$0")/argv.txt"\n'
+                   'case "$*" in\n'
+                   '  *garbage*) printf "boom" >&2; exit 1 ;;\n'
+                   '  *broke*) printf \'[{"type":"system","model":"claude-opus-5"},{"type":"result","subtype":"error_max_budget",\'\n'
+                   '           printf \'"is_error":true,"num_turns":2,"total_cost_usd":0.5,"session_id":"s-2","result":"ran out"}]\' ;;\n'
+                   '  *) printf \'[{"type":"system","model":"claude-opus-5"},{"type":"result","subtype":"success","is_error":false,\'\n'
+                   '     printf \'"num_turns":3,"total_cost_usd":0.1234,"session_id":"s-1","result":"the answer",\'\n'
+                   '     printf \'"permission_denials":[{"tool_name":"Bash"}]}]\' ;;\n'
+                   'esac\n')
+    cli.chmod(0o755)
+    monkeypatch.setattr(claude, "which", lambda name: str(cli))
+    sub = ClaudeCode()
+    answered = sub.run({"task": "summarise the repo"}, ctx)
+    argv = (cli.parent / "argv.txt").read_text()
+    assert answered.ok and answered.output.endswith("the answer") and answered.meta["session"] == "s-1"
+    assert answered.output.startswith("[claude claude-opus-5] 3 turns, $0.1234, 1 tool call denied\nresume it with session=\"s-1\"")
+    assert "--tools Read,Grep,Glob,WebSearch,WebFetch" in argv and "--permission-mode" not in argv and "--strict-mcp-config" in argv
+    sub.run({"task": "fix it", "allow_edits": True, "model": "sonnet", "session": "s-1"}, ctx)
+    argv = (cli.parent / "argv.txt").read_text()
+    assert "--permission-mode acceptEdits" in argv and "--tools" not in argv and "--model sonnet" in argv and "--resume s-1" in argv
+    assert not sub.run({"task": "broke"}, ctx).ok and "error_max_budget" in sub.run({"task": "broke"}, ctx).output
+    assert "without a result: boom" in sub.run({"task": "garbage"}, ctx).output and "task must not be empty" in sub.run({"task": " "}, ctx).output
+    monkeypatch.setattr(claude, "which", lambda name: None)
+    assert "claude is not installed" in sub.run({"task": "anything"}, ctx).output
+    assert ClaudeCode.deferred and ClaudeCode.safety.permission is Permission.PROMPT
     gs.close()
     argv = Bubblewrap().wrap(["bash", "-c", "x"], tmp_path, tmp_path, Grant(network=True, paths=["/opt/extra"]))
     assert argv[0] == "bwrap" and "--unshare-net" not in argv and "/opt/extra" in argv
