@@ -18,7 +18,7 @@ import httpx
 
 from superclaw import __version__
 from superclaw.hooks import substitute
-from superclaw.settings import CLAUDE_MCP_FILE, LIMITS
+from superclaw.settings import CLAUDE_MCP_FILE, LIMITS, SERVE_COMMAND
 from superclaw.tools import Permission, Registry, Result, Safety, SideEffect, Tool, ToolContext
 
 Source = tuple[str, dict[str, Any], Path, set[str]]
@@ -176,6 +176,10 @@ def load_config(entries: list[Path | Source]) -> Config:
     return config
 
 
+def serves_this_brain(command: str, args: list[str]) -> bool:
+    return Path(command).name == SERVE_COMMAND[0] and [a for a in args if not a.startswith("-")][-len(SERVE_COMMAND) + 1:] == list(SERVE_COMMAND[1:])
+
+
 def _validate(name: str, raw: dict[str, Any]) -> str:
     kind = str(raw.get("type") or "").strip().lower() or ("http" if raw.get("url") else "stdio")
     if kind == "sse":
@@ -185,6 +189,8 @@ def _validate(name: str, raw: dict[str, Any]) -> str:
     if kind == "stdio":
         if not str(raw.get("command") or "").strip():
             return f"{name}: missing `command`"
+        if serves_this_brain(str(raw.get("command") or ""), [str(a) for a in raw.get("args") or []]):
+            return f"{name}: that is superclaw serving its own brain; these tools are already registered here"
         if raw.get("url") or raw.get("headers"):
             return f"{name}: `url` and `headers` belong to the http transport"
         return ""
