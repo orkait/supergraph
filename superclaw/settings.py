@@ -18,6 +18,11 @@ RENDERER_INLINE = "default"
 RENDERER_FULLSCREEN = "fullscreen"
 RENDERERS = (RENDERER_INLINE, RENDERER_FULLSCREEN)
 RENDERER_ENV = "SUPERCLAW_TUI"
+SANDBOX_ENV = "SUPERCLAW_SANDBOX"
+SANDBOX_ON, SANDBOX_OFF = "on", "off"
+SANDBOX_STATES = (SANDBOX_ON, SANDBOX_OFF)
+SANDBOX_BIN = "bwrap"
+SANDBOX_INSTALL = "apt install bubblewrap, or dnf install bubblewrap"
 NO_ALT_SCREEN_ENV = "SUPERCLAW_DISABLE_ALTERNATE_SCREEN"
 CREDENTIALS_FILE = "credentials.env"
 CREDENTIALS_MODE = 0o600
@@ -513,6 +518,7 @@ class Settings:
     renderer: str
     stream: bool
     repo_map: bool
+    sandbox: bool
     search_engine: str
     google_search_key: str
     google_search_cx: str
@@ -558,6 +564,7 @@ class Settings:
             renderer=choose_renderer(e),
             stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
             repo_map=e.get("SUPERCLAW_REPO_MAP", "1").strip().lower() not in OFF_VALUES,
+            sandbox=e.get(SANDBOX_ENV, "1").strip().lower() not in OFF_VALUES,
             search_engine=choose_engine(e),
             google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
             google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
@@ -616,6 +623,9 @@ class Settings:
 
     def save_renderer(self, renderer: str) -> None:
         self._save({RENDERER_ENV: renderer})
+
+    def save_sandbox(self, on: bool) -> None:
+        self._save({SANDBOX_ENV: SANDBOX_ON if on else SANDBOX_OFF})
 
     def _save(self, values: dict[str, str]) -> None:
         merged = {**read_env_file(self.credentials), **values}

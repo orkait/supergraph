@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from superclaw.settings import SANDBOX_BIN
+
 DENY_READ = ("~/.ssh", "~/.aws", "~/.gnupg", "~/.netrc", "~/.config/gh", "~/.docker/config.json", "~/.kube")
 DENY_WRITE = (".env", ".git/hooks")
 DENY_SOCKETS = ("/run/docker.sock", "/var/run/docker.sock", "/run/podman/podman.sock", "/run/user/*/podman/podman.sock",
@@ -59,5 +61,9 @@ def sockets() -> list[Path]:
     return list(found)
 
 
-def detect() -> Backend | None:
-    return Bubblewrap() if shutil.which("bwrap") else None
+def available() -> bool:
+    return shutil.which(SANDBOX_BIN) is not None
+
+
+def detect(wanted: bool = True) -> Backend | None:
+    return Bubblewrap() if wanted and available() else None
