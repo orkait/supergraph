@@ -48,6 +48,7 @@ class Completion:
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
     finish_reason: str = ""
+    reasoning: str = ""
 
 
 class Cancelled(RuntimeError):

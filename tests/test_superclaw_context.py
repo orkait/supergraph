@@ -37,9 +37,9 @@ def tool(call_id, text, is_error=False):
     return Message(role="tool", content=text, tool_call_id=call_id, is_error=is_error)
 
 
-def _resp(content, prompt=10, cached=0):
+def _resp(content, prompt=10, cached=0, reasoning=None):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=None), finish_reason="stop")],
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content, reasoning_content=reasoning, tool_calls=None), finish_reason="stop")],
         usage=SimpleNamespace(prompt_tokens=prompt, completion_tokens=5, prompt_tokens_details=SimpleNamespace(cached_tokens=cached)),
     )
 
@@ -305,3 +305,40 @@ def test_provider_retries_without_effort_when_the_server_rejects_it(monkeypatch)
     with pytest.raises(RuntimeError, match="provider down"):
         LitellmProvider(one, effort="high", stream=False).complete([user("hi")], [])
     assert len(calls) == 1
+
+
+def test_provider_resolves_effort_per_model_and_surfaces_reasoning(monkeypatch):
+    import superclaw.provider as mod
+    import superclaw.reasoning as reasoning
+
+    monkeypatch.setattr(reasoning, "_DEFAULT_FETCH", lambda url: __import__("json").dumps(
+        {"chat_template": "reasoning_effort not in ('low','medium','xhigh'); enable_thinking"}).encode())
+    reasoning._CACHE.clear()
+
+    sent: list[dict] = []
+
+    def fake(**kw):
+        sent.append(kw)
+        return _resp("132", reasoning="12 times 11 is 132")
+
+    monkeypatch.setattr(mod, "_completion", fake)
+    chain = [{"litellm_model": "openai/bonsai2-small", "api_key": "local", "api_base": "http://127.0.0.1:8081/v1"}]
+    done = LitellmProvider(chain, effort="high", stream=False).complete([user("hi")], [])
+    assert sent[-1].get("reasoning_effort") == "xhigh" and "chat_template_kwargs" not in sent[-1]
+    assert done.text == "132" and done.reasoning == "12 times 11 is 132"
+
+
+def test_provider_streams_reasoning_to_the_callback(monkeypatch):
+    import superclaw.provider as mod
+
+    def piece(content=None, reasoning=None):
+        from types import SimpleNamespace
+        delta = SimpleNamespace(content=content, reasoning_content=reasoning, tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+
+    monkeypatch.setattr(mod, "_completion", lambda **kw: iter([piece(reasoning="think "), piece(reasoning="more"), piece(content="answer")]))
+    thoughts: list[str] = []
+    frags: list[str] = []
+    one = [{"litellm_model": "m", "api_key": "k", "api_base": None}]
+    done = LitellmProvider(one).complete([user("hi")], [], on_text=frags.append, on_reasoning=thoughts.append)
+    assert "".join(thoughts) == "think more" and "".join(frags) == "answer" and done.reasoning == "think more"

@@ -6,6 +6,7 @@ Screen { layers: base popup; }
 #transcript { height: 1fr; padding: 0 1; }
 #transcript > .user { color: $accent; text-style: bold; margin: 1 0 0 0; border-left: thick $accent; padding-left: 1; }
 #transcript > .note { color: $text-muted; }
+#transcript > .thinking { color: $text-muted; text-style: italic; }
 #transcript > .error { color: $error; }
 #transcript > Markdown { margin: 0 0 1 0; }
 #transcript > .child { margin-left: 4; }

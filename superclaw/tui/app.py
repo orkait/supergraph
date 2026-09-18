@@ -203,6 +203,9 @@ class SuperclawApp(App[None]):
         self.streaming: Static | None = None
         self.stream_text = ""
         self.stream_dirty = False
+        self.thinking: Static | None = None
+        self.thinking_text = ""
+        self.thinking_dirty = False
         self.verbose = False
         self.current_tool = ("", "")
 
@@ -399,6 +402,9 @@ class SuperclawApp(App[None]):
         if self.stream_dirty and self.streaming is not None:
             self.streaming.update(self.stream_text)
             self.stream_dirty = False
+        if self.thinking_dirty and self.thinking is not None:
+            self.thinking.update(self.thinking_text)
+            self.thinking_dirty = False
 
     def tick(self) -> None:
         if self.running:
@@ -808,7 +814,15 @@ class SuperclawApp(App[None]):
 
     def render_event(self, event: dict[str, Any]) -> None:
         kind, child = event["type"], bool(event.get("child"))
-        if kind == "text_delta" and not child:
+        if kind == "reasoning_delta" and not child:
+            self.thinking_text += event["text"]
+            if self.thinking is None:
+                self.thinking = Static("", markup=False, classes="thinking")
+                self.add(self.thinking)
+                self.phase(PHASE_THINKING)
+            self.thinking_dirty = True
+        elif kind == "text_delta" and not child:
+            self.end_thinking()
             self.stream_text += event["text"]
             if self.streaming is None:
                 self.streaming = Static("", markup=False)
@@ -816,6 +830,7 @@ class SuperclawApp(App[None]):
                 self.phase(PHASE_WRITING)
             self.stream_dirty = True
         elif kind == "text" and not child:
+            self.end_thinking()
             self.drop_stream()
             self.add(Markdown(event["text"]))
         elif kind in ("tool_call", "tool_result"):
@@ -839,6 +854,7 @@ class SuperclawApp(App[None]):
     def render_tool(self, event: dict[str, Any], child: bool) -> None:
         key = f"{event.get('child', '')}:{event['id']}"
         if event["type"] == "tool_call":
+            self.end_thinking()
             card = ToolCard(event["id"], event["name"], event["args"], child=child)
             self.cards[key] = card
             self.add(card)
@@ -851,10 +867,18 @@ class SuperclawApp(App[None]):
             card.finish(event["ok"], event["output"], event.get("display") or {}, event.get("ref", ""))
         self.phase(PHASE_THINKING)
 
+    def end_thinking(self) -> None:
+        # Leave the reasoning block on screen (muted) but stop appending, so the answer that
+        # follows starts a fresh block and the next turn's thinking is its own.
+        if self.thinking is not None:
+            self.thinking.update(self.thinking_text)
+        self.thinking, self.thinking_text, self.thinking_dirty = None, "", False
+
     def drop_stream(self) -> None:
         if self.streaming is not None:
             self.streaming.remove()
         self.streaming, self.stream_text, self.stream_dirty = None, "", False
+        self.end_thinking()
 
     def finish(self, result: Result | None, error: str = "") -> None:
         self.running = False
