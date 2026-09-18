@@ -12,6 +12,17 @@ if TYPE_CHECKING:
 
 DEFAULT_MODEL = "openrouter/deepseek/deepseek-v4-flash"
 DEFAULT_MODE = "ask"
+MODEL_ENV = "SUPERCLAW_MODEL"
+MODE_ENV = "SUPERCLAW_MODE"
+EFFORT_ENV = "SUPERCLAW_EFFORT"
+FALLBACK_ENV = "SUPERCLAW_FALLBACK_MODELS"
+STREAM_ENV = "SUPERCLAW_STREAM"
+REPO_MAP_ENV = "SUPERCLAW_REPO_MAP"
+INTENT_GATE_ENV = "SUPERCLAW_INTENT_GATE"
+MAX_TURNS_ENV = "SUPERCLAW_MAX_TURNS"
+CONTEXT_WINDOW_ENV = "SUPERCLAW_CONTEXT_WINDOW"
+BUDGET_TOKENS_ENV = "SUPERCLAW_BUDGET_TOKENS"
+BUDGET_USD_ENV = "SUPERCLAW_BUDGET_USD"
 EFFORTS = ("low", "medium", "high")
 EFFORT_OFF = "off"
 RENDERER_INLINE = "default"
@@ -519,6 +530,8 @@ class Settings:
     stream: bool
     repo_map: bool
     sandbox: bool
+    intent_gate: bool
+    max_turns: int
     search_engine: str
     google_search_key: str
     google_search_cx: str
@@ -557,14 +570,16 @@ class Settings:
         skills_override = e.get("SUPERCLAW_SKILLS_DIR", "").strip()
         claude_dir = Path(e.get(CLAUDE_DIR_ENV, "").strip() or home / CLAUDE_DIR)
         return cls(
-            model=e.get("SUPERCLAW_MODEL", "").strip() or DEFAULT_MODEL,
-            fallback_models=split_models(e.get("SUPERCLAW_FALLBACK_MODELS", "")),
-            mode=e.get("SUPERCLAW_MODE", "").strip() or DEFAULT_MODE,
-            effort=e.get("SUPERCLAW_EFFORT", "").strip().lower() if e.get("SUPERCLAW_EFFORT", "").strip().lower() in EFFORTS else "",
+            model=e.get(MODEL_ENV, "").strip() or DEFAULT_MODEL,
+            fallback_models=split_models(e.get(FALLBACK_ENV, "")),
+            mode=e.get(MODE_ENV, "").strip() or DEFAULT_MODE,
+            effort=e.get(EFFORT_ENV, "").strip().lower() if e.get(EFFORT_ENV, "").strip().lower() in EFFORTS else "",
             renderer=choose_renderer(e),
-            stream=e.get("SUPERCLAW_STREAM", "1").strip().lower() not in OFF_VALUES,
-            repo_map=e.get("SUPERCLAW_REPO_MAP", "1").strip().lower() not in OFF_VALUES,
+            stream=e.get(STREAM_ENV, "1").strip().lower() not in OFF_VALUES,
+            repo_map=e.get(REPO_MAP_ENV, "").strip().lower() not in OFF_VALUES,
             sandbox=e.get(SANDBOX_ENV, "1").strip().lower() not in OFF_VALUES,
+            intent_gate=e.get(INTENT_GATE_ENV, "").strip().lower() not in OFF_VALUES,
+            max_turns=int(e.get(MAX_TURNS_ENV, "").strip() or LIMITS.max_turns),
             search_engine=choose_engine(e),
             google_search_key=e.get(GOOGLE_KEY_ENV, "").strip(),
             google_search_cx=e.get(GOOGLE_CX_ENV, "").strip(),
@@ -572,10 +587,10 @@ class Settings:
             claude_config=e.get(CLAUDE_CONFIG_ENV, "").strip().lower() not in OFF_VALUES,
             claude_dir=claude_dir,
             claude_state=(claude_dir if e.get(CLAUDE_DIR_ENV, "").strip() else home) / CLAUDE_STATE_FILE,
-            context_window=int(e.get("SUPERCLAW_CONTEXT_WINDOW", "").strip() or 0),
+            context_window=int(e.get(CONTEXT_WINDOW_ENV, "").strip() or 0),
             output_tokens=int(e.get(OUTPUT_TOKENS_ENV, "").strip() or 0),
-            budget_tokens=int(e.get("SUPERCLAW_BUDGET_TOKENS", "").strip() or 0),
-            budget_usd=float(e.get("SUPERCLAW_BUDGET_USD", "").strip() or 0),
+            budget_tokens=int(e.get(BUDGET_TOKENS_ENV, "").strip() or 0),
+            budget_usd=float(e.get(BUDGET_USD_ENV, "").strip() or 0),
             data_dir=data_dir,
             config_dir=config_dir,
             db_path=Path(db_override) if db_override else data_dir / "brain",
@@ -625,7 +640,10 @@ class Settings:
         self._save({RENDERER_ENV: renderer})
 
     def save_sandbox(self, on: bool) -> None:
-        self._save({SANDBOX_ENV: SANDBOX_ON if on else SANDBOX_OFF})
+        self.save_option(SANDBOX_ENV, SANDBOX_ON if on else SANDBOX_OFF)
+
+    def save_option(self, env: str, value: str) -> None:
+        self._save({env: value})
 
     def _save(self, values: dict[str, str]) -> None:
         merged = {**read_env_file(self.credentials), **values}

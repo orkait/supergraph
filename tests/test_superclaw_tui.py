@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from textual.events import Paste, TextSelected
 from textual.selection import SELECT_ALL
-from textual.widgets import Input, Markdown, Static
+from textual.widgets import Input, Markdown, OptionList, Static
 
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
@@ -20,6 +20,7 @@ from superclaw.policy import Mode, Policy
 from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
+from superclaw.config import OPTIONS
 from superclaw.sandbox import available
 from superclaw.settings import ASCII, PROVIDERS, RENDERER_ENV, RENDERER_INLINE, SANDBOX_ENV, SANDBOX_OFF, SANDBOX_ON, UNICODE, Settings, choose_glyphs
 from superclaw.tools import ToolContext
@@ -27,6 +28,7 @@ from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
 from superclaw.meter import ContextMeter
 from superclaw.tui.cards import ToolCard, target_of
+from superclaw.tui.config import ConfigScreen
 from superclaw.tui.status import RunStats, StatusBar
 from superclaw.tui.models import ModelScreen
 from superclaw.tui.setup import SetupScreen
@@ -180,7 +182,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             assert "next time you start superclaw" in str(app.query(".note").last().content)
             await pilot.press(*"/sandbox sideways", "enter")
             await pilot.pause(0.05)
-            assert "usage: /sandbox on|off" in str(app.query(".error").last().content)
+            assert "sandbox takes on or off" in str(app.query(".error").last().content)
             await pilot.press(*"/sandbox off", "enter")
             await pilot.pause(0.05)
             assert f"{SANDBOX_ENV}={SANDBOX_OFF}" in rt.settings.credentials.read_text() and not rt.settings.sandbox
@@ -193,6 +195,29 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.pause(0.05)
             note = str(app.query(".note").last().content) if available() else str(app.query(".error").last().content)
             assert (rt.policy.sandboxed and "bubblewrap" in note) if available() else "bubblewrap is not installed" in note
+            await pilot.press(*"/config repo_map on", "enter")
+            await pilot.pause(0.05)
+            assert rt.settings.repo_map and "SUPERCLAW_REPO_MAP=on" in rt.settings.credentials.read_text()
+            await pilot.press(*"/config nope", "enter")
+            await pilot.pause(0.05)
+            assert "unknown setting 'nope'" in str(app.query(".error").last().content)
+            await pilot.press(*"/config budget_tokens twelve", "enter")
+            await pilot.pause(0.05)
+            assert "budget_tokens takes a number" in str(app.query(".error").last().content)
+            await pilot.press(*"/config", "enter")
+            await _wait_for(pilot, lambda: isinstance(app.screen, ConfigScreen))
+            table = app.screen.query_one("#settings", OptionList)
+            assert table.option_count == len(OPTIONS) and str(table.get_option_at_index(5).prompt).startswith("repo_map")
+            table.highlighted = 5
+            await pilot.press("enter")
+            await _wait_for(pilot, lambda: not rt.settings.repo_map)
+            assert "repo_map off" in str(app.screen.query_one("#note", Static).content)
+            table.highlighted = next(i for i, o in enumerate(OPTIONS) if o.key == "budget_tokens")
+            await pilot.press("enter", *"40000", "enter")
+            await _wait_for(pilot, lambda: rt.token_budget == 40000)
+            assert rt.settings.budget_tokens == 40000
+            await pilot.press("escape")
+            await _wait_for(pilot, lambda: not isinstance(app.screen, ConfigScreen))
             await pilot.press(*"/tools", "enter")
             await pilot.pause(0.05)
             assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))
