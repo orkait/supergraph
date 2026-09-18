@@ -10,6 +10,10 @@ from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, t
 from superclaw.settings import ERROR_HINTS, LIMITS
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+# A server that does not know the requested reasoning effort rejects the whole request (llama-server
+# raises inside the chat template; others answer 400). The effort is a preference, the turn is not,
+# so the call is retried once without it.
+_EFFORT_REJECTED = re.compile(r"reasoning[_ ]effort", re.IGNORECASE)
 
 
 def hint(message: str, tui: bool) -> str:
@@ -188,10 +192,20 @@ class LitellmProvider:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
             try:
-                response = with_deadline(lambda sent=kwargs: _completion(**sent), self._timeout_s)
-                return collect(response, on_text, cancelled, self._timeout_s) if streaming else parse_response(response)
+                return self._call(kwargs, on_text, cancelled, streaming)
             except Cancelled:
                 raise
             except Exception as e:
                 last_err = e
         raise RuntimeError(f"all providers failed: {last_err}")
+
+    def _call(self, kwargs: dict[str, Any], on_text: Callable[[str], None] | None, cancelled: Callable[[], bool] | None, streaming: bool) -> Completion:
+        try:
+            response = with_deadline(lambda: _completion(**kwargs), self._timeout_s)
+        except Cancelled:
+            raise
+        except Exception as e:
+            if "reasoning_effort" not in kwargs or not _EFFORT_REJECTED.search(str(e)):
+                raise
+            response = with_deadline(lambda: _completion(**{k: v for k, v in kwargs.items() if k != "reasoning_effort"}), self._timeout_s)
+        return collect(response, on_text, cancelled, self._timeout_s) if streaming else parse_response(response)

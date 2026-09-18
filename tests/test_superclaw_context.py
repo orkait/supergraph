@@ -278,3 +278,30 @@ def test_setup_saves_base_url_for_local_and_picks_a_served_model(tmp_path, monke
     assert cli_mod.cmd_setup(settings, SimpleNamespace(provider="groq", key="gsk-1")) == 0
     saved = settings.credentials.read_text()
     assert "GROQ_API_KEY=gsk-1" in saved and "SUPERCLAW_MODEL=groq/llama-3.3-70b-versatile" in saved and asked == ["local"]
+
+
+def test_provider_retries_without_effort_when_the_server_rejects_it(monkeypatch):
+    import superclaw.provider as mod
+
+    calls: list[dict] = []
+
+    def fake(**kw):
+        calls.append(kw)
+        if "reasoning_effort" in kw:
+            raise RuntimeError("OpenAIException - Jinja Exception: Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low.")
+        return _resp("ok")
+
+    monkeypatch.setattr(mod, "_completion", fake)
+    one = [{"litellm_model": "openai/bonsai2-small", "api_key": "local", "api_base": "http://127.0.0.1:8081/v1"}]
+    assert LitellmProvider(one, effort="high", stream=False).complete([user("hi")], []).text == "ok"
+    assert [("reasoning_effort" in c) for c in calls] == [True, False] and calls[1]["model"] == "openai/bonsai2-small"
+    calls.clear()
+
+    def unrelated(**kw):
+        calls.append(kw)
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(mod, "_completion", unrelated)
+    with pytest.raises(RuntimeError, match="provider down"):
+        LitellmProvider(one, effort="high", stream=False).complete([user("hi")], [])
+    assert len(calls) == 1
