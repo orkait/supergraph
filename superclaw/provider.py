@@ -6,14 +6,16 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from superclaw.reasoning import request_extras
 from superclaw.runtime import Cancelled, Completion, Message, ToolCall, Usage, to_wire
 from superclaw.settings import ERROR_HINTS, LIMITS
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
-# A server that does not know the requested reasoning effort rejects the whole request (llama-server
-# raises inside the chat template; others answer 400). The effort is a preference, the turn is not,
-# so the call is retried once without it.
+# A server that still rejects the resolved effort (detection missed, or an odd template) fails the
+# whole request. The effort is a preference, the turn is not, so the call is retried once with the
+# reasoning kwargs stripped.
 _EFFORT_REJECTED = re.compile(r"reasoning[_ ]effort", re.IGNORECASE)
+_REASONING_KEYS = ("reasoning_effort", "chat_template_kwargs")
 
 
 def hint(message: str, tui: bool) -> str:
@@ -54,6 +56,7 @@ def with_deadline(call: Callable[[], Any], seconds: float) -> Any:
 def parse_response(resp: Any) -> Completion:
     choice = resp.choices[0]
     message = choice.message
+    reasoning = getattr(message, "reasoning_content", None) or ""
     text = _THINK.sub("", message.content or "").strip()
     calls: list[ToolCall] = []
     for tc in getattr(message, "tool_calls", None) or []:
@@ -72,6 +75,7 @@ def parse_response(resp: Any) -> Completion:
             cache_read_tokens=int(getattr(details, "cached_tokens", 0) or 0),
         ),
         finish_reason=getattr(choice, "finish_reason", "") or "",
+        reasoning=reasoning,
     )
 
 
@@ -81,8 +85,10 @@ def _visible(text: str) -> str:
     return cleaned if start < 0 else cleaned[:start]
 
 
-def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[], bool] | None = None, stall_s: float = 0.0) -> Completion:
+def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[], bool] | None = None, stall_s: float = 0.0,
+            on_reasoning: Callable[[str], None] | None = None) -> Completion:
     parts: list[str] = []
+    thoughts: list[str] = []
     calls: dict[Any, ToolCall] = {}
     order: list[Any] = []
     shown, finish, usage = "", "", Usage()
@@ -106,6 +112,10 @@ def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[],
             delta = getattr(choice, "delta", None)
             if delta is None:
                 continue
+            if getattr(delta, "reasoning_content", None):
+                thoughts.append(delta.reasoning_content)
+                if on_reasoning is not None:
+                    on_reasoning(delta.reasoning_content)
             if getattr(delta, "content", None):
                 parts.append(delta.content)
                 visible = _visible("".join(parts))
@@ -127,7 +137,8 @@ def collect(chunks: Any, on_text: Callable[[str], None], cancelled: Callable[[],
                     call.arguments += getattr(function, "arguments", None) or ""
     tool_calls = [ToolCall(id=c.id or f"call_{i}", name=c.name, arguments=c.arguments or "{}")
                   for i, c in enumerate(calls[k] for k in order) if c.name]
-    return Completion(text=_THINK.sub("", "".join(parts)).strip(), tool_calls=tool_calls, usage=usage, finish_reason=finish)
+    return Completion(text=_THINK.sub("", "".join(parts)).strip(), tool_calls=tool_calls, usage=usage,
+                      finish_reason=finish, reasoning="".join(thoughts))
 
 
 class LitellmProvider:
@@ -166,7 +177,8 @@ class LitellmProvider:
         return self._max_tokens
 
     def complete(self, messages: list[Message], tools: list[dict[str, Any]], on_text: Callable[[str], None] | None = None,
-                 max_tokens: int | None = None, cancelled: Callable[[], bool] | None = None) -> Completion:
+                 max_tokens: int | None = None, cancelled: Callable[[], bool] | None = None,
+                 on_reasoning: Callable[[str], None] | None = None) -> Completion:
         last_err: Exception | None = None
         streaming = self.streams and on_text is not None
         for provider in self._chain:
@@ -184,28 +196,30 @@ class LitellmProvider:
                 kwargs["stream_options"] = {"include_usage": True}
             if provider.get("account_id"):
                 kwargs["account_id"] = provider["account_id"]
-            if self.effort:
-                kwargs["reasoning_effort"] = self.effort
+            kwargs.update(request_extras(self.effort, provider.get("api_base"), None))
             if provider.get("extra_headers"):
                 kwargs["extra_headers"] = provider["extra_headers"]
             if tools:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
             try:
-                return self._call(kwargs, on_text, cancelled, streaming)
+                return self._call(kwargs, on_text, cancelled, streaming, on_reasoning)
             except Cancelled:
                 raise
             except Exception as e:
                 last_err = e
         raise RuntimeError(f"all providers failed: {last_err}")
 
-    def _call(self, kwargs: dict[str, Any], on_text: Callable[[str], None] | None, cancelled: Callable[[], bool] | None, streaming: bool) -> Completion:
+    def _call(self, kwargs: dict[str, Any], on_text: Callable[[str], None] | None, cancelled: Callable[[], bool] | None,
+              streaming: bool, on_reasoning: Callable[[str], None] | None = None) -> Completion:
         try:
             response = with_deadline(lambda: _completion(**kwargs), self._timeout_s)
         except Cancelled:
             raise
         except Exception as e:
-            if "reasoning_effort" not in kwargs or not _EFFORT_REJECTED.search(str(e)):
+            if not any(k in kwargs for k in _REASONING_KEYS) or not _EFFORT_REJECTED.search(str(e)):
                 raise
-            response = with_deadline(lambda: _completion(**{k: v for k, v in kwargs.items() if k != "reasoning_effort"}), self._timeout_s)
-        return collect(response, on_text, cancelled, self._timeout_s) if streaming else parse_response(response)
+            response = with_deadline(lambda: _completion(**{k: v for k, v in kwargs.items() if k not in _REASONING_KEYS}), self._timeout_s)
+        if streaming:
+            return collect(response, on_text, cancelled, self._timeout_s, on_reasoning)
+        return parse_response(response)

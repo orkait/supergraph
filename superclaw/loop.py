@@ -187,7 +187,11 @@ class _Run:
         budget: dict[str, Any] = {**self.output_budget(exposed), "cancelled": self.o.cancelled}
         try:
             if getattr(self.provider, "streams", False) and self.o.on_event:
-                return self.provider.complete(self.messages, exposed, on_text=lambda text: self.emit({"type": "text_delta", "text": text}), **budget)
+                return self.provider.complete(
+                    self.messages, exposed,
+                    on_text=lambda text: self.emit({"type": "text_delta", "text": text}),
+                    on_reasoning=lambda text: self.emit({"type": "reasoning_delta", "text": text}),
+                    **budget)
             return self.provider.complete(self.messages, exposed, **budget)
         except Cancelled:
             raise
