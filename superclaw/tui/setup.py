@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -22,9 +24,9 @@ class SetupScreen(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
             yield Label("Connect a provider", classes="title")
-            yield Static("Pick a provider and paste its key; superclaw stores it in ~/.config/superclaw/credentials.env (mode 600), then lists the models it serves.", classes="reason")
+            yield Static("Pick a provider and paste its key (the base URL for local); superclaw stores it in ~/.config/superclaw/credentials.env (mode 600), then lists the models it serves.", classes="reason")
             yield OptionList(*(f"{p.name:<12} {p.console}" for p in PROVIDERS), id="providers")
-            yield Input(placeholder=f"{self.provider.env}", password=True, id="key")
+            yield Input(placeholder=self.provider.credential_env, password=not self.provider.base_env, id="key")
             with Horizontal(classes="buttons"):
                 yield Button("Connect", id="connect", variant="primary")
                 yield Button("Later (esc)", id="later")
@@ -36,7 +38,9 @@ class SetupScreen(ModalScreen[bool]):
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         event.stop()
         self.provider = PROVIDERS[event.option_index]
-        self.query_one("#key", Input).placeholder = self.provider.env
+        field = self.query_one("#key", Input)
+        field.placeholder = self.provider.credential_env
+        field.password = not self.provider.base_env
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()
@@ -53,16 +57,21 @@ class SetupScreen(ModalScreen[bool]):
             self.dismiss(False)
 
     def connect(self) -> None:
-        key = self.query_one("#key", Input).value.strip()
-        if not key:
+        credential = self.query_one("#key", Input).value.strip()
+        if self.provider.base_env:
+            credential = credential.rstrip("/")
+        if not credential:
             self.query_one("#key", Input).focus()
             return
-        current = self.rt.model if self.rt.model.startswith(self.provider.name + "/") else self.provider.default_model
-        self.rt.settings.save_credentials(self.provider, key, current)
+        os.environ[self.provider.credential_env] = credential
+        current = self.rt.model if self.rt.model.startswith(self.provider.name + "/") else (self.provider.default_model or self.rt.model)
+        self.rt.settings.save_credentials(self.provider, credential, current)
         self.app.push_screen(ModelScreen(self.rt, [self.provider], current, []), self.chosen)
 
     def chosen(self, model: str | None) -> None:
-        switch_model(self.rt, model or (self.rt.model if provider_of(self.rt.model) is self.provider else self.provider.default_model))
+        target = model or (self.rt.model if provider_of(self.rt.model) is self.provider else self.provider.default_model)
+        if target:
+            switch_model(self.rt, target)
         self.dismiss(self.rt.provider is not None)
 
     def action_later(self) -> None:

@@ -57,3 +57,23 @@ def test_build_chain_empty_when_no_keys(monkeypatch):
               "GOOGLE_AISTUDIO_API_KEY", "OPENROUTER_API_KEY", "OLLAMA_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     assert build_provider_chain(DEFAULT_FREE_FIRST_CHAIN) == []
+
+
+def test_resolve_local_prefix_routes_openai_compatible_base(monkeypatch):
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1/")
+    monkeypatch.delenv("LOCAL_LLM_API_KEY", raising=False)
+    r = resolve_model("local/bonsai2-small")
+    assert r["litellm_model"] == "openai/bonsai2-small"
+    assert r["api_base"] == "http://127.0.0.1:8081/v1"
+    assert r["api_key"]
+    monkeypatch.setenv("LOCAL_LLM_API_KEY", "sk-local")
+    assert resolve_model("local/bonsai2-small")["api_key"] == "sk-local"
+
+
+def test_build_chain_drops_local_without_base_url(monkeypatch):
+    monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
+    monkeypatch.setenv("LOCAL_LLM_API_KEY", "sk-local")
+    assert build_provider_chain(["local/bonsai2-small"], free_first=False) == []
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
+    chain = build_provider_chain(["local/bonsai2-small"], free_first=False)
+    assert [c["pid"] for c in chain] == ["local/bonsai2-small"] and chain[0]["api_base"] == "http://127.0.0.1:8081/v1"

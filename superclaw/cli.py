@@ -563,7 +563,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     upd.add_argument("--apply", action="store_true", help="run the install command for this install method")
     setup = sub.add_parser("setup", help="store a provider key and default model")
     setup.add_argument("--provider", choices=[p.name for p in PROVIDERS], default=PROVIDERS[0].name)
-    setup.add_argument("--key", default="", help="the API key; prompted when omitted")
+    setup.add_argument("--key", default="", help="the API key, or the base URL for --provider local; prompted when omitted")
     models = sub.add_parser("models", help="list the models each connected provider serves")
     models.add_argument("--provider", choices=[p.name for p in PROVIDERS], default="", help="one provider instead of every one with a key")
     models.add_argument("--refresh", action="store_true", help="ignore the cached listing and ask the provider again")
@@ -672,12 +672,19 @@ def cmd_update(settings: Settings, args: argparse.Namespace) -> int:
 
 def cmd_setup(settings: Settings, args: argparse.Namespace) -> int:
     provider = next(p for p in PROVIDERS if p.name == args.provider)
-    key = args.key or getpass.getpass(f"{provider.name} API key ({provider.console}): ")
-    if not key.strip():
-        sys.exit("superclaw: no key entered")
+    if provider.base_env:
+        credential = (args.key or input(f"{provider.name} base URL ({provider.console}): ")).strip().rstrip("/")
+    else:
+        credential = (args.key or getpass.getpass(f"{provider.name} API key ({provider.console}): ")).strip()
+    if not credential:
+        sys.exit(f"superclaw: no {'URL' if provider.base_env else 'key'} entered")
+    os.environ[provider.credential_env] = credential
     model = settings.model if settings.model.startswith(provider.name + "/") or provider.name == PROVIDERS[0].name else provider.default_model
-    settings.save_credentials(provider, key.strip(), model)
-    print(f"saved {provider.env} and SUPERCLAW_MODEL={model} to {settings.credentials}")
+    if not model:
+        served = models_for(provider, os.environ.get(provider.env, ""), settings.models_cache, refresh=True)
+        model = served[0].id if served else settings.model
+    settings.save_credentials(provider, credential, model)
+    print(f"saved {provider.credential_env} and SUPERCLAW_MODEL={model} to {settings.credentials}")
     return 0
 
 
