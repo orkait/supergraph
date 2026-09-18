@@ -6,12 +6,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from superclaw import maintain
-from superclaw.app import apply_sandbox
 from superclaw.catalog import describe, keyed_providers
+from superclaw.config import current as current_value
+from superclaw.config import find as find_option
+from superclaw.config import set_option
 from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
 from superclaw.prompt import _git_branch
 from superclaw.settings import SANDBOX_OFF, SANDBOX_ON, SANDBOX_STATES
+from superclaw.tui.config import ConfigScreen
 from superclaw.usercommands import UserCommand, load_commands
 
 if TYPE_CHECKING:
@@ -46,20 +49,32 @@ def _mode(app: SuperclawApp, arg: str) -> None:
     app.note(f"mode {arg}")
 
 
-def _sandbox(app: SuperclawApp, arg: str) -> None:
-    if not arg:
-        app.note(f"sandbox {SANDBOX_ON if app.rt.policy.sandboxed else SANDBOX_OFF}; usage: /sandbox {'|'.join(SANDBOX_STATES)}")
+def _config(app: SuperclawApp, arg: str) -> None:
+    key, _, value = arg.partition(" ")
+    if not key:
+        app.push_screen(ConfigScreen(app.rt))
         return
-    if arg not in SANDBOX_STATES:
-        app.note(f"usage: /sandbox {'|'.join(SANDBOX_STATES)}", error=True)
+    option = find_option(key)
+    if option is None:
+        app.note(f"unknown setting {key!r}; /config lists them", error=True)
+        return
+    if not value.strip():
+        app.note(f"{option.key} {current_value(app.rt.settings, option)} {app.glyphs.dot} {option.label}")
         return
     try:
-        told = apply_sandbox(app.rt, arg == SANDBOX_ON)
+        told = set_option(app.rt, option.key, value)
     except KeyError as e:
         app.note(str(e.args[0]), error=True)
         return
     app.refresh_status()
     app.note(told)
+
+
+def _sandbox(app: SuperclawApp, arg: str) -> None:
+    if not arg:
+        app.note(f"sandbox {SANDBOX_ON if app.rt.policy.sandboxed else SANDBOX_OFF}; usage: /sandbox {'|'.join(SANDBOX_STATES)}")
+        return
+    _config(app, f"sandbox {arg}")
 
 
 def _new(app: SuperclawApp, arg: str) -> None:
@@ -285,6 +300,7 @@ COMMANDS = (
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/tui", "/tui default|fullscreen", "pick the renderer for the next launch and save it", _tui),
+    Command("/config", "/config [key [value]]", "every setting in one place: bare opens the editor, or set one by name", _config),
     Command("/sandbox", f"/sandbox [{'|'.join(SANDBOX_STATES)}]", "run bash inside the sandbox or on the host, now and on the next launch", _sandbox),
     Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
     Command("/resume", "/resume [id|latest]", "pick an earlier session to continue, or name one", _resume),

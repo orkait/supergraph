@@ -19,6 +19,10 @@ from superclaw.agents import resolve as resolve_agent
 from superclaw.app import Callbacks, NoProviderKey, Runtime, build_hooks, build_runtime, mcp_paths, resolve_session, run_once, switch_model
 from superclaw.attach import read as read_attachments
 from superclaw.catalog import describe, keyed_providers, models_for
+from superclaw.config import NEXT_LAUNCH, set_option
+from superclaw.config import current as current_value
+from superclaw.config import find as find_option
+from superclaw.config import lines as config_lines
 from superclaw.facts import as_of_ms
 from superclaw.loop import Result
 from superclaw.mcp import MCPError, add_server, remove_server
@@ -61,7 +65,7 @@ from superclaw.worktree import prepare as prepare_worktree
 from supergraph.core.errors import StoreInUse, SuperGraphError
 
 SCHEMA_VERSION = 1
-STORELESS = ("doctor", "mcp", "agents", "skills", "commands")
+STORELESS = ("doctor", "mcp", "agents", "skills", "commands", "config")
 _NAME_WIDTH = 18
 _TOKENS_WIDTH = 9
 _EVENT_TYPE_WIDTH = 12
@@ -367,6 +371,25 @@ def cmd_mcp(rt: Runtime, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(rt: Runtime, args: argparse.Namespace) -> int:
+    if not args.key:
+        for option, value in config_lines(rt.settings):
+            scope = "" if option.live else f"  ({NEXT_LAUNCH})"
+            print(f"{option.key:<16} {value:<28} {option.label}{scope}")
+        return 0
+    option = find_option(args.key)
+    if option is None:
+        sys.exit(f"superclaw: unknown setting {args.key!r}; `superclaw config` lists them")
+    if not args.value:
+        print(current_value(rt.settings, option))
+        return 0
+    try:
+        print(set_option(rt, option.key, " ".join(args.value)))
+    except KeyError as e:
+        sys.exit(f"superclaw: {e.args[0]}")
+    return 0
+
+
 def cmd_doctor(rt: Runtime, args: argparse.Namespace) -> int:
     for line in doctor_lines(rt, "run `superclaw setup`"):
         print(line)
@@ -450,11 +473,11 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--fallback-model", default="", metavar="MODELS",
                         help="comma or space separated models to try, in order, when the main model fails")
     parser.add_argument("--db", default=str(defaults.db_path), help="supergraph store path")
-    parser.add_argument("--max-turns", type=int, default=LIMITS.max_turns, metavar="N", help="stop after N model turns and ask for a final answer; 0 (default) is no cap, the loop guards and budgets end a run instead")
+    parser.add_argument("--max-turns", type=int, default=defaults.max_turns, metavar="N", help="stop after N model turns and ask for a final answer; 0 (default) is no cap, the loop guards and budgets end a run instead")
     parser.add_argument("--context-window", type=int, default=defaults.context_window, help="override the model's catalog context window (0 = from catalog)")
     parser.add_argument("--budget-tokens", type=int, default=defaults.budget_tokens, help="stop a run once this many tokens were spent (0 = unlimited)")
     parser.add_argument("--budget-usd", type=float, default=defaults.budget_usd, help="stop a run once this much was spent at catalog prices (0 = unlimited)")
-    parser.add_argument("--intent-gate", action="store_true", help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
+    parser.add_argument("--intent-gate", action="store_true", default=defaults.intent_gate, help="classify each request as answer, diagnose, change or monitor and restrict tools accordingly")
     parser.add_argument("--trust-workspace", action="store_true", help="also run hooks from <workspace>/.superclaw/hooks.json")
     parser.add_argument("--allow-tools", default="", help="only expose these tools (comma or space separated)")
     parser.add_argument("--deny-tools", default="", help="hide these tools (comma or space separated)")
@@ -540,6 +563,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     mcp_remove = mcp_sub.add_parser("remove", help="remove a server by name")
     mcp_remove.add_argument("name")
     mcp_remove.add_argument("--scope", choices=MCP_SCOPES, default=MCP_SCOPES[0])
+    config = sub.add_parser("config", help="show every setting, read one, or set one; the same settings /config edits")
+    config.add_argument("key", nargs="?", default="", help="setting to read or set; omit to list them all")
+    config.add_argument("value", nargs="*", help="new value; omit to read the current one")
     sub.add_parser("usage", help="token and cost totals per recent session")
     sub.add_parser("skills", help="list discovered skills")
     sub.add_parser("agents", help="list the agent profiles that --agent can select")
@@ -757,7 +783,7 @@ def main(argv: list[str] | None = None) -> int:
     handler = {"exec": cmd_exec, "acp": cmd_acp, "verify": cmd_verify, "spec": cmd_spec, "cron": cmd_cron, "review": cmd_review,
                "sessions": cmd_sessions, "facts": cmd_facts, "ask": cmd_ask, "maintain": cmd_maintain, "export": cmd_export, "import": cmd_import,
                "usage": cmd_usage, "skills": cmd_skills, "agents": cmd_agents, "commands": cmd_commands,
-               "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp}.get(args.command, cmd_tui)
+               "context": cmd_context, "doctor": cmd_doctor, "mcp": cmd_mcp, "config": cmd_config}.get(args.command, cmd_tui)
     try:
         return handler(rt, args)
     except KeyError as e:
