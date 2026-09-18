@@ -224,3 +224,57 @@ def test_meter_cut_prune_and_compaction():
     assert brief.startswith("[previous summary]\nOLD FACTS") and "skill body" not in brief and "[tool_error #5] edit_file" in brief
     body = compact(msgs, keep_tokens=12, summarize=lambda b: "SUM", plan_text="Current Plan:\n1. [pending] x").messages[1].content
     assert "Current Plan:" in body and "Skills loaded: bench" in body and "Files edited: src/x.py" in body
+
+
+def test_local_provider_connects_by_base_url_and_reads_loaded_window(tmp_path, monkeypatch):
+    import superclaw.app as app_mod
+    from superclaw.catalog import keyed_providers
+
+    local = next(p for p in PROVIDERS if p.name == "local")
+    monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("LOCAL_LLM_API_KEY", raising=False)
+    assert not local.connected() and local not in keyed_providers() and local.models_endpoint() == ""
+    assert app_mod.connect_provider("local/bonsai2-small") is None
+    monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1/")
+    assert local.connected() and local in keyed_providers() and local.models_endpoint() == "http://127.0.0.1:8081/v1/models"
+    assert local.credential_env == "LOCAL_LLM_BASE_URL" and next(p for p in PROVIDERS if p.name == "groq").credential_env == "GROQ_API_KEY"
+    body = json.dumps({"object": "list", "data": [
+        {"id": "bonsai2-small", "object": "model", "owned_by": "llamacpp", "meta": {"n_ctx": 131072, "n_ctx_train": 262144}},
+        {"id": "Qwen/Qwen3-8B", "object": "model", "max_model_len": 40960},
+        {"id": "nomic-embed-text"},
+    ]}).encode()
+    calls = []
+
+    def fetch(url, headers):
+        calls.append((url, headers.get("Authorization")))
+        return body
+
+    live = models_for(local, "", tmp_path, fetch=fetch)
+    assert [m.id for m in live] == ["local/Qwen/Qwen3-8B", "local/bonsai2-small"] and calls == [("http://127.0.0.1:8081/v1/models", None)]
+    assert {m.id: m.context_window for m in live} == {"local/bonsai2-small": 131072, "local/Qwen/Qwen3-8B": 40960}
+    info = lookup("local/bonsai2-small", tmp_path)
+    assert info.context_window == 131072 and info.input_per_token == 0.0 and info.known
+    assert describe(live[1], "|") == "131.1K ctx | live"
+    assert isinstance(app_mod.connect_provider("local/bonsai2-small"), LitellmProvider)
+    settings = Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path)})
+    settings.save_credentials(local, "http://127.0.0.1:8081/v1", "local/bonsai2-small")
+    assert "LOCAL_LLM_BASE_URL=http://127.0.0.1:8081/v1" in settings.credentials.read_text()
+
+
+def test_setup_saves_base_url_for_local_and_picks_a_served_model(tmp_path, monkeypatch):
+    import superclaw.cli as cli_mod
+    from superclaw.catalog import Model
+
+    served = [Model(id="local/bonsai2-small", provider="local", name="bonsai2-small", context_window=131072,
+                    input_per_token=0.0, output_per_token=0.0, tools=True, source="live")]
+    asked = []
+    monkeypatch.setattr(cli_mod, "models_for", lambda provider, key, cache_dir, **kw: asked.append(provider.name) or served)
+    monkeypatch.delenv("LOCAL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    settings = Settings.from_env({"XDG_CONFIG_HOME": str(tmp_path)})
+    assert cli_mod.cmd_setup(settings, SimpleNamespace(provider="local", key="http://127.0.0.1:8081/v1/")) == 0
+    saved = settings.credentials.read_text()
+    assert "LOCAL_LLM_BASE_URL=http://127.0.0.1:8081/v1\n" in saved and "SUPERCLAW_MODEL=local/bonsai2-small" in saved and asked == ["local"]
+    assert cli_mod.cmd_setup(settings, SimpleNamespace(provider="groq", key="gsk-1")) == 0
+    saved = settings.credentials.read_text()
+    assert "GROQ_API_KEY=gsk-1" in saved and "SUPERCLAW_MODEL=groq/llama-3.3-70b-versatile" in saved and asked == ["local"]

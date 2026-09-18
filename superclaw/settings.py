@@ -127,6 +127,27 @@ class Provider:
     models_url: str
     public: bool = False
     key_in_query: bool = False
+    # Set for a provider addressed by an OpenAI-compatible base URL rather than a vendor key:
+    # the URL is the credential, the key stays optional, and `/models` hangs off the base.
+    base_env: str = ""
+
+    @property
+    def credential_env(self) -> str:
+        return self.base_env or self.env
+
+    def base_url(self, env: Mapping[str, str] | None = None) -> str:
+        e = os.environ if env is None else env
+        return e.get(self.base_env, "").strip().rstrip("/") if self.base_env else ""
+
+    def connected(self, env: Mapping[str, str] | None = None) -> bool:
+        e = os.environ if env is None else env
+        return bool(e.get(self.env, "").strip()) or bool(self.base_url(e))
+
+    def models_endpoint(self, env: Mapping[str, str] | None = None) -> str:
+        if self.models_url:
+            return self.models_url
+        base = self.base_url(env)
+        return f"{base}/models" if base else ""
 
 
 PROVIDERS = (
@@ -139,6 +160,8 @@ PROVIDERS = (
     Provider("nvidia_nim", "NVIDIA_NIM_API_KEY", "nvidia_nim/meta/llama-3.3-70b-instruct", "https://build.nvidia.com", "nvidia_nim",
              "https://integrate.api.nvidia.com/v1/models", public=True),
     Provider("opencode", "OPENCODE_API_KEY", "opencode/deepseek-v4-flash", "https://opencode.ai/auth", "opencode", "https://opencode.ai/zen/v1/models"),
+    Provider("local", "LOCAL_LLM_API_KEY", "", "any OpenAI-compatible server: llama-server, vLLM, LM Studio, Ollama", "", "",
+             public=True, base_env="LOCAL_LLM_BASE_URL"),
 )
 CATALOG_CHAT_MODE = "chat"
 NONCODING_TERMS = ("audio", "dall-e", "deep-research", "embed", "image", "imagen", "moderation", "realtime", "rerank", "sora", "speech",
@@ -582,8 +605,8 @@ class Settings:
     def clipboard_dir(self) -> Path:
         return self.data_dir / CLIPBOARD_DIR
 
-    def save_credentials(self, provider: Provider, key: str, model: str) -> None:
-        self._save({provider.env: key, "SUPERCLAW_MODEL": model})
+    def save_credentials(self, provider: Provider, credential: str, model: str) -> None:
+        self._save({provider.credential_env: credential, "SUPERCLAW_MODEL": model})
 
     def save_model(self, model: str) -> None:
         self._save({"SUPERCLAW_MODEL": model})

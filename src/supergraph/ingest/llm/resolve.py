@@ -4,6 +4,11 @@ import os
 import secrets
 
 OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
+LOCAL_BASE_ENV = "LOCAL_LLM_BASE_URL"
+LOCAL_KEY_ENV = "LOCAL_LLM_API_KEY"
+# Any OpenAI-compatible server (llama-server, vLLM, LM Studio, Ollama) ignores or does not
+# require a key; the chain drops keyless entries, so a placeholder stands in when none is set.
+LOCAL_NO_KEY = "local"
 OPENCODE_ZEN_BASE = "https://opencode.ai/zen/v1"
 OPENCODE_GO_MARKER = "zen/go"
 OPENCODE_SESSION_HEADER = "x-opencode-session"
@@ -75,6 +80,11 @@ def resolve_model(model_id: str, aliases: dict[str, str] | None = None) -> dict:
         if OPENCODE_GO_MARKER in base:
             entry["extra_headers"] = {OPENCODE_SESSION_HEADER: _opencode_session()}
         return entry
+    if model_id.startswith("local/"):
+        slug = model_id[len("local/"):]
+        base = os.getenv(LOCAL_BASE_ENV, "").strip().rstrip("/")
+        return {"litellm_model": f"openai/{slug}", "api_base": base or None,
+                "api_key": (os.getenv(LOCAL_KEY_ENV, "").strip() or LOCAL_NO_KEY) if base else ""}
     if model_id.startswith("openrouter/"):
         return {"litellm_model": model_id, "api_base": None,
                 "api_key": os.getenv("OPENROUTER_API_KEY", "")}

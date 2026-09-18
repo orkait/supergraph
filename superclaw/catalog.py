@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -33,7 +32,7 @@ def provider_of(model: str) -> Provider | None:
 
 
 def keyed_providers() -> list[Provider]:
-    return [p for p in PROVIDERS if os.environ.get(p.env)]
+    return [p for p in PROVIDERS if p.connected()]
 
 
 def coding(slug: str) -> bool:
@@ -58,6 +57,14 @@ def catalog_models(provider: Provider) -> list[Model]:
     return sorted(out, key=lambda m: m.id)
 
 
+def _context_window(item: dict[str, Any]) -> int:
+    # OpenRouter/Ollama, generic, Gemini, vLLM, then llama.cpp's loaded window (not n_ctx_train,
+    # which is what the model could take, not what the server allocated).
+    meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
+    return int(item.get("context_length") or item.get("context_window") or item.get("inputTokenLimit")
+               or item.get("max_model_len") or meta.get("n_ctx") or 0)
+
+
 def parse_models(provider: Provider, body: bytes) -> list[Model]:
     doc: dict[str, Any] = json.loads(body)
     out = []
@@ -69,7 +76,7 @@ def parse_models(provider: Provider, body: bytes) -> list[Model]:
         label = str(item.get("displayName") or item.get("name") or slug)
         pricing = item.get("pricing") or {}
         out.append(Model(id=f"{provider.name}/{slug}", provider=provider.name, name=slug if label.startswith("models/") else label,
-                         context_window=int(item.get("context_length") or item.get("context_window") or item.get("inputTokenLimit") or 0),
+                         context_window=_context_window(item),
                          input_per_token=float(pricing.get("prompt") or 0.0), output_per_token=float(pricing.get("completion") or 0.0),
                          tools="tools" in (item.get("supported_parameters") or []), source=MODEL_SOURCE_LIVE))
     return sorted(out, key=lambda m: m.id)
@@ -82,9 +89,10 @@ def _get(url: str, headers: dict[str, str]) -> bytes:
 
 
 def live_models(provider: Provider, key: str, fetch: Fetch | None = None) -> list[Model]:
-    if not provider.models_url or not (key or provider.public):
+    endpoint = provider.models_endpoint()
+    if not endpoint or not (key or provider.public):
         return []
-    url = f"{provider.models_url}?key={key}" if provider.key_in_query else provider.models_url
+    url = f"{endpoint}?key={key}" if provider.key_in_query else endpoint
     headers = {"Authorization": f"Bearer {key}"} if key and not provider.key_in_query else {}
     return parse_models(provider, (fetch or _get)(url, headers))
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -219,7 +218,7 @@ def connect_provider(model: str, effort: str = "", fallbacks: tuple[str, ...] = 
         return build_provider_chain([model, *fallbacks], free_first=False)
 
     known = provider_of(model)
-    if known is not None and not os.environ.get(known.env):
+    if known is not None and not known.connected():
         return None
     if known is None and not resolve():
         return None
@@ -230,8 +229,8 @@ def switch_model(rt: Runtime, model: str) -> None:
     provider = provider_of(model)
     if provider is None:
         raise KeyError(f"unknown provider in {model!r}; providers: {', '.join(p.name for p in PROVIDERS)}")
-    if not os.environ.get(provider.env):
-        raise NoProviderKey(f"no {provider.env} for {provider.name}")
+    if not provider.connected():
+        raise NoProviderKey(f"no {provider.credential_env} for {provider.name}")
     rt.settings.save_model(model)
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
