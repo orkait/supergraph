@@ -62,6 +62,7 @@ async def _wait_for(pilot, predicate, timeout=5.0):
 def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, monkeypatch):
     for provider in PROVIDERS:
         monkeypatch.delenv(provider.env, raising=False)
+        monkeypatch.delenv(provider.credential_env, raising=False)
     monkeypatch.setattr("superclaw.report.keyed_providers", lambda: [])
     locked = tmp_path / "locked"
     holder = SuperGraph(path=str(locked), embedder="none", enable_sentence_nodes=False)
