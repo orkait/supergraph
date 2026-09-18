@@ -39,6 +39,9 @@ from superclaw.settings import (
     PROVIDERS,
     RENDERER_INLINE,
     RENDERERS,
+    SANDBOX_OFF,
+    SANDBOX_ON,
+    SANDBOX_STATES,
     SERVED_TOOLS,
     SESSION_END_EXIT,
     SESSION_END_OTHER,
@@ -435,6 +438,9 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=[m.value for m in Mode], default=defaults.mode)
     parser.add_argument("--dangerously-skip-permissions", action="store_true",
                         help="run every tool without asking (same as --mode unsafe); only inside a sandbox you can discard")
+    parser.add_argument("--sandbox", choices=SANDBOX_STATES, default=None,
+                        help=f"run bash inside bubblewrap or straight on the host, where every command asks first "
+                             f"(saved default: {SANDBOX_ON if defaults.sandbox else SANDBOX_OFF})")
     parser.add_argument("--tui", choices=RENDERERS, default=None,
                         help=f"renderer for the interactive shell: default draws under your prompt and keeps scrollback, "
                              f"fullscreen takes the alternate screen (saved default: {defaults.renderer})")
@@ -710,7 +716,8 @@ def main(argv: list[str] | None = None) -> int:
     settings = replace(defaults, model=args.model or (agent.model if agent else "") or defaults.model,
                        mode=mode, context_window=args.context_window,
                        fallback_models=split_models(args.fallback_model) or defaults.fallback_models,
-                       budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db))
+                       budget_tokens=args.budget_tokens, budget_usd=args.budget_usd, db_path=Path(args.db),
+                       sandbox=defaults.sandbox if args.sandbox is None else args.sandbox == SANDBOX_ON)
     if args.command == "setup":
         return cmd_setup(settings, args)
     if args.command == "models":

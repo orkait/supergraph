@@ -77,7 +77,7 @@ PHASE_CANCELLING = "cancelling"
 PHASE_COMPACTING = "compacting"
 FRESH_CONTEXT = "fresh context"
 BUSY_COMMANDS = ("/new", "/clear", "/reset", "/resume", "/fork", "/model", "/compact", "/retry", "/agent",
-                 "/mode", "/effort", "/rollback", "/maintain", "/setup")
+                 "/mode", "/effort", "/sandbox", "/rollback", "/maintain", "/setup")
 
 
 def context_overview(event: dict[str, Any], glyphs: Glyphs) -> str:

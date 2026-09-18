@@ -20,7 +20,8 @@ from superclaw.policy import Mode, Policy
 from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
-from superclaw.settings import ASCII, PROVIDERS, RENDERER_ENV, RENDERER_INLINE, UNICODE, Settings, choose_glyphs
+from superclaw.sandbox import available
+from superclaw.settings import ASCII, PROVIDERS, RENDERER_ENV, RENDERER_INLINE, SANDBOX_ENV, SANDBOX_OFF, SANDBOX_ON, UNICODE, Settings, choose_glyphs
 from superclaw.tools import ToolContext
 from superclaw.tui import PermissionScreen, SuperclawApp
 from superclaw.tui.app import WORDMARK_ART, context_overview, describe
@@ -177,6 +178,21 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             await pilot.pause(0.05)
             assert f"{RENDERER_ENV}={RENDERER_INLINE}" in rt.settings.credentials.read_text()
             assert "next time you start superclaw" in str(app.query(".note").last().content)
+            await pilot.press(*"/sandbox sideways", "enter")
+            await pilot.pause(0.05)
+            assert "usage: /sandbox on|off" in str(app.query(".error").last().content)
+            await pilot.press(*"/sandbox off", "enter")
+            await pilot.pause(0.05)
+            assert f"{SANDBOX_ENV}={SANDBOX_OFF}" in rt.settings.credentials.read_text() and not rt.settings.sandbox
+            assert not rt.policy.sandboxed and rt.sandbox == "" and rt.registry.get("bash").backend is None
+            assert "every command asks first outside unsafe mode" in str(app.query(".note").last().content)
+            await pilot.press(*"/sandbox", "enter")
+            await pilot.pause(0.05)
+            assert str(app.query(".note").last().content).startswith(f"sandbox {SANDBOX_OFF}; usage:")
+            await pilot.press(*f"/sandbox {SANDBOX_ON}", "enter")
+            await pilot.pause(0.05)
+            note = str(app.query(".note").last().content) if available() else str(app.query(".error").last().content)
+            assert (rt.policy.sandboxed and "bubblewrap" in note) if available() else "bubblewrap is not installed" in note
             await pilot.press(*"/tools", "enter")
             await pilot.pause(0.05)
             assert any("write_file" in str(n.content) and "write" in str(n.content) for n in app.query(".note"))

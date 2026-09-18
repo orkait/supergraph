@@ -24,9 +24,9 @@ from superclaw.prompt import PromptInputs, _git_branch, build_system_prompt
 from superclaw.provider import LitellmProvider
 from superclaw.repomap import render, scan
 from superclaw.runtime import Message, Provider, approx_tokens
-from superclaw.sandbox import Backend, detect
+from superclaw.sandbox import Backend, available, detect
 from superclaw.session import SessionStore, prompt_hash
-from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
+from superclaw.settings import LIMITS, MCP_FILE, PROVIDERS, SANDBOX_INSTALL, SESSION_END_OTHER, UNSAFE_SNAPSHOT, WORKSPACE_DIR, Settings
 from superclaw.share import open_shared
 from superclaw.skills import load_skills
 from superclaw.stages import Intent, decompose, recall_settled, settled_note
@@ -180,7 +180,7 @@ def build_runtime(
     provider = connect_provider(settings.model, settings.effort, settings.fallback_models, settings.stream, settings.output_cap())
     if provider is None and require_provider:
         raise NoProviderKey(f"no API key resolved for model {settings.model!r}; run `superclaw setup` or set the provider's key (for example OPENROUTER_API_KEY)")
-    backend = detect()
+    backend = detect(settings.sandbox)
     gs = memory = kernel = sessions = None
     registry = Registry()
     if open_store:
@@ -235,6 +235,23 @@ def switch_model(rt: Runtime, model: str) -> None:
     rt.settings = replace(rt.settings, model=model)
     rt.model = model
     rt.provider = connect_provider(model, rt.settings.effort, rt.settings.fallback_models, rt.settings.stream, rt.settings.output_cap())
+
+
+def apply_sandbox(rt: Runtime, on: bool) -> str:
+    if on and not available():
+        raise KeyError(f"bubblewrap is not installed, so bash cannot be sandboxed; {SANDBOX_INSTALL}")
+    backend = detect(on)
+    bash = rt.registry.get("bash")
+    if isinstance(bash, Bash):
+        bash.backend = backend
+    if rt.kernel is not None:
+        rt.kernel.backend = backend
+    rt.policy.sandboxed = backend is not None
+    rt.sandbox = getattr(backend, "name", "")
+    rt.settings.save_sandbox(on)
+    rt.settings = replace(rt.settings, sandbox=on)
+    return (f"sandbox on ({rt.sandbox}): bash has no network, writes only inside the workspace, and credential paths are masked"
+            if backend is not None else "sandbox off: bash runs on the host, and every command asks first outside unsafe mode")
 
 
 def apply_effort(rt: Runtime, effort: str) -> None:

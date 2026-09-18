@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from superclaw import maintain
+from superclaw.app import apply_sandbox
 from superclaw.catalog import describe, keyed_providers
 from superclaw.facts import as_of_ms
 from superclaw.policy import Mode
 from superclaw.prompt import _git_branch
+from superclaw.settings import SANDBOX_OFF, SANDBOX_ON, SANDBOX_STATES
 from superclaw.usercommands import UserCommand, load_commands
 
 if TYPE_CHECKING:
@@ -42,6 +44,22 @@ def _mode(app: SuperclawApp, arg: str) -> None:
     app.rt.mode = Mode(arg)
     app.refresh_status()
     app.note(f"mode {arg}")
+
+
+def _sandbox(app: SuperclawApp, arg: str) -> None:
+    if not arg:
+        app.note(f"sandbox {SANDBOX_ON if app.rt.policy.sandboxed else SANDBOX_OFF}; usage: /sandbox {'|'.join(SANDBOX_STATES)}")
+        return
+    if arg not in SANDBOX_STATES:
+        app.note(f"usage: /sandbox {'|'.join(SANDBOX_STATES)}", error=True)
+        return
+    try:
+        told = apply_sandbox(app.rt, arg == SANDBOX_ON)
+    except KeyError as e:
+        app.note(str(e.args[0]), error=True)
+        return
+    app.refresh_status()
+    app.note(told)
 
 
 def _new(app: SuperclawApp, arg: str) -> None:
@@ -267,6 +285,7 @@ COMMANDS = (
     Command("/model", "/model [list|id]", "show or switch the active model", _model),
     Command("/effort", "/effort low|medium|high|off", "set the model's reasoning effort", _effort),
     Command("/tui", "/tui default|fullscreen", "pick the renderer for the next launch and save it", _tui),
+    Command("/sandbox", f"/sandbox [{'|'.join(SANDBOX_STATES)}]", "run bash inside the sandbox or on the host, now and on the next launch", _sandbox),
     Command("/new", "/new, /clear, /reset", "start a fresh session with an empty context; this one stays resumable", _new, aliases=("/clear", "/reset")),
     Command("/resume", "/resume [id|latest]", "pick an earlier session to continue, or name one", _resume),
     Command("/sessions", "/sessions [query|touching <path>]", "list recent sessions, search their events, or see who touched a file", _sessions),
