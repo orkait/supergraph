@@ -508,6 +508,7 @@ class Limits:
     status_gauge_width: int = 10
     context_bar_width: int = 28
     card_min_width: int = 20
+    chart_rows: int = 8
     flow_gap: int = 4
     flow_pad: int = 3
     table_min_column: int = 6
