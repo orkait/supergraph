@@ -7,16 +7,17 @@ from pathlib import Path
 import pytest
 from textual.events import Paste, TextSelected
 from textual.selection import SELECT_ALL
-from textual.widgets import Input, Markdown, OptionList, Static
+from textual.widgets import Input, OptionList, Static
 
 from supergraph import SuperGraph
 from supergraph.core.errors import StoreInUse
 
-from superclaw import catalog, clipboard
+from superclaw import catalog, clipboard, render, viz
 from superclaw.app import Callbacks, Runtime, build_registry, build_runtime, run_once
 from superclaw.memory import Memory
 from superclaw.observations import ObservationStore
 from superclaw.policy import Mode, Policy
+from superclaw.render import Stream, markdown
 from superclaw.report import doctor_lines
 from superclaw.runtime import Completion, ToolCall
 from superclaw.session import SessionStore
@@ -93,6 +94,28 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
     assert str(rt.settings.db_path) in lines[3] and lines[4] == "mcp 0 tools · 0 servers" and lines[-1].endswith("none; /setup")
     assert lines[5].startswith("graph no embedder, lexical recall only · ") and lines[5].endswith(" edges")
     assert lines[6].startswith("health tombstones ") and "last maintain" in lines[6] and doctor_lines(lean, "/setup")[6].startswith("health not opened")
+    diagram = "Flow:\n\n╭───╮\n│ a │\n╰───╯\n  │\n  ▼\n╭───╮\n│ b │\n╰───╯\n\nDone."
+    drawn = markdown(diagram, 88, 92, UNICODE).plain.splitlines()
+    assert "╭───╮" in drawn and drawn[drawn.index("╭───╮") + 3] == "  │", "an unfenced diagram keeps its own line breaks"
+    narrow = markdown("| a | bb |\n|---|---:|\n| 1 | 2 |", 88, 92, UNICODE).plain.splitlines()
+    assert narrow == ["a │ bb", "──┼───", "1 │  2"], narrow
+    wide = markdown(f"| k | v |\n|---|---|\n| one | {'w ' * 60}|", 40, 40, UNICODE).plain.splitlines()
+    assert wide[1].startswith("────┼") and wide[3].startswith("    │ ") and len([r for r in wide if "┼" in r]) == 1
+    fenced = markdown("```python\nx = 1\n```", 88, 92, UNICODE).plain.splitlines()
+    assert fenced[0].endswith("python") and fenced[1].endswith("x = 1")
+    stream = Stream(88, 92, UNICODE)
+    body = "## Head\n\nSome prose here.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```py\nx = 1\n```\n\n- one\n- two\n"
+    for size in range(9, len(body) + 9, 9):
+        partial = stream.update(body[:size])
+    assert partial.plain.strip() == markdown(body, 88, 92, UNICODE).plain.strip(), "streaming must converge on the whole-document render"
+    assert render.settled_at("a\n\n```\nb\n") == 3 and render.settled_at("a\n\nb\n") == 3
+    assert viz.bar(0.5, 1.0, 8, UNICODE) == "████    " and viz.bar(0.55, 1.0, 8, UNICODE).startswith("████")
+    assert viz.gauge(1, 4, 8, UNICODE) == "██░░░░░░" and viz.gauge(1, 4, 8, ASCII) == "@@......"
+    assert viz.spark([1, 2, 3], UNICODE) == "▁▄█" and viz.spark([1, 2, 3], ASCII) == ".=@"
+    assert viz.tree("r", {"r": ["a", "b"], "a": ["c"]}, UNICODE) == ["r", "├── a", "│   ╰── c", "╰── b"]
+    assert viz.columns([1, 2], 1, UNICODE) == ["▄█"] and viz.heat([[0, 1]], UNICODE) == ["  ██"]
+    drawing = viz.flow([[("a", "")], [("b", ""), ("c", "")]], [("a", "b"), ("a", "c")], UNICODE)
+    assert drawing[0].strip() == "╭───╮" and any("┴" in row for row in drawing) and drawing[-2] == "│ b │   │ c │"
     monkeypatch.setattr(catalog, "_get", lambda url, headers: b'{"data": [{"id": "deepseek/deepseek-v4-flash", "context_length": 1048576, "supported_parameters": ["tools"]}]}')
     sid = rt.store.create(cwd=str(tmp_path), model=rt.model)
     setup_app = SuperclawApp(rt, sid)
@@ -134,7 +157,7 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
             working = app.query_one(WorkingLine)
             assert app.stats.timer.paused_at and app.running and working.label == "waiting for you" and working.detail == "write_file  out.txt"
             await pilot.press("a")
-            await _wait_for(pilot, lambda: len(app.query(Markdown)) == 1 and not app.running)
+            await _wait_for(pilot, lambda: len(app.query(".answer")) == 1 and not app.running)
             assert (tmp_path / "out.txt").read_text() == "hi" and working.has_class("hidden")
             card = app.query_one(ToolCard)
             assert card.tool == "write_file" and card.ok and "+hi" in str(card.query_one(".body").content) and str(card.query_one(".head").content).endswith("s")
@@ -326,19 +349,19 @@ def test_prompt_renders_answer_and_permission_modal_gates_writes(rt, tmp_path, m
 
     async def slash():
         async with slash_app.run_test(size=(100, 30)) as pilot:
-            replayed = len(slash_app.query(Markdown))
+            replayed = len(slash_app.query(".answer"))
             assert replayed and slash_app.query(ToolCard)
             await pilot.press(*"/pr")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
             assert "Open a PR." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
             await pilot.press(*" 42", "enter")
-            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == replayed + 1)
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(".answer")) == replayed + 1)
             assert slash_app.history[-1] == "/pr 42"
             await pilot.press(*"/ti")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)
             assert str(slash_app.query_one("#palette").get_option_at_index(0).prompt).startswith("/tidy [args]") and "skill: Tidy the code." in str(slash_app.query_one("#palette").get_option_at_index(0).prompt)
             await pilot.press(*"dy now", "enter")
-            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(Markdown)) == replayed + 2)
+            await _wait_for(pilot, lambda: not slash_app.running and len(slash_app.query(".answer")) == replayed + 2)
             assert slash_app.history[-1] == "/tidy now"
             await pilot.press(*"/qu")
             await _wait_for(pilot, lambda: slash_app.query_one("#palette").option_count > 0)

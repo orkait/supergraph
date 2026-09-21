@@ -9,6 +9,7 @@ from textual.widgets import Static
 from superclaw.settings import LIMITS
 from superclaw.text import compact
 from superclaw.tui.theme import ACCENT, MUTED
+from superclaw.viz import gauge
 
 
 @dataclass
@@ -87,7 +88,8 @@ class StatusBar(Static):
         if where.branch and level >= 1:
             parts.append(where.branch)
         if stats.window and level >= 1:
-            parts.append(f"{glyphs.gauge} {self.context(stats)}")
+            meter = gauge(stats.used, stats.window, LIMITS.status_gauge_width, glyphs) if level >= 2 else glyphs.gauge
+            parts.append(f"{meter} {self.context(stats)}")
         if stats.cost and level >= 2:
             parts.append(f"${stats.cost:.4f}")
         if level >= 2:

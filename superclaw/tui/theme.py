@@ -8,7 +8,7 @@ Screen { layers: base popup; }
 #transcript > .note { color: $text-muted; }
 #transcript > .thinking { color: $text-muted; text-style: italic; }
 #transcript > .error { color: $error; }
-#transcript > Markdown { margin: 0 0 1 0; }
+#transcript > .answer { margin: 0 0 1 0; }
 #transcript > .child { margin-left: 4; }
 ToolCard { height: auto; margin: 0 0 1 0; border-left: thick $panel; padding: 0 1; }
 ToolCard.running { border-left: thick $accent; }

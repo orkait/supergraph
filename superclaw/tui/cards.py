@@ -110,7 +110,11 @@ class ToolCard(Vertical):
         unfolded = self.expanded or self.app.verbose  # type: ignore[attr-defined]
         shown = self.lines if unfolded else self.lines[: self.folded()]
         body = self.query_one(".body", Static)
-        body.update(Text("\n").join(shown) if shown else Text(""))
+        width = max(LIMITS.card_min_width, (body.content_size.width or self.app.size.width) - 1)
+        clipped = [line.copy() for line in shown]
+        for line in clipped:
+            line.truncate(width, overflow="ellipsis")
+        body.update(Text("\n").join(clipped) if clipped else Text(""))
         body.display = bool(shown)
         hidden = len(self.lines) - len(shown)
         if hidden > 0:
