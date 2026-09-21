@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from superclaw.settings import STYLE_ACCENT, STYLE_MUTED
+
 CSS = """
 Screen { layers: base popup; }
 #welcome { height: 1fr; content-align: center middle; text-align: center; color: $text-muted; }
@@ -44,5 +46,5 @@ ADD = "green"
 DEL = "red"
 ADD_ROW = "on #1d2a1d"
 DEL_ROW = "on #2c1c1c"
-MUTED = "dim"
-ACCENT = "bold"
+MUTED = STYLE_MUTED
+ACCENT = STYLE_ACCENT

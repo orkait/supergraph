@@ -95,6 +95,17 @@ PROC_DIR = "/proc"
 STOPPED_STATES = ("T", "t")
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 RECOMMENDED_MARK = "(recommended)"
+# Answer styles name ANSI colours rather than hex, so the terminal's own theme decides the hues.
+STYLE_MUTED = "dim"
+STYLE_ACCENT = "bold"
+STYLE_HEADING = "bold"
+STYLE_STRONG = "bold"
+STYLE_EMPHASIS = "italic"
+STYLE_CODE = "cyan"
+STYLE_LINK = "underline blue"
+STYLE_RULE = "dim"
+STYLE_TABLE_HEAD = "bold"
+CODE_THEME = "ansi_dark"
 PYTHON_SUFFIX = ".py"
 
 
