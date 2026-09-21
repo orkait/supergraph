@@ -5,7 +5,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from superclaw.settings import LIMITS, REPO_MAP_IGNORED_DIRS
+from superclaw.settings import LIMITS, REPO_MAP_IGNORED_DIRS, Glyphs
+from superclaw.text import count
+from superclaw.viz import bars
 
 LANGUAGES = {".py": "python", ".pyi": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript",
              ".go": "go", ".rs": "rust", ".java": "java", ".kt": "kotlin", ".rb": "ruby", ".php": "php", ".c": "c", ".h": "c",
@@ -111,3 +113,13 @@ def search(found: RepoMap, query: str, limit: int = LIMITS.repo_map_matches) -> 
         reason = "all terms" if len(hits) == len(terms) else f"{len(hits)} of {len(terms)} terms"
         scored.append((score, path, reason + (", path segment" if segment else "")))
     return [(path, reason) for _, path, reason in sorted(scored, key=lambda item: (-item[0], item[1]))[:limit]]
+
+
+def chart(found: RepoMap, glyphs: Glyphs, width: int) -> list[str]:
+    roots = Counter(path.split("/")[0] if "/" in path else "." for path in found.files)
+    out = [f"{found.root.name}  {count(len(found.files), 'file')}  {count(found.directories, 'directory', 'directories')}"]
+    for title, rows in (("languages", found.languages), ("top level", roots.most_common(LIMITS.chart_rows)), ("extensions", found.extensions)):
+        shown = [(name, float(size)) for name, size in list(rows)[: LIMITS.chart_rows]]
+        if shown:
+            out += ["", title, *(f"  {line}" for line in bars(shown, width, glyphs))]
+    return out

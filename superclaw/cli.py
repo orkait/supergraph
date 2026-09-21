@@ -585,6 +585,7 @@ def build_parser(defaults: Settings) -> argparse.ArgumentParser:
     ctx.add_argument("prompt", nargs="?", default="", help="optional prompt, used for memory recall")
     rmap = sub.add_parser("repo-map", help="a deterministic map of the workspace: counts, important files, paths; the same text the model gets")
     rmap.add_argument("--json", action="store_true", help="print the full map as JSON instead of the prompt text")
+    rmap.add_argument("--chart", action="store_true", help="draw the shape of the repository: languages, top-level directories and extensions as bars")
     rmap.add_argument("--query", default="", metavar="TEXT", help="rank paths against these terms instead of printing the map")
     rmap.add_argument("--max-files", type=int, default=0, help=f"cap the scan (default {LIMITS.repo_map_files})")
     rmap.add_argument("--max-bytes", type=int, default=0, help=f"cap the rendered text (default {LIMITS.repo_map_bytes})")
@@ -631,6 +632,10 @@ def cmd_repo_map(settings: Settings, workspace: Path, args: argparse.Namespace) 
         for path, reason in hits:
             print(f"{path:<{LIMITS.model_id_width}} {reason}")
         return 0 if hits else 1
+    if args.chart:
+        for line in repomap.chart(found, settings.glyphs, LIMITS.context_bar_width):
+            print(line)
+        return 0
     if args.json:
         print(json.dumps({"root": str(found.root), "fileCount": len(found.files), "directoryCount": found.directories, "truncated": found.truncated,
                           "importantFiles": found.important, "languages": dict(found.languages), "extensions": dict(found.extensions),
