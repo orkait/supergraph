@@ -5,7 +5,19 @@ from dataclasses import dataclass
 
 from rich.text import Text
 
-from superclaw.settings import LIMITS, Glyphs
+from superclaw.settings import (
+    CODE_THEME,
+    LIMITS,
+    STYLE_CODE,
+    STYLE_EMPHASIS,
+    STYLE_HEADING,
+    STYLE_LINK,
+    STYLE_MUTED,
+    STYLE_RULE,
+    STYLE_STRONG,
+    STYLE_TABLE_HEAD,
+    Glyphs,
+)
 from superclaw.text import clip
 
 FENCE = re.compile(r"^(`{3,}|~{3,})\s*([\w+-]*)")
@@ -19,7 +31,6 @@ INLINE = re.compile(r"(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<![\w*])\*[^*\n]+\*(?![
 LINK = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 COLUMNS = re.compile(r"\S {2,}\S")
 DRAWING = (("─", "╿"), ("▀", "▟"), ("⠀", "⣿"), ("■", "◿"), ("←", "⇿"))
-CODE_STYLE, BOLD, ITALIC, LINK_STYLE, MUTED, HEAD = "bold", "bold", "italic", "underline", "dim", "bold"
 RIGHT, CENTRE = "right", "centre"
 
 
@@ -49,13 +60,13 @@ def segments(line: str) -> list[Word]:
         if not piece:
             continue
         if piece.startswith("`") and piece.endswith("`"):
-            out.append(Word(piece[1:-1], CODE_STYLE))
+            out.append(Word(piece[1:-1], STYLE_CODE))
         elif (piece.startswith("**") and piece.endswith("**")) or (piece.startswith("__") and piece.endswith("__")):
-            out.append(Word(piece[2:-2], BOLD))
+            out.append(Word(piece[2:-2], STYLE_STRONG))
         elif piece.startswith("*") and piece.endswith("*") and len(piece) > 2:
-            out.append(Word(piece[1:-1], ITALIC))
+            out.append(Word(piece[1:-1], STYLE_EMPHASIS))
         elif (link := LINK.match(piece)) is not None:
-            out.append(Word(link.group(1), LINK_STYLE))
+            out.append(Word(link.group(1), STYLE_LINK))
         else:
             out.append(Word(piece, ""))
     return out
@@ -85,21 +96,28 @@ def wrap(parts: list[Word], measure: int, first: str = "", later: str = "") -> l
     return [entry for entry in lines if entry.plain.strip() or len(lines) == 1]
 
 
+def barred(body: Text, glyphs: Glyphs) -> Text:
+    line = Text()
+    line.append(f"{glyphs.bar} ", style=STYLE_MUTED)
+    line.append_text(body)
+    return line
+
+
 def code(lines: list[str], language: str, measure: int, glyphs: Glyphs) -> list[Text]:
     body = Text("\n".join(lines))
     if language:
         try:
             from rich.syntax import Syntax
 
-            body = Syntax(code="", lexer=language, theme="ansi_dark").highlight("\n".join(lines))
+            body = Syntax(code="", lexer=language, theme=CODE_THEME).highlight("\n".join(lines))
         except Exception:
             body = Text("\n".join(lines))
     out = []
     if language:
-        out.append(Text(f"{glyphs.bar} {clip(language, LIMITS.code_label_chars)}", style=MUTED))
+        out.append(Text(f"{glyphs.bar} {clip(language, LIMITS.code_label_chars)}", style=STYLE_MUTED))
     for row in body.split("\n")[: len(lines)]:
         row.truncate(max(1, measure - 2), overflow="ellipsis")
-        out.append(Text(f"{glyphs.bar} ", style=MUTED) + row)
+        out.append(barred(row, glyphs))
     return out
 
 
@@ -146,14 +164,17 @@ def stack(cell: str, width: int, align: str) -> list[str]:
 def table(rows: list[list[str]], aligns: list[str], measure: int, glyphs: Glyphs) -> list[Text]:
     sizes = widths(rows, measure, glyphs)
     gap = f" {glyphs.pipe} "
-    rule = Text(f"{glyphs.rule}{glyphs.cross}{glyphs.rule}".join(glyphs.rule * size for size in sizes), style=MUTED)
+    rule = Text(f"{glyphs.rule}{glyphs.cross}{glyphs.rule}".join(glyphs.rule * size for size in sizes), style=STYLE_MUTED)
     stacked = [[stack(row[i] if i < len(row) else "", sizes[i], aligns[i] if i < len(aligns) else "") for i in range(len(sizes))] for row in rows]
     tall = any(len(cell) > 1 for row in stacked for cell in row)
     out: list[Text] = []
     for index, row in enumerate(stacked):
         for line in range(max(len(cell) for cell in row)):
-            built = Text(gap, style=MUTED).join(Text(cell[line] if line < len(cell) else " " * len(cell[0]),
-                                                     style=HEAD if index == 0 else None) for cell in row)
+            built = Text()
+            for column, cell in enumerate(row):
+                if column:
+                    built.append(gap, style=STYLE_MUTED)
+                built.append(cell[line] if line < len(cell) else " " * len(cell[0]), style=STYLE_TABLE_HEAD if index == 0 else "")
             built.rstrip()
             out.append(built)
         if index == 0 or (tall and index < len(stacked) - 1):
@@ -199,15 +220,15 @@ def block(lines: list[str], prose: int, measure: int, glyphs: Glyphs) -> list[Te
     head = lines[0].strip()
     if (title := HEADING.match(head)) is not None:
         rest = block(lines[1:], prose, measure, glyphs) if len(lines) > 1 else []
-        return [Text(title.group(2), style=HEAD), *rest]
+        return [Text(title.group(2), style=STYLE_HEADING), *rest]
     if RULE.match(head) is not None:
-        return [Text(glyphs.rule * min(prose, measure), style=MUTED)]
+        return [Text(glyphs.rule * min(prose, measure), style=STYLE_RULE)]
     if len(lines) > 1 and ROW.match(lines[0]) and DIVIDER.match(lines[1]):
         rows = [cells(line) for line in lines if ROW.match(line) and not DIVIDER.match(line)]
         return table(rows, alignments(lines[1]), measure, glyphs)
     if all(QUOTE.match(line) for line in lines):
         body = wrap(segments(" ".join(QUOTE.match(line).group(1) for line in lines)), prose - 2)
-        return [Text(f"{glyphs.bar} ", style=MUTED) + line for line in body]
+        return [barred(line, glyphs) for line in body]
     if BULLET.match(lines[0]) is not None:
         return listing(lines, prose, glyphs)
     return paragraph(lines, prose if not preformatted(lines) else measure, glyphs)
