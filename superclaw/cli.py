@@ -29,6 +29,7 @@ from superclaw.mcp import MCPError, add_server, remove_server
 from superclaw.policy import Mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
+from superclaw.render import markdown
 from superclaw.report import context_report, doctor_lines
 from superclaw.schema import SchemaError
 from superclaw.schema import extract as schema_extract
@@ -86,6 +87,16 @@ def _progress_line(event: dict[str, Any], glyphs: Glyphs) -> str | None:
     if kind == "compaction":
         return f"  (compacted {event['removed']} messages)"
     return None
+
+
+def write_answer(text: str, glyphs: Glyphs) -> None:
+    if not sys.stdout.isatty():
+        print(text)
+        return
+    from rich.console import Console
+
+    console = Console()
+    console.print(markdown(text, LIMITS.prose_measure, console.width - 1, glyphs))
 
 
 def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
@@ -153,7 +164,7 @@ def cmd_exec(rt: Runtime, args: argparse.Namespace) -> int:
         print(json.dumps({"sessionId": sid, "status": status, "turns": res.turns, "final": res.final_answer,
                           "incomplete": res.incomplete, "reason": res.incomplete_reason}, indent=2))
     else:
-        print(res.final_answer)
+        write_answer(res.final_answer, rt.settings.glyphs)
     return exit_code
 
 

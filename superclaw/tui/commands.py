@@ -16,6 +16,7 @@ from superclaw.prompt import _git_branch
 from superclaw.settings import SANDBOX_OFF, SANDBOX_ON, SANDBOX_STATES
 from superclaw.tui.config import ConfigScreen
 from superclaw.usercommands import UserCommand, load_commands
+from superclaw.viz import bars
 
 if TYPE_CHECKING:
     from superclaw.tui.app import SuperclawApp
@@ -127,7 +128,9 @@ def _context(app: SuperclawApp, arg: str) -> None:
 
     def measure() -> list[str]:
         report = context_report(app.rt, arg)
-        return [f"{name:<18}{tokens:>9,}  {report.percent(tokens):5.1f}%" for name, tokens in [*report.categories.items(), ("free", report.free)]]
+        rows = [*report.categories.items(), ("free", report.free)]
+        drawn = bars([(name, float(tokens)) for name, tokens in rows], app.limits.context_bar_width, app.glyphs)
+        return [f"{line}  {report.percent(tokens):5.1f}%" for line, (_, tokens) in zip(drawn, rows, strict=True)]
 
     app.defer("measuring context", measure)
 

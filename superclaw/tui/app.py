@@ -14,7 +14,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Markdown, OptionList, Static
+from textual.widgets import Button, Input, Label, OptionList, Static
 
 from superclaw import __version__, clipboard
 from superclaw.agents import load_agents
@@ -29,6 +29,7 @@ from superclaw.meter import ContextMeter
 from superclaw.policy import next_mode
 from superclaw.prompt import _git_branch
 from superclaw.provider import hint
+from superclaw.render import Stream, markdown
 from superclaw.runtime import Message
 from superclaw.settings import (
     EFFORT_OFF,
@@ -201,6 +202,7 @@ class SuperclawApp(App[None]):
         self.clips = Clips()
         self.user_commands = user_entries(rt.settings.command_roots(rt.workspace), rt.settings.skill_roots(rt.workspace))
         self.streaming: Static | None = None
+        self.stream_render: Stream | None = None
         self.stream_text = ""
         self.stream_dirty = False
         self.thinking: Static | None = None
@@ -277,7 +279,7 @@ class SuperclawApp(App[None]):
 
     def replay_assistant(self, payload: dict[str, Any], calls: dict[str, ToolCard]) -> None:
         if str(payload.get("content") or "").strip():
-            self.add(Markdown(str(payload["content"])))
+            self.add(self.answer(str(payload["content"])))
         for call in payload.get("tool_calls") or []:
             try:
                 args = json.loads(call.get("arguments") or "{}")
@@ -399,8 +401,8 @@ class SuperclawApp(App[None]):
         return clip(str(self.rt.workspace).replace(str(Path.home()), "~", 1), max(LIMITS.card_arg_chars // 2, width // 3))
 
     def flush_stream(self) -> None:
-        if self.stream_dirty and self.streaming is not None:
-            self.streaming.update(self.stream_text)
+        if self.stream_dirty and self.streaming is not None and self.stream_render is not None:
+            self.streaming.update(self.stream_render.update(self.stream_text))
             self.stream_dirty = False
         if self.thinking_dirty and self.thinking is not None:
             self.thinking.update(self.thinking_text)
@@ -421,6 +423,12 @@ class SuperclawApp(App[None]):
             card.render_body()
         self.note("showing full tool output; ctrl+o folds it again" if self.verbose else "tool output folded; click a card or ctrl+o to unfold")
 
+    def answer_width(self) -> int:
+        return max(LIMITS.table_min_column, (self.transcript().content_size.width or self.size.width) - 1)
+
+    def answer(self, text: str) -> Static:
+        return Static(markdown(text, LIMITS.prose_measure, self.answer_width(), self.glyphs), classes="answer")
+
     def transcript(self) -> VerticalScroll:
         view = self.query_one("#transcript", VerticalScroll)
         if not view.display:
@@ -428,7 +436,7 @@ class SuperclawApp(App[None]):
             view.display = True
         return view
 
-    def add(self, widget: Static | Markdown | ToolCard) -> None:
+    def add(self, widget: Static | ToolCard) -> None:
         view = self.transcript()
         view.mount(widget)
         view.scroll_end(animate=False)
@@ -825,14 +833,15 @@ class SuperclawApp(App[None]):
             self.end_thinking()
             self.stream_text += event["text"]
             if self.streaming is None:
-                self.streaming = Static("", markup=False)
+                self.streaming = Static("", markup=False, classes="answer")
+                self.stream_render = Stream(LIMITS.prose_measure, self.answer_width(), self.glyphs)
                 self.add(self.streaming)
                 self.phase(PHASE_WRITING)
             self.stream_dirty = True
         elif kind == "text" and not child:
             self.end_thinking()
             self.drop_stream()
-            self.add(Markdown(event["text"]))
+            self.add(self.answer(event["text"]))
         elif kind in ("tool_call", "tool_result"):
             self.render_tool(event, child)
         elif kind == "context" and not child:
@@ -877,7 +886,7 @@ class SuperclawApp(App[None]):
     def drop_stream(self) -> None:
         if self.streaming is not None:
             self.streaming.remove()
-        self.streaming, self.stream_text, self.stream_dirty = None, "", False
+        self.streaming, self.stream_text, self.stream_dirty, self.stream_render = None, "", False, None
         self.end_thinking()
 
     def finish(self, result: Result | None, error: str = "") -> None:

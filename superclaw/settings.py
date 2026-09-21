@@ -81,6 +81,15 @@ LOCALE_ENVS = ("LC_ALL", "LC_CTYPE", "LANG")
 UTF8_MARK = "utf"
 THOUSAND = 1_000
 MILLION = 1_000_000
+RAMP_UP = " ▁▂▃▄▅▆▇█"
+RAMP_RIGHT = " ▏▎▍▌▋▊▉█"
+RAMP_SHADE = " ░▒▓█"
+RAMP_ASCII_UP = " .:-=+*#@"
+RAMP_ASCII_RIGHT = " .:-=+*#@"
+RAMP_ASCII_SHADE = " .:#@"
+BRAILLE_BASE = 0x2800
+BRAILLE_BITS = ((0x01, 0x08), (0x02, 0x10), (0x04, 0x20), (0x40, 0x80))
+BRAILLE_COLS, BRAILLE_ROWS = 2, 4
 PRICE_UNIT_TOKENS = MILLION
 PROC_DIR = "/proc"
 STOPPED_STATES = ("T", "t")
@@ -104,12 +113,19 @@ class Glyphs:
     spinner: str
     border: str
     block_art: bool
+    rule: str
+    pipe: str
+    cross: str
+    bullet: str
+    bar: str
 
 
 UNICODE = Glyphs(prompt="\u276f", running="\u25d0", ok="\u2713", failed="\u2717", dot="\u00b7", gauge="\u25d4", mode="\u25cf", child="\u21b3", ellipsis="\u2026", call="\u2192",
-                 spinner="\u25d0\u25d3\u25d1\u25d2", border="round", block_art=True)
+                 spinner="\u25d0\u25d3\u25d1\u25d2", border="round", block_art=True,
+                 rule="\u2500", pipe="\u2502", cross="\u253c", bullet="\u2022", bar="\u258f")
 ASCII = Glyphs(prompt=">", running="~", ok="+", failed="x", dot="|", gauge="#", mode="*", child="->", ellipsis="...", call="->",
-               spinner="-\\|/", border="ascii", block_art=False)
+               spinner="-\\|/", border="ascii", block_art=False,
+               rule="-", pipe="|", cross="+", bullet="-", bar="|")
 
 
 def choose_engine(e: Mapping[str, str]) -> str:
@@ -477,6 +493,16 @@ class Limits:
     delegate_answer_tokens: int = 1500
     claude_cli_timeout_s: float = 900.0
     claude_cli_budget_usd: float = 5.0
+    prose_measure: int = 88
+    status_gauge_width: int = 10
+    context_bar_width: int = 28
+    card_min_width: int = 20
+    flow_gap: int = 4
+    flow_pad: int = 3
+    table_min_column: int = 6
+    table_body_rules_over: int = 6
+    preformatted_indent: int = 2
+    code_label_chars: int = 24
 
     id_hash_chars: int = 16
     run_id_bytes: int = 4
