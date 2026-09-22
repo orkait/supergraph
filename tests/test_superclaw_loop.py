@@ -39,7 +39,7 @@ from superclaw.serve import serve as serve_mcp
 from superclaw.session import SessionStore
 from superclaw.settings import LIMITS, SERVED_TITLE, SERVED_TOOLS, Settings
 from superclaw.share import NotServing, open_shared, socket_path
-from superclaw.stages import Intent, Unknown, decompose, parse_intent, recall_settled, settled_note
+from superclaw.stages import SUBGOALS_TITLE, Intent, Unknown, decompose, parse_intent, recall_settled, settled_note
 from superclaw.tools import Registry, SideEffect, ToolContext
 from superclaw.tools.ask import parse_questions
 from superclaw.tools.files import core_file_tools
@@ -508,6 +508,13 @@ def test_intent_hooks_and_deferral(ws, gs):
     settled = fenced.settled(["three"])
     assert settled.answered == (("how many?", "three"),) and not settled.blocked and "Settled by the user" in settled.block()
     assert fenced.settled([""]).blocked and "did not settle" in fenced.settled([""]).block() and Intent().block() == ""
+    reading = parse_intent('{"kind": "answer", "goal": "understand guards", "subgoals": ["read it", "trace it"], "queries": ["read guards.py"],'
+                           ' "unknowns": [{"question": "how deep?", "options": ["a", "b", "c"]}, {"question": "second?", "options": ["a", "b", "c"]}]}')
+    assert reading.reading and reading.subgoals == () and reading.plan_seed() == (), "a question gets no subgoals and never seeds a plan"
+    assert len(reading.unknowns) == LIMITS.unknowns_asked_max and not reading.blocked, "a question is answered first, clarified after"
+    assert "no subgoals" in reading.block() and SUBGOALS_TITLE not in reading.block() and "read guards.py" in reading.block()
+    changing = parse_intent('{"kind": "change", "goal": "add retry", "subgoals": ["wrap it"], "unknowns": [{"question": "how many?", "options": ["1", "2", "3"]}]}')
+    assert not changing.reading and changing.subgoals == ("wrap it",) and changing.blocked and SUBGOALS_TITLE in changing.block()
 
     class Mute:
         def complete(self, messages, tools, **kw):
