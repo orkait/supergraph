@@ -16,9 +16,16 @@ if TYPE_CHECKING:
 
 _OBJECT_START: Final = re.compile(r"\{")
 
+ANSWER_KIND: Final = "answer"
+CHANGE_KIND: Final = "change"
+KINDS: Final = (ANSWER_KIND, CHANGE_KIND)
 HEADER: Final = (
     "An intent stage read the request before you and decomposed it. This is the contract for this turn, not a suggestion: "
     "the subgoals are what done means, and the open questions are reads to perform, not guesses to make."
+)
+READING_HEADER: Final = (
+    "An intent stage read the request before you. It asks for understanding, not for a change, so there are no subgoals and "
+    "nothing here asks you to edit the workspace. Answer it; the reads below are the ones worth doing first, if any."
 )
 SUBGOALS_TITLE: Final = "Subgoals, in order, each one independently checkable:"
 QUERIES_TITLE: Final = "Open questions about this workspace; answer each by reading, searching or running something, never by guessing:"
@@ -52,6 +59,11 @@ class Intent:
     unknowns: tuple[Unknown, ...] = ()
     answered: tuple[tuple[str, str], ...] = ()
     known: tuple[tuple[str, str], ...] = ()
+    kind: str = CHANGE_KIND
+
+    @property
+    def reading(self) -> bool:
+        return self.kind == ANSWER_KIND
 
     @property
     def empty(self) -> bool:
@@ -59,9 +71,13 @@ class Intent:
 
     @property
     def blocked(self) -> bool:
-        return bool(self.unknowns)
+        # A question is answered first and clarified after, the rule every Anthropic prompt states:
+        # "tries to address even an ambiguous query before asking for clarification".
+        return bool(self.unknowns) and not self.reading
 
     def plan_seed(self) -> tuple[str, ...]:
+        if self.reading:
+            return ()
         return tuple(f"{ANSWER_PREFIX} {query}" for query in self.queries) + self.subgoals
 
     def remembered(self, known: Sequence[tuple[str, str]]) -> Intent:
@@ -70,17 +86,17 @@ class Intent:
         answers = dict(known)
         kept = tuple((question, answers[question]) for question in (u.question for u in self.unknowns) if question in answers)
         unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in answers)
-        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known)
+        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known, self.kind)
 
     def with_evidence(self, found: Sequence[tuple[str, str]]) -> Intent:
-        return self if not found else Intent(self.goal, self.subgoals, self.queries, self.unknowns, self.answered, tuple(found))
+        return self if not found else Intent(self.goal, self.subgoals, self.queries, self.unknowns, self.answered, tuple(found), self.kind)
 
     def settled(self, answers: Sequence[str]) -> Intent:
         replies = tuple(zip(self.unknowns, answers, strict=False))
         kept = tuple((unknown.question, oneline(answer)) for unknown, answer in replies if answer.strip())
         settled = {question for question, _ in kept}
         unresolved = tuple(unknown for unknown in self.unknowns if unknown.question not in settled)
-        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known)
+        return Intent(self.goal, self.subgoals, self.queries, unresolved, (*self.answered, *kept), self.known, self.kind)
 
     def block(self) -> str:
         if self.empty:
@@ -88,9 +104,9 @@ class Intent:
         body = "\n".join(
             line
             for line in (
-                HEADER,
+                READING_HEADER if self.reading else HEADER,
                 f"Goal: {self.goal}" if self.goal else "",
-                _listed(SUBGOALS_TITLE, self.subgoals),
+                _listed(SUBGOALS_TITLE, () if self.reading else self.subgoals),
                 _listed(QUERIES_TITLE, self.queries),
                 _listed(KNOWN_TITLE, tuple(f"{query} recall §{ref}" for query, ref in self.known)),
                 _listed(SETTLED_TITLE, tuple(f"{question} {answer}" for question, answer in self.answered)),
@@ -151,11 +167,14 @@ def _objects(text: str) -> Iterator[dict[str, object]]:
 def parse_intent(text: str) -> Intent:
     for raw in _objects(text or ""):
         goal = raw.get("goal")
+        kind = raw.get("kind")
+        reading = isinstance(kind, str) and kind.strip().lower() == ANSWER_KIND
         parsed = Intent(
             oneline(goal)[: LIMITS.intent_goal_chars] if isinstance(goal, str) else "",
-            _strings(raw.get("subgoals")),
+            () if reading else _strings(raw.get("subgoals")),
             _strings(raw.get("queries")),
-            _unknowns(raw.get("unknowns")),
+            _unknowns(raw.get("unknowns"))[: LIMITS.unknowns_asked_max],
+            kind=ANSWER_KIND if reading else CHANGE_KIND,
         )
         if not parsed.empty:
             return parsed

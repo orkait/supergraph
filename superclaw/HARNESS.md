@@ -21,9 +21,9 @@ Each rule names the Terminal-Bench failure mode it guards against. The eight mod
 
 | # | Rule | Guards against | What broke on 2026-09-15 | Enforced at |
 |---|---|---|---|---|
-| 1 | Recover the acceptance condition and the boundary before acting. Everything not listed as a subgoal is outside the task | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block. Under `--require-completion` they also seed the plan and `loop.py` `incomplete_reason` refuses a no-tool answer while any is pending. **Gap:** by default the block is advice, and an edit outside the boundary is never flagged |
+| 1 | Recover the acceptance condition and the boundary before acting. A request that asks for no change has no subgoals, because understanding is the whole of it | disobey task specification, unaware of termination | "add retry to fetch" was done at turn 4; the agent then spent 50 turns on a test file nobody asked for and timed out at 200s | `stages.py` writes goal, subgoals, queries; `prompt.py:231` injects the block. Under `--require-completion` they also seed the plan and `loop.py` `incomplete_reason` refuses a no-tool answer while any is pending. **Gap:** by default the block is advice, and an edit outside the boundary is never flagged |
 | 2 | Literal tokens stay literal. Classify a word as a name or a description before normalising anything | reasoning-action mismatch | "codemode this repo" was decomposed to "Code the specified repository"; a skill name became a verb | `prompts/decompose.md`: an unrecognised term is carried through verbatim and never queried |
-| 3 | An underdetermined request gets three to five options with one recommended. Never an open question, never a silent guess | disobey task specification | "make the code faster" produced no question and an edit. After the fix it produces five options with Python recommended; "rename the fetch helper in src/net.py" correctly produces none | `tools/ask.py` `parse_questions`, `settings.ask_options_min`, `stages.Unknown` |
+| 3 | An underdetermined request gets three to five options with one recommended, at most one question, and never before trying | disobey task specification | "make the code faster" produced no question and an edit. Then the opposite: "why might fetch fail on a redirect?" raised two option dialogues and four subgoals for a question that needed neither | `tools/ask.py` `parse_questions`, `settings.ask_options_min`, `settings.unknowns_asked_max = 1`, and `stages.Intent.blocked` is false for a question, so it is answered first and clarified after |
 | 4 | Done lives outside the model. Every claim of progress passes a check the model cannot vote on | no or irrelevant verification, weak verification | a run ended `status: success` over Python that raised `IndentationError` on import; on Terminal-Bench a solution passed 5 of 6 tests and scored 0, because the verifier, not the agent, defines solved | `tools/files.py` `_written` parses every `.py` write; `prompts/verifier.md` rejects proxy signals behind `--verify`. **Gap:** `--verify` is off by default and judges the whole run, not each subgoal |
 | 5 | Verification cost scales with the cost of being wrong. A read needs none, a write needs a parse, a claim of done needs the checks from rule 1 | weak verification | the parse gate caught the broken write on the very next run; the same task then produced code that parsed and retried correctly | parse on `.py` only; verifier on demand |
 | 6 | Activity is not progress. The harness owns the progress signal, and the same error twice is no progress whatever happened in between | step repetition | 62 tool calls re-running one failing `unittest` command; the guard never fired because every interleaved successful `edit_file` reset the count | `guards.py:185` counts failures per tool and error signature across successes; `settings.failure_stop_at = 6` |
@@ -64,6 +64,43 @@ Same request, same model, same repository, before and after the rules were enfor
 | "add retry with exponential backoff to fetch" | 62 tool calls, killed at 200s, file did not parse | 8 tool calls, 10 turns, code parses and retries three times |
 | skills visible in the prompt | 20 of 91 | 91 of 91 |
 | "make the code faster" | no question raised | one unknown, five options, one recommended |
+
+## The stage that reads the request
+
+The decomposition is what the model sees before it acts, so a wrong reading costs more than a wrong turn. Two failures were measured on 2026-09-22 and fixed in the stage rather than the loop.
+
+A request that asked for nothing to change was decomposed into work. "what does superclaw/guards.py do? change nothing" produced three subgoals; "codemode this repo", which names a read-only skill, produced the goal "This repo is codemoded ... left in a consistent, working state", the subgoal "Every identified target has the codemode change applied", and a query to "capture a pre-change baseline". The stage had invented a refactor from a request to read.
+
+The same stage asked too much. "why might fetch fail on a redirect?" raised two option dialogues before a single file was read.
+
+The fix is a `kind` the decomposer must choose. An answer has no subgoals and never seeds a plan, its block says so in place of the contract wording, and its unknowns never block: the question is answered first and clarified after. A change keeps the contract it had. Unknowns are capped at one for both.
+
+| Rule | Where Anthropic writes it |
+|---|---|
+| Be proactive inside the request and never outside it | Claude Code, March 2024: "Be proactive when asked to do something", "Don't surprise users with unexpected actions" |
+| The requested scope is the deliverable | Claude Code 2.1.265, one occurrence each of "requested scope is the deliverable" and "quietly narrow, widen, or transform" |
+| Ask only when the answer changes the work | Claude Code 2.1.265: "check in only when different readings would lead to materially different work" |
+| At most one question | Claude Opus 4.7 line 71 and Opus 4.6 line 964: "avoid overwhelming the person with more than one question per response" |
+| Answer before clarifying | Claude Fable 5.1 line 90 and Opus 5 line 91: "tries to address even an ambiguous query before asking for clarification" |
+
+The last two are from the claude.ai prompts in CL4R1T4S, not from the coding harness; the first three are in the installed binary and were counted there.
+
+Measured as a controlled experiment on 2026-09-22: two arms, four requests, two samples each, every run with its own store so nothing carries between them, `--max-turns 10`, same model. Ranges are min to max over the two samples, so no single run carries a conclusion.
+
+| Request | Arm | Subgoals | Unknowns | Tool calls | Turns | Cost |
+|---|---|---|---|---|---|---|
+| "what does guards.py do? change nothing" | before | 2-4 | 0-1 | 12-14 | 6-8 | $0.0211-0.0250 |
+| | after | 0 | 0 | 7-10 | 5-7 | $0.0185-0.0234 |
+| "codemode this repo" | before | 4-5 | 0-1 | 22-25 | 10 | $0.0542-0.0991 |
+| | after | 2-3 | 0 | 22-28 | 10 | $0.0579-0.0595 |
+| "add a timeout parameter to fetch" | before | 3 | 0-1 | 8-9 | 7-8 | $0.0157-0.0187 |
+| | after | 3 | 0 | 7-8 | 7-8 | $0.0153-0.0175 |
+| "why might fetch fail on a redirect?" | before | 4-6 | 1-2 | 6-9 | 4-7 | $0.0110-0.0226 |
+| | after | 0 | 0 | 0-7 | 1-6 | $0.0031-0.0159 |
+
+Subgoals on a request that asks for no change go to zero in every sample, and so do dialogue questions, with the ranges not overlapping. Median cost falls on all four requests: 9%, 24%, 5% and 43%. No arm attempted a workspace mutation on a read-only request, and no arm repeated a tool call with identical arguments.
+
+Three honest notes. `codemode` still reaches the turn cap in both arms, so the cap decides that cell rather than the change; the decomposition stopped inventing a refactor but the run still wanders. The `explain` range of 0-7 calls contains one sample that answered with no reads at all, which is why the queries rule says a question about code in this workspace always earns at least one read. And tool counts on this model vary by a factor of two between identical runs, so the subgoal and question counts are the firm results here, not the call counts.
 
 ## What is still advisory
 

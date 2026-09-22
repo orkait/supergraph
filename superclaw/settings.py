@@ -361,6 +361,7 @@ class Limits:
     pending_items_named: int = 3
     pending_item_chars: int = 80
     ask_options_min: int = 3
+    unknowns_asked_max: int = 1
     ask_options_max: int = 5
     intent_items_max: int = 8
     intent_goal_chars: int = 240
